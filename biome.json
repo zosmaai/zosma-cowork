@@ -7,7 +7,7 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"ignore": ["src-tauri", "dist"]
+		"ignore": ["src-tauri", "dist", "scripts/**"]
 	},
 	"formatter": {
 		"enabled": true,
