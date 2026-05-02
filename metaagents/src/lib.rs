@@ -51,6 +51,9 @@ pub mod config;
 /// Extension discovery from pi's extension directories.
 pub mod extensions;
 
+/// Extension installer — install/uninstall extensions from npm, git, or local paths.
+pub mod ext_installer;
+
 /// Crate version, exposed for diagnostic surfaces (e.g. About dialog).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

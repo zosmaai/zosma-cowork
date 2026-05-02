@@ -14,6 +14,7 @@ use std::sync::Arc;
 use metaagents::config::{self, ConfigSnapshot, ModelInfo, ProviderInfo};
 use metaagents::engine::MetaAgentsEngine;
 use metaagents::events::{categorize_engine_error, CoworkErrorPayload, CoworkEvent};
+use metaagents::ext_installer::{self as ext_installer, InstallResult};
 use metaagents::extensions::ExtensionInfo;
 use serde::{Deserialize, Serialize};
 
@@ -199,6 +200,48 @@ async fn list_engine_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<S
 #[tauri::command]
 async fn list_extensions() -> Result<Vec<ExtensionInfo>, String> {
     Ok(metaagents::extensions::discover_extensions())
+}
+
+/// List all installed extensions with their metadata (filesystem-based).
+#[tauri::command]
+async fn list_extensions_v2() -> Result<Vec<InstallResult>, String> {
+    Ok(ext_installer::list_installed_extensions())
+}
+
+/// Payload for installing an extension.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallExtensionPayload {
+    /// Source string: npm:<pkg>, git URL, or local path
+    source: String,
+    /// Optional git branch/tag/ref (only used for git sources)
+    #[serde(default)]
+    ref_name: Option<String>,
+}
+
+/// Install an extension from npm, git, or local path.
+#[tauri::command]
+async fn install_extension(payload: InstallExtensionPayload) -> Result<InstallResult, String> {
+    let parsed = ext_installer::parse_source(&payload.source).map_err(|e| e.to_string())?;
+
+    match parsed.source {
+        ext_installer::ExtensionSource::Npm { package } => {
+            ext_installer::install_from_npm(&package).map_err(|e| e.to_string())
+        }
+        ext_installer::ExtensionSource::Git { url, .. } => {
+            ext_installer::install_from_git(&url, payload.ref_name.as_deref())
+                .map_err(|e| e.to_string())
+        }
+        ext_installer::ExtensionSource::Local { path } => {
+            ext_installer::install_from_local(&path).map_err(|e| e.to_string())
+        }
+    }
+}
+
+/// Uninstall an extension by ID.
+#[tauri::command]
+async fn uninstall_extension(id: String) -> Result<(), String> {
+    ext_installer::uninstall_extension(&id).map_err(|e| e.to_string())
 }
 
 /// List configured providers and models from pi's settings.
@@ -440,6 +483,9 @@ pub fn run() {
             list_engine_sessions,
             // Extensions & models
             list_extensions,
+            list_extensions_v2,
+            install_extension,
+            uninstall_extension,
             list_providers,
             set_active_model,
             reload_config,
