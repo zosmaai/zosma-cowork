@@ -1,0 +1,50 @@
+{
+  "name": "@zosmaai/zosma-slides",
+  "version": "0.1.0",
+  "description": "Zosma Cowork extension for AI-powered slide deck generation",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.5"
+  },
+  "zosma": {
+    "extensions": [
+      {
+        "name": "slide-generator",
+        "entry": "./dist/index.js",
+        "tools": [
+          "generate_slides",
+          "list_templates"
+        ]
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zosmaai/zosma-cowork.git",
+    "directory": "packages/zosma-slides"
+  },
+  "license": "MIT",
+  "keywords": ["zosma", "extension", "slides", "pptx"]
+}
