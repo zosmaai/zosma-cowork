@@ -231,7 +231,8 @@ impl Sidecar {
 
     /// List all loaded extensions and their tools from the sidecar.
     pub async fn list_all_extensions(&self) -> Result<serde_json::Value> {
-        self.send_request("list_extensions", serde_json::json!({})).await
+        self.send_request("list_extensions", serde_json::json!({}))
+            .await
     }
 
     /// Get the extensions directory path.

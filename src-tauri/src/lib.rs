@@ -645,9 +645,7 @@ pub fn run() {
                 let sidecar = Sidecar::new(None, entry);
                 match sidecar.start().await {
                     Ok(()) => {
-                        log::info!(
-                            "Sidecar started successfully with auto-discovery"
-                        );
+                        log::info!("Sidecar started successfully with auto-discovery");
                         let mut guard = sidecar_state_for_setup.lock().await;
                         *guard = Some(sidecar);
                     }
