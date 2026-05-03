@@ -104,7 +104,10 @@ export function useAuth() {
 	const saveApiKey = useCallback(
 		async (providerId: string, apiKey: string) => {
 			await invoke("save_auth_key", { providerId, apiKey });
+
+			// Refresh auth status and notify providers to reload config
 			await refresh();
+			window.dispatchEvent(new Event("config-reload"));
 		},
 		[refresh],
 	);

@@ -69,8 +69,6 @@ struct ConfigPayload {
 struct AppState {
     engine: Arc<MetaAgentsEngine>,
     config: Arc<std::sync::RwLock<ConfigSnapshot>>,
-    #[allow(dead_code)] // accessed via Tauri state mechanism
-    telemetry_queue: telemetry::TelemetryQueue,
     sidecar: Arc<tokio::sync::Mutex<Option<Sidecar>>>,
 }
 
@@ -352,9 +350,23 @@ async fn delete_provider_cmd(
 ///
 /// Creates the file if it doesn't exist. Merges with existing entries.
 /// Uses the standard pi auth format.
+///
+/// Also reloads the cached ConfigSnapshot so the new provider/models
+/// appear immediately without requiring an app restart.
 #[tauri::command]
-async fn save_auth_key(provider_id: String, api_key: String) -> Result<(), String> {
-    config::save_auth_api_key(&provider_id, &api_key)
+async fn save_auth_key(
+    provider_id: String,
+    api_key: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    config::save_auth_api_key(&provider_id, &api_key)?;
+
+    // Reload cached config so the new provider/models appear immediately
+    let fresh = config::load_config();
+    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
+    *guard = fresh;
+
+    Ok(())
 }
 
 /// Check if any provider has a valid API key in auth.json.
@@ -571,15 +583,16 @@ pub fn run() {
 
     // Telemetry: event queue + background flush task
     let (telemetry_queue, flush_rx) = telemetry::TelemetryQueue::new();
+    let telemetry_queue = std::sync::Arc::new(telemetry_queue);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(telemetry_queue)
         .manage(AppState {
             engine,
             config,
-            telemetry_queue,
             sidecar: Arc::new(tokio::sync::Mutex::new(None)),
         })
         .setup(move |app| {
@@ -593,7 +606,9 @@ pub fn run() {
 
             // Spawn background telemetry flush task
             let app_handle = app.handle().clone();
-            tokio::spawn(telemetry::spawn_flush_task(app_handle, flush_rx));
+            tauri::async_runtime::spawn(async move {
+                telemetry::spawn_flush_task(app_handle, flush_rx).await;
+            });
 
             Ok(())
         })

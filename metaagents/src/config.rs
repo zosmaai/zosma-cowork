@@ -356,10 +356,76 @@ pub fn read_auth_json() -> serde_json::Value {
     }
 }
 
+/// Return default model definitions for known built-in providers.
+///
+/// When a user saves an API key for one of these providers, we automatically
+/// populate `models.json` with these models so the dropdown is not empty.
+pub fn builtin_provider_models(provider_id: &str) -> Option<Vec<serde_json::Value>> {
+    let models = match provider_id {
+        // Crof AI — OpenAI-compatible gateway
+        "crofai" => vec![
+            model_entry("gpt-4o", "GPT-4o"),
+            model_entry("gpt-4o-mini", "GPT-4o Mini"),
+            model_entry("o3-mini", "O3 Mini"),
+            model_entry("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+        ],
+        // OpenCode Go — budget-friendly aggregator
+        "opencode-go" => vec![
+            model_entry("gpt-4o", "GPT-4o"),
+            model_entry("gpt-4o-mini", "GPT-4o Mini"),
+            model_entry("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+        ],
+        // OpenAI
+        "openai" => vec![
+            model_entry("gpt-4o", "GPT-4o"),
+            model_entry("gpt-4o-mini", "GPT-4o Mini"),
+            model_entry("o3-mini", "O3 Mini"),
+        ],
+        // Anthropic
+        "anthropic" => vec![
+            model_entry("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+            model_entry("claude-opus-4-20250514", "Claude Opus 4"),
+        ],
+        // Google (Gemini)
+        "google" => vec![
+            model_entry("gemini-2.5-flash", "Gemini 2.5 Flash"),
+            model_entry("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ],
+        // Groq
+        "groq" => vec![
+            model_entry("llama-3.3-70b-versatile", "Llama 3.3 70B"),
+            model_entry("llama-3.1-8b-instant", "Llama 3.1 8B"),
+        ],
+        // Together AI
+        "together" => vec![
+            model_entry("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B"),
+        ],
+        // xAI
+        "xai" => vec![
+            model_entry("grok-2-1212", "Grok 2"),
+            model_entry("grok-3", "Grok 3"),
+        ],
+        _ => return None,
+    };
+    Some(models)
+}
+
+/// Create a minimal model entry JSON object.
+fn model_entry(id: &str, name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "name": name
+    })
+}
+
 /// Save an API key for a built-in provider in auth.json.
 ///
 /// Creates the file if it doesn't exist. Merges with existing entries.
 /// Uses the standard pi auth format: `{ "provider-id": { "type": "api_key", "key": "..." } }`.
+///
+/// Additionally, if the provider is a known built-in provider, this function
+/// automatically populates `models.json` with default model definitions so that
+/// the model dropdown in the UI is not empty after saving an API key.
 pub fn save_auth_api_key(provider_id: &str, api_key: &str) -> Result<(), String> {
     let mut root = read_auth_json();
 
@@ -379,6 +445,16 @@ pub fn save_auth_api_key(provider_id: &str, api_key: &str) -> Result<(), String>
     let pretty = serde_json::to_string_pretty(&root)
         .map_err(|e| format!("Failed to serialize auth config: {e}"))?;
     std::fs::write(&path, pretty).map_err(|e| format!("Failed to write auth.json: {e}"))?;
+
+    // Also populate models.json for known built-in providers
+    if let Some(models) = builtin_provider_models(provider_id) {
+        let provider_config = serde_json::json!({
+            "models": models
+        });
+        upsert_provider(provider_id, &provider_config)
+            .map_err(|e| format!("Failed to populate models for {provider_id}: {e}"))?;
+    }
+
     Ok(())
 }
 
@@ -538,5 +614,38 @@ mod tests {
         let settings: PiSettings = serde_json::from_str(json).unwrap();
         assert!(settings.default_provider.is_none());
         assert!(settings.packages.is_empty());
+    }
+
+    #[test]
+    fn builtin_models_returns_models_for_known_providers() {
+        for provider_id in [
+            "crofai",
+            "opencode-go",
+            "openai",
+            "anthropic",
+            "google",
+            "groq",
+            "together",
+            "xai",
+        ] {
+            let models = builtin_provider_models(provider_id);
+            assert!(
+                models.is_some(),
+                "Expected models for provider: {provider_id}",
+            );
+            let model_list = models.unwrap();
+            assert!(!model_list.is_empty(), "Models should not be empty for {provider_id}");
+            // Each model entry should have an id and name
+            for model in &model_list {
+                assert!(model.get("id").is_some(), "Model should have an id");
+                assert!(model.get("name").is_some(), "Model should have a name");
+            }
+        }
+    }
+
+    #[test]
+    fn builtin_models_returns_none_for_unknown_provider() {
+        assert!(builtin_provider_models("unknown-provider").is_none());
+        assert!(builtin_provider_models("").is_none());
     }
 }

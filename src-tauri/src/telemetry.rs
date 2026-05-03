@@ -238,10 +238,10 @@ pub async fn send_telemetry_event(
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 
-    app.state::<TelemetryQueue>().push(event);
+    app.state::<std::sync::Arc<TelemetryQueue>>().push(event);
 
     // If queue is getting large, flush immediately
-    if app.state::<TelemetryQueue>().len() >= MAX_BATCH_SIZE {
+    if app.state::<std::sync::Arc<TelemetryQueue>>().len() >= MAX_BATCH_SIZE {
         flush_telemetry_internal(&app).await;
     }
 
@@ -262,7 +262,7 @@ pub async fn flush_telemetry(app: tauri::AppHandle) -> Result<usize, String> {
 
 /// Internal flush logic (called by both the command and periodic task).
 async fn flush_telemetry_internal(app: &tauri::AppHandle) {
-    let events = app.state::<TelemetryQueue>().take_all();
+    let events = app.state::<std::sync::Arc<TelemetryQueue>>().take_all();
     if events.is_empty() {
         return;
     }

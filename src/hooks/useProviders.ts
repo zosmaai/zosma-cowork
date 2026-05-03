@@ -1,6 +1,9 @@
 import type { ConfigPayload, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+/** Custom event fired when config should be reloaded (e.g., after saving an API key). */
+const CONFIG_RELOAD_EVENT = "config-reload";
 
 export function useProviders() {
 	const [config, setConfig] = useState<ConfigPayload | null>(null);
@@ -21,6 +24,18 @@ export function useProviders() {
 	useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	// Listen for config reload events (e.g., after saving an API key)
+	const refreshRef = useRef(refresh);
+	refreshRef.current = refresh;
+
+	useEffect(() => {
+		function handleConfigReload() {
+			refreshRef.current();
+		}
+		window.addEventListener(CONFIG_RELOAD_EVENT, handleConfigReload);
+		return () => window.removeEventListener(CONFIG_RELOAD_EVENT, handleConfigReload);
+	}, []);
 
 	const setModel = useCallback(
 		async (sessionId: string, provider: string, modelId: string) => {
