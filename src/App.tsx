@@ -15,8 +15,10 @@ import {
 	writeSession,
 } from "@/lib/session-store";
 import { isEnabled as telemetryEnabled, trackAppLaunch, trackSessionCreated } from "@/lib/telemetry";
+import { CommandsView } from "@/components/CommandsView";
 import { SettingsView } from "@/settings/SettingsView";
 import { Sidebar } from "@/sidebar/Sidebar";
+import type { NavView } from "@/sidebar/NavIcons";
 import { TasksView } from "@/tasks/TasksView";
 import type { ChatMessage } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
@@ -73,7 +75,7 @@ function App() {
 		})();
 	}, []);
 
-	const [activeView, setActiveView] = useState<"chat" | "tasks" | "settings">("chat");
+	const [activeView, setActiveView] = useState<NavView>("chat");
 	const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
 	// Track the currently selected model for the active session.
@@ -435,6 +437,8 @@ function App() {
 						/>
 					)
 				)}
+
+				{activeView === "commands" && <CommandsView />}
 
 				{activeView === "tasks" && <TasksView />}
 

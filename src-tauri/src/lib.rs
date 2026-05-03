@@ -504,6 +504,27 @@ async fn sidecar_status(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
+/// List all loaded extensions and their tools from the sidecar.
+///
+/// Returns a map of extension ID -> { tools: ["tool1", "tool2"], path: "/path" }.
+/// Returns an empty object if the sidecar is not running.
+#[tauri::command]
+async fn list_extension_tools(
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let sidecar_guard = state.sidecar.lock().await;
+    match sidecar_guard.as_ref() {
+        Some(sidecar) if sidecar.is_running().await => {
+            let result = sidecar
+                .list_all_extensions()
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(result)
+        }
+        _ => Ok(serde_json::json!({})),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Commands — pi CLI (welcome flow)
 // ---------------------------------------------------------------------------
@@ -585,6 +606,11 @@ pub fn run() {
     let (telemetry_queue, flush_rx) = telemetry::TelemetryQueue::new();
     let telemetry_queue = std::sync::Arc::new(telemetry_queue);
 
+    // Sidecar — clone the Arc so we can pass it to the setup closure
+    let sidecar_state: Arc<tokio::sync::Mutex<Option<Sidecar>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+    let sidecar_state_for_setup = sidecar_state.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
@@ -593,7 +619,7 @@ pub fn run() {
         .manage(AppState {
             engine,
             config,
-            sidecar: Arc::new(tokio::sync::Mutex::new(None)),
+            sidecar: sidecar_state,
         })
         .setup(move |app| {
             if cfg!(debug_assertions) {
@@ -608,6 +634,30 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 telemetry::spawn_flush_task(app_handle, flush_rx).await;
+            });
+
+            // Auto-start sidecar for Pi extension compatibility
+            let sidecar_app = app.handle().clone();
+            tokio::spawn(async move {
+                let entry = resolve_sidecar_entry(&sidecar_app);
+                log::info!("Auto-starting sidecar: {}", entry.display());
+
+                let sidecar = Sidecar::new(None, entry);
+                match sidecar.start().await {
+                    Ok(()) => {
+                        log::info!(
+                            "Sidecar started successfully with auto-discovery"
+                        );
+                        let mut guard = sidecar_state_for_setup.lock().await;
+                        *guard = Some(sidecar);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to auto-start sidecar: {}. Extensions will not be available.",
+                            e
+                        );
+                    }
+                }
             });
 
             Ok(())
@@ -643,6 +693,7 @@ pub fn run() {
             sidecar_list_tools,
             sidecar_load_extension,
             sidecar_status,
+            list_extension_tools,
             // Pi CLI (welcome flow)
             check_pi_status,
             install_pi,

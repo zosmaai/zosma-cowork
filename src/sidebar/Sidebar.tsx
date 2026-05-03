@@ -2,7 +2,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SessionMeta } from "@/lib/session-store";
 import type { PiStatus } from "@/types";
 import { Plus } from "lucide-react";
-import { NavIcons } from "./NavIcons";
+import { NavIcons, type NavView } from "./NavIcons";
 import { SessionList } from "./SessionList";
 
 interface SidebarProps {
@@ -10,11 +10,11 @@ interface SidebarProps {
 	activeSessionId: string | null;
 	sessionsLoading: boolean;
 	status: PiStatus | null;
-	activeView: "chat" | "tasks" | "settings";
+	activeView: NavView;
 	onNewSession: () => void;
 	onSelectSession: (id: string) => void;
 	onDeleteSession: (id: string) => void;
-	onNavigate: (view: "chat" | "tasks" | "settings") => void;
+	onNavigate: (view: NavView) => void;
 }
 
 export function Sidebar({

@@ -1,14 +1,17 @@
-import { CheckSquare, MessageSquare, Settings } from "lucide-react";
+import { CheckSquare, MessageSquare, Settings, Terminal } from "lucide-react";
+
+export type NavView = "chat" | "tasks" | "settings" | "commands";
 
 interface NavIconsProps {
-	activeView: "chat" | "tasks" | "settings";
-	onNavigate: (view: "chat" | "tasks" | "settings") => void;
+	activeView: NavView;
+	onNavigate: (view: NavView) => void;
 }
 
-const ITEMS = [
-	{ view: "chat" as const, icon: MessageSquare, label: "Chat" },
-	{ view: "tasks" as const, icon: CheckSquare, label: "Tasks" },
-	{ view: "settings" as const, icon: Settings, label: "Settings" },
+const ITEMS: { view: NavView; icon: typeof MessageSquare; label: string }[] = [
+	{ view: "chat", icon: MessageSquare, label: "Chat" },
+	{ view: "commands", icon: Terminal, label: "Commands" },
+	{ view: "tasks", icon: CheckSquare, label: "Tasks" },
+	{ view: "settings", icon: Settings, label: "Settings" },
 ];
 
 export function NavIcons({ activeView, onNavigate }: NavIconsProps) {
