@@ -397,9 +397,10 @@ pub fn builtin_provider_models(provider_id: &str) -> Option<Vec<serde_json::Valu
             model_entry("llama-3.1-8b-instant", "Llama 3.1 8B"),
         ],
         // Together AI
-        "together" => vec![
-            model_entry("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B"),
-        ],
+        "together" => vec![model_entry(
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "Llama 3.3 70B",
+        )],
         // xAI
         "xai" => vec![
             model_entry("grok-2-1212", "Grok 2"),
@@ -634,7 +635,10 @@ mod tests {
                 "Expected models for provider: {provider_id}",
             );
             let model_list = models.unwrap();
-            assert!(!model_list.is_empty(), "Models should not be empty for {provider_id}");
+            assert!(
+                !model_list.is_empty(),
+                "Models should not be empty for {provider_id}"
+            );
             // Each model entry should have an id and name
             for model in &model_list {
                 assert!(model.get("id").is_some(), "Model should have an id");
