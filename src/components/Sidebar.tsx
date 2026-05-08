@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-import { Clock, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Plus, Settings, Trash2 } from "lucide-react";
 
 interface Session {
 	id: string;
@@ -20,6 +20,8 @@ interface SidebarProps {
 	onSessionSelect: (id: string) => void;
 	onNewSession: () => void;
 	onDeleteSession: (id: string) => void;
+	onChangeView: (view: string) => void;
+	onShowKeyEntry?: () => void;
 }
 
 export function Sidebar({
@@ -29,68 +31,62 @@ export function Sidebar({
 	onSessionSelect,
 	onNewSession,
 	onDeleteSession,
+	onChangeView,
+	onShowKeyEntry,
 }: SidebarProps) {
-	if (view === "files") {
-		return (
-			<div className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
-				<div className="flex items-center justify-between px-3 py-2">
-					<span className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
-						Explorer
-					</span>
-				</div>
-				<ScrollArea className="flex-1 px-2">
-					<div className="py-1 text-sm text-muted-foreground px-2">No folder open</div>
-				</ScrollArea>
-			</div>
-		);
-	}
+	const isSettings = view === "settings";
 
-	if (view === "settings") {
-		return (
-			<div className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
-				<div className="flex items-center justify-between px-3 py-2">
-					<span className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
-						Settings
-					</span>
-				</div>
-				<ScrollArea className="flex-1 px-3 py-2">
-					<div className="space-y-4">
-						<div>
-							<span className="text-xs text-muted-foreground mb-1.5 block">Theme</span>
-							<div className="flex gap-2">
-								<Button variant="secondary" size="sm" className="w-full">
-									Dark
-								</Button>
-							</div>
-						</div>
-						<div>
-							<span className="text-xs text-muted-foreground mb-1.5 block">Model Provider</span>
-							<div className="text-sm text-foreground">GitHub Copilot</div>
-						</div>
-					</div>
-				</ScrollArea>
-			</div>
-		);
-	}
-
-	if (view === "prompts" || view === "commands") {
-		return (
-			<div className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
-				<div className="flex items-center justify-between px-3 py-2">
-					<span className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
-						{view === "prompts" ? "Prompts" : "Commands"}
-					</span>
-				</div>
-				<ScrollArea className="flex-1 px-2">
-					<div className="py-1 text-sm text-muted-foreground px-2">Coming soon</div>
-				</ScrollArea>
-			</div>
-		);
-	}
-
-	// Default: Chat sessions
 	return (
 		<div className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
+			{/* Content area */}
+			{isSettings ? (
+				<SettingsPanel onShowKeyEntry={onShowKeyEntry} />
+			) : (
+				<SessionsPanel
+					sessions={sessions}
+					activeSessionId={activeSessionId}
+					onSessionSelect={onSessionSelect}
+					onNewSession={onNewSession}
+					onDeleteSession={onDeleteSession}
+				/>
+			)}
+
+			{/* Bottom tab bar */}
+			<div className="shrink-0 border-t border-sidebar-border flex items-center justify-around px-2 py-1.5">
+				<TabButton
+					icon={MessageSquare}
+					label="Chats"
+					active={!isSettings}
+					onClick={() => onChangeView("chats")}
+				/>
+				<TabButton
+					icon={Settings}
+					label="Settings"
+					active={isSettings}
+					onClick={() => onChangeView("settings")}
+				/>
+			</div>
+		</div>
+	);
+}
+
+// ─── Sessions Panel ─────────────────────────────────────────────────
+
+function SessionsPanel({
+	sessions,
+	activeSessionId,
+	onSessionSelect,
+	onNewSession,
+	onDeleteSession,
+}: {
+	sessions: Session[];
+	activeSessionId?: string;
+	onSessionSelect: (id: string) => void;
+	onNewSession: () => void;
+	onDeleteSession: (id: string) => void;
+}) {
+	return (
+		<>
 			<div className="flex items-center justify-between px-3 py-2">
 				<span className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
 					Sessions
@@ -171,7 +167,72 @@ export function Sidebar({
 					)}
 				</div>
 			</ScrollArea>
-		</div>
+		</>
+	);
+}
+
+// ─── Settings Panel ─────────────────────────────────────────────────
+
+function SettingsPanel({ onShowKeyEntry }: { onShowKeyEntry?: () => void }) {
+	return (
+		<>
+			<div className="flex items-center px-3 py-2">
+				<span className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
+					Settings
+				</span>
+			</div>
+			<ScrollArea className="flex-1 px-3 py-2">
+				<div className="space-y-4">
+					<div>
+						<span className="text-xs text-sidebar-foreground/50 mb-1.5 block">Authentication</span>
+						<Button
+							variant="secondary"
+							size="sm"
+							className="w-full text-xs"
+							onClick={onShowKeyEntry}
+						>
+							Change API Key
+						</Button>
+					</div>
+					<div>
+						<span className="text-xs text-sidebar-foreground/50 mb-1.5 block">About</span>
+						<div className="text-xs text-sidebar-foreground/70">
+							Zosma Cowork v0.3.0
+						</div>
+					</div>
+				</div>
+			</ScrollArea>
+		</>
+	);
+}
+
+// ─── Tab Button ─────────────────────────────────────────────────────
+
+function TabButton({
+	icon: Icon,
+	label,
+	active,
+	onClick,
+}: {
+	icon: React.ComponentType<{ className?: string }>;
+	label: string;
+	active: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={cn(
+				"flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors",
+				active
+					? "text-sidebar-accent-foreground bg-sidebar-accent"
+					: "text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent/30",
+			)}
+		>
+			<Icon className="w-4 h-4" />
+			<span className="text-[10px]">{label}</span>
+		</button>
 	);
 }
 

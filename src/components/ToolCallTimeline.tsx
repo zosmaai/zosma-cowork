@@ -188,9 +188,16 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 		return null;
 	}
 
-	// Edit/write with diff — always show (diffs are structured)
-	if ((toolCall.name === "edit" || toolCall.name === "write") && isDiff(toolCall.result)) {
-		return <SplitDiff diffText={toolCall.result} />;
+	// Edit/write with diff — pi-mono returns diff in details.diff
+	if (toolCall.name === "edit" || toolCall.name === "write") {
+		const diffText = typeof toolCall.details?.diff === "string" ? toolCall.details.diff : "";
+		if (diffText && isDiff(diffText)) {
+			return <SplitDiff diffText={diffText} />;
+		}
+		// Fallback: show result text if no diff
+		if (toolCall.result) {
+			return <TruncatedOutput text={toolCall.result} limit={2000} />;
+		}
 	}
 
 	// Read — NEVER show content inline. Just header.

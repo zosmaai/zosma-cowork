@@ -23,6 +23,7 @@ function App() {
 	const { models } = useProviders();
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
 	const [showKeyEntry, setShowKeyEntry] = useState(false);
+	const [sidebarView, setSidebarView] = useState("chats");
 
 	// Session management
 	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
@@ -240,12 +241,17 @@ function App() {
 			{/* Sidebar */}
 			{!needsOnboarding && !showKeyEntry && (
 				<Sidebar
-					view="chats"
+					view={sidebarView}
 					sessions={sidebarSessions}
 					activeSessionId={activeSessionFile || undefined}
-					onSessionSelect={handleSessionSelect}
+					onSessionSelect={(id) => {
+						setSidebarView("chats");
+						handleSessionSelect(id);
+					}}
 					onNewSession={handleNewSession}
 					onDeleteSession={handleDeleteSession}
+					onChangeView={setSidebarView}
+					onShowKeyEntry={() => setShowKeyEntry(true)}
 				/>
 			)}
 
@@ -258,31 +264,11 @@ function App() {
 							<h1 className="text-sm font-semibold text-foreground">Zosma Cowork</h1>
 							<span className="text-xs text-muted-foreground">OpenCode Go</span>
 						</div>
-						<div className="flex items-center gap-2">
-							{models.length > 0 && (
-								<select
-									className="text-xs bg-secondary text-foreground border border-border rounded px-2 py-1"
-									value={activeModelId || ""}
-									onChange={(e) => {
-										const model = models.find((m) => m.id === e.target.value);
-										if (model) handleModelSelect(model.provider, model.id);
-									}}
-								>
-									{models.map((m) => (
-										<option key={`${m.provider}/${m.id}`} value={m.id}>
-											{m.id}
-										</option>
-									))}
-								</select>
-							)}
-							<button
-								type="button"
-								className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
-								onClick={() => setShowKeyEntry(!showKeyEntry)}
-							>
-								Change Key
-							</button>
-						</div>
+						{activeModelId && (
+							<span className="text-xs text-muted-foreground/50 font-mono">
+								{models.find((m) => m.id === activeModelId)?.name || activeModelId}
+							</span>
+						)}
 					</header>
 				)}
 
