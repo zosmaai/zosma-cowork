@@ -376,7 +376,7 @@ async function main() {
 					send({
 						type: "error",
 						id: "unknown",
-						message: `Unknown command`,
+						message: "Unknown command",
 					});
 			}
 		} catch (err) {
