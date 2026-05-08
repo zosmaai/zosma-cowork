@@ -353,6 +353,91 @@ function deleteSessionFile(zosmaDir: string, sessionFile: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Session context restoration
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert our saved ChatMessage format to pi-mono AgentMessage format
+ * and restore them into the active session so the agent has context.
+ */
+function restoreSessionContext(session: Awaited<ReturnType<typeof createAgentSession>>["session"], messages: unknown[]): void {
+	const piMessages: unknown[] = [];
+
+	for (const raw of messages) {
+		const msg = raw as Record<string, unknown>;
+		const role = msg.role as string;
+		const content = msg.content as string | undefined;
+		const timestamp = msg.timestamp as number | undefined;
+		const thinking = msg.thinking as string | undefined;
+		const toolCalls = msg.toolCalls as Array<Record<string, unknown>> | undefined;
+		const model = msg.model as string | undefined;
+		const provider = msg.provider as string | undefined;
+
+		if (role === "user") {
+			piMessages.push({
+				role: "user",
+				content: [{ type: "text", text: content || "" }],
+				timestamp,
+			});
+		} else if (role === "assistant") {
+			const contentArr: Array<Record<string, unknown>> = [];
+
+			// Order: thinking → tool calls → final text
+			if (thinking) {
+				contentArr.push({ type: "thinking", thinking });
+			}
+
+			if (toolCalls && toolCalls.length > 0) {
+				for (const tc of toolCalls) {
+					contentArr.push({
+						type: "toolCall",
+						id: tc.id,
+						name: tc.name,
+						arguments: tc.args || {},
+					});
+				}
+			}
+
+			if (content) {
+				contentArr.push({ type: "text", text: content });
+			}
+
+			piMessages.push({
+				role: "assistant",
+				content: contentArr,
+				timestamp,
+				model,
+				provider,
+			});
+
+			// Append tool result messages for completed tool calls
+			if (toolCalls) {
+				for (const tc of toolCalls) {
+					const status = tc.status as string;
+					if (status === "completed" || status === "error") {
+						piMessages.push({
+							role: "toolResult",
+							toolCallId: tc.id,
+							toolName: tc.name as string,
+							content: [{ type: "text", text: (tc.result as string) || "" }],
+							isError: status === "error",
+							timestamp,
+						});
+					}
+				}
+			}
+		}
+		// System messages: skip — they're display-only status indicators
+	}
+
+	if (piMessages.length > 0) {
+		log("Restoring %d messages into session context", piMessages.length);
+		// biome-ignore lint/suspicious/noExplicitAny: pi-mono doesn't export AgentState type
+		(session as any).agent.state.messages = piMessages;
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Settings persistence
 // ---------------------------------------------------------------------------
 
@@ -673,6 +758,12 @@ async function main() {
 						const filePath = join(sessionsDir(zosmaDir), cmd.sessionFile);
 						const content = readFileSync(filePath, "utf-8");
 						const header = JSON.parse(content.trim().split("\n")[0]);
+
+						// Restore messages into pi-mono session so agent has context
+						if (session && Array.isArray(messages) && messages.length > 0) {
+							restoreSessionContext(session, messages);
+						}
+
 						send({
 							type: "result",
 							id: cmd.id,
