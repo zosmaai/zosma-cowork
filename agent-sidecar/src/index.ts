@@ -375,8 +375,8 @@ async function main() {
 				default:
 					send({
 						type: "error",
-						id: "id" in cmd ? String(cmd.id) : "unknown",
-						message: `Unknown command: ${cmd.type}`,
+						id: "unknown",
+						message: `Unknown command`,
 					});
 			}
 		} catch (err) {
@@ -384,7 +384,7 @@ async function main() {
 			log("Error: %s", message);
 			send({
 				type: "error",
-				id: "id" in cmd ? String(cmd.id) : "unknown",
+				id: "unknown",
 				message,
 			});
 			// If a prompt was in flight, mark it done
