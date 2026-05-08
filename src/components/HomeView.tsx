@@ -33,12 +33,10 @@ export function HomeView({ onComplete }: OnboardingProps) {
 					<div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-4">
 						<span className="text-2xl">✦</span>
 					</div>
-					<h1 className="text-2xl font-bold text-foreground mb-3">
-						Welcome to Zosma Cowork
-					</h1>
+					<h1 className="text-2xl font-bold text-foreground mb-3">Welcome to Zosma Cowork</h1>
 					<p className="text-sm text-muted-foreground leading-relaxed">
-						Zosma Cowork uses <strong>OpenCode Go</strong> to give you access
-						to top open-source coding models for a low monthly fee.
+						Zosma Cowork uses <strong>OpenCode Go</strong> to give you access to top open-source
+						coding models for a low monthly fee.
 					</p>
 				</div>
 
@@ -49,9 +47,7 @@ export function HomeView({ onComplete }: OnboardingProps) {
 								1
 							</span>
 							<div>
-								<p className="text-sm font-medium text-foreground">
-									Sign up for OpenCode Go
-								</p>
+								<p className="text-sm font-medium text-foreground">Sign up for OpenCode Go</p>
 								<p className="text-xs text-muted-foreground mt-1">
 									Subscribe for <strong>$5</strong> your first month, then{" "}
 									<strong>$10/month</strong>. Cancel anytime.
@@ -63,9 +59,7 @@ export function HomeView({ onComplete }: OnboardingProps) {
 								2
 							</span>
 							<div>
-								<p className="text-sm font-medium text-foreground">
-									Get your API key
-								</p>
+								<p className="text-sm font-medium text-foreground">Get your API key</p>
 								<p className="text-xs text-muted-foreground mt-1">
 									Copy the key from your OpenCode dashboard.
 								</p>
@@ -76,9 +70,7 @@ export function HomeView({ onComplete }: OnboardingProps) {
 								3
 							</span>
 							<div>
-								<p className="text-sm font-medium text-foreground">
-									Paste it here
-								</p>
+								<p className="text-sm font-medium text-foreground">Paste it here</p>
 								<p className="text-xs text-muted-foreground mt-1">
 									Enter your key on the next screen and start coding.
 								</p>
@@ -122,9 +114,7 @@ export function HomeView({ onComplete }: OnboardingProps) {
 				<div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-4">
 					<span className="text-2xl">🔑</span>
 				</div>
-				<h1 className="text-2xl font-bold text-foreground mb-2">
-					Enter your API Key
-				</h1>
+				<h1 className="text-2xl font-bold text-foreground mb-2">Enter your API Key</h1>
 				<p className="text-sm text-muted-foreground">
 					Paste your OpenCode Go API key below. It stays on your machine.
 				</p>
@@ -138,16 +128,13 @@ export function HomeView({ onComplete }: OnboardingProps) {
 						onChange={(e) => setApiKey(e.target.value)}
 						placeholder="sk-..."
 						className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-						autoFocus
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && apiKey.trim() && !saving) {
 								handleSave();
 							}
 						}}
 					/>
-					{error && (
-						<p className="text-xs text-red-500 mt-2">{error}</p>
-					)}
+					{error && <p className="text-xs text-red-500 mt-2">{error}</p>}
 				</div>
 
 				<button

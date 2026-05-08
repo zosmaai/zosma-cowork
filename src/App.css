@@ -79,8 +79,13 @@
 }
 
 /* ── Base layout ── */
-html, body { height: 100%; }
-#root { height: 100%; }
+html,
+body {
+	height: 100%;
+}
+#root {
+	height: 100%;
+}
 
 body {
 	background: hsl(var(--background));
@@ -93,10 +98,20 @@ body {
 }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.15); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.3); }
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: hsl(var(--muted-foreground) / 0.15);
+	border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: hsl(var(--muted-foreground) / 0.3);
+}
 
 /* ── Code blocks ── */
 .prose pre {
@@ -113,6 +128,12 @@ body {
 	font-size: 0.85em;
 	font-family: var(--font-mono);
 }
-.prose pre code { background: transparent; padding: 0; border-radius: 0; }
+.prose pre code {
+	background: transparent;
+	padding: 0;
+	border-radius: 0;
+}
 
-::selection { background: hsl(var(--primary) / 0.25); }
+::selection {
+	background: hsl(var(--primary) / 0.25);
+}

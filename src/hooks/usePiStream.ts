@@ -1,5 +1,11 @@
 import type { ChatMessage, ToolCallInfo } from "@/types";
-import type { PiEvent, PiMessageUpdateEvent } from "@/types/pi-events";
+import type {
+	PiErrorEvent,
+	PiEvent,
+	PiMessageUpdateEvent,
+	PiToolExecutionEndEvent,
+	PiToolExecutionUpdateEvent,
+} from "@/types/pi-events";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useReducer } from "react";
 
@@ -178,7 +184,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			const current = state.streamingMessage;
 			const hasContent =
 				current &&
-				(current.content || current.thinking ||
+				(current.content ||
+					current.thinking ||
 					(current.toolCalls && current.toolCalls.length > 0));
 			if (hasContent) {
 				return {
@@ -269,24 +276,22 @@ export function usePiStream() {
 					}
 
 					case "tool_execution_update": {
-						const te = event as any;
+						const te = event as PiToolExecutionUpdateEvent;
 						dispatch({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
-							result: (te.partialResult?.content || [])
-								.map((c: any) => c.text).join(""),
+							result: (te.partialResult?.content || []).map((c) => c.text).join(""),
 							status: "running",
 						});
 						break;
 					}
 
 					case "tool_execution_end": {
-						const te = event as any;
+						const te = event as PiToolExecutionEndEvent;
 						dispatch({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
-							result: (te.result?.content || [])
-								.map((c: any) => c.text).join(""),
+							result: (te.result?.content || []).map((c) => c.text).join(""),
 							status: te.isError ? "error" : "completed",
 							isError: te.isError,
 						});
@@ -299,7 +304,7 @@ export function usePiStream() {
 						break;
 
 					case "error": {
-						const errEvent = event as any;
+						const errEvent = event as PiErrorEvent;
 						dispatch({
 							type: "STREAM_ERROR",
 							error: errEvent.message || "Unknown error",

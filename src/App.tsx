@@ -37,9 +37,7 @@ function App() {
 			{!needsOnboarding && (
 				<header className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
 					<div className="flex items-center gap-2">
-						<h1 className="text-sm font-semibold text-foreground">
-							Zosma Cowork
-						</h1>
+						<h1 className="text-sm font-semibold text-foreground">Zosma Cowork</h1>
 						<span className="text-xs text-muted-foreground">OpenCode Go</span>
 					</div>
 					<div className="flex items-center gap-2">
@@ -60,6 +58,7 @@ function App() {
 							</select>
 						)}
 						<button
+							type="button"
 							className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
 							onClick={() => setShowKeyEntry(!showKeyEntry)}
 						>
@@ -88,8 +87,7 @@ function App() {
 						onSend={handleSend}
 						onAbort={() => abortStream()}
 						onRetry={() => {
-							const lastUser = [...streamState.messages]
-								.reverse().find((m) => m.role === "user");
+							const lastUser = [...streamState.messages].reverse().find((m) => m.role === "user");
 							if (lastUser?.content) handleSend(lastUser.content);
 						}}
 						models={models}

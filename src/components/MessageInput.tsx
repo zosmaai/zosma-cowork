@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ModelInfo } from "@/types";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ModelSelector } from "./ModelSelector";
 
 interface MessageInputProps {

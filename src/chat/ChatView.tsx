@@ -47,6 +47,13 @@ export function ChatView({
 	}, []);
 
 	useEffect(() => {
+		// Re-run when messages change or streaming content updates
+		const _ml = messages.length;
+		const _sc = streamingMessage?.content.length;
+		const _st = streamingMessage?.thinking?.length;
+		void _ml;
+		void _sc;
+		void _st;
 		if (!isUserScrolledUp.current) {
 			messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 		}
@@ -71,7 +78,10 @@ export function ChatView({
 						<h1 className="text-2xl font-semibold" style={{ color: "hsl(var(--foreground))" }}>
 							What are you working on?
 						</h1>
-						<p className="text-sm max-w-md text-center" style={{ color: "hsl(var(--muted-foreground))" }}>
+						<p
+							className="text-sm max-w-md text-center"
+							style={{ color: "hsl(var(--muted-foreground))" }}
+						>
 							Type a message to start chatting with Zosma Cowork.
 						</p>
 					</div>
@@ -89,13 +99,7 @@ export function ChatView({
 				)}
 			</div>
 
-			{error && (
-				<ErrorBanner
-					error={error}
-					onRetry={onRetry}
-					onSwitchModel={onRetry}
-				/>
-			)}
+			{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
 
 			<StatusBar
 				isRunning={isRunning}

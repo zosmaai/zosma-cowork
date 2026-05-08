@@ -1,21 +1,21 @@
 {
-  "name": "zosma-cowork-agent",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
-  },
-  "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-agent-core": "^0.74.0"
-  },
-  "devDependencies": {
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
-  }
+	"name": "zosma-cowork-agent",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch src/index.ts",
+		"build": "tsc",
+		"start": "node dist/index.js"
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "^0.74.0",
+		"@earendil-works/pi-ai": "^0.74.0",
+		"@earendil-works/pi-agent-core": "^0.74.0"
+	},
+	"devDependencies": {
+		"tsx": "^4.19.0",
+		"typescript": "^5.7.0",
+		"@types/node": "^22.0.0"
+	}
 }
