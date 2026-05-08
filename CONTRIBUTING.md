@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This document will help you get sta
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+
-- [Rust](https://rustup.rs/) 1.85+ (the `metaagents` engine pulls in `pi_agent_rust` which has MSRV 1.85)
+- [Rust](https://rustup.rs/) 1.85+ (for Tauri v2 desktop shell)
 
 On Linux you also need the system libs Tauri requires:
 
@@ -30,7 +30,7 @@ npm install
 # Frontend only (Vite dev server)
 npm run dev:frontend
 
-# Full Tauri app (frontend + Rust backend)
+# Full Tauri app (frontend + Rust relay + Node.js sidecar)
 npm run dev
 ```
 
@@ -38,16 +38,15 @@ npm run dev
 
 ```
 zosma-cowork/
-├── Cargo.toml          # Cargo workspace root (Phase A)
-├── metaagents/         # MetaAgents engine — Rust SDK wrapper (Phase A–B)
+├── agent-sidecar/      # Node.js agent sidecar using pi-mono SDK
 ├── src/                # React frontend (TypeScript + Tailwind)
-├── src-tauri/          # Tauri v2 backend; depends on metaagents
+├── src-tauri/          # Tauri v2 desktop shell (thin Rust relay)
 ├── .github/workflows/  # CI/CD (GitHub Actions)
 └── assets/             # Screenshots, icons, etc.
 ```
 
-See `docs/2026-04-30-metaagents-upgrade-plan.md` for the full architecture
-and phase-by-phase migration plan.
+The agent sidecar (`agent-sidecar/`) runs the pi-mono TypeScript SDK and
+communicates with the Tauri shell via stdin/stdout JSON lines.
 
 ## Workflow
 

@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Un collaborateur IA de bureau propulsé par le [SDK pi agent](https://github.com/Dicklesworthstone/pi_agent_rust) — streaming, processus de pensée, appels d'outils, sessions multi-tours et pilotage, le tout dans une belle application native.
+> Un collaborateur IA de bureau propulsé par le [SDK pi agent](https://github.com/earendil-works/pi-coding-agent) — streaming, processus de pensée, appels d'outils, sessions multi-tours et pilotage, le tout dans une belle application native.
 
 ![zosma-cowork-capture](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |--------|------------|
 | Frontend | React 19, Tailwind CSS v4, Radix UI |
 | Shell desktop | Tauri v2, Rust, Tokio |
-| Moteur agent | [metaagents](./metaagents/) — wrapper Rust du SDK `pi_agent_rust` |
-| SDK agent | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — runtime en processus avec extensions QuickJS |
+| Moteur agent | Node.js sidecar — pi-mono SDK |
+| SDK agent | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | Tests | Vitest, Testing Library, jsdom, `cargo test` |
 | Linter | Biome (frontend), Clippy (Rust) |
 
@@ -50,7 +50,7 @@ npm install
 # Lancer le serveur de développement frontend
 npm run dev:frontend
 
-# Exécuter l'application Tauri complète (frontend + backend Rust + moteur metaagents)
+# Exécuter l'application Tauri complète (frontend + backend Rust + Node.js agent sidecar)
 npm run dev
 ```
 

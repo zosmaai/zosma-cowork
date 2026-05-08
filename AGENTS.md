@@ -41,8 +41,8 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 | Layer | Framework | Command |
 |---|---|---|
 | Frontend | Vitest + React Testing Library + `@testing-library/jest-dom` | `npm test` |
-| Backend (Rust) | `cargo test` | `cargo test` |
-| E2E | Playwright (future) | `npm run test:e2e` |
+| Agent Sidecar | TypeScript `tsc --noEmit` | `cd agent-sidecar && npx tsc --noEmit` |
+| Tauri Relay | `cargo test` | `cargo test --workspace` |
 
 ---
 
@@ -78,27 +78,30 @@ src/
 - `hooks/` wrap imperative APIs (Tauri invoke, browser APIs) into declarative React.
 - `services/` encapsulate all Tauri command calls and external I/O.
 
-### Backend (Rust)
+### Backend (Tauri Relay — Rust)
 
 ```
 src-tauri/src/
 ├── main.rs                 # Entry point only
-├── lib.rs                  # Plugin setup, command registration
-├── commands/               # Tauri command handlers (thin layer)
-│   ├── pi.rs               # check_pi_status, install_pi, run_pi_command
-│   └── system.rs           # greet, etc.
-├── services/               # Business logic (testable, no Tauri types)
-│   └── pi_manager.rs       # Process lifecycle, installation checks
-├── models/                 # Data structures
-│   └── pi.rs               # PiStatus, etc.
-└── utils/                  # Pure helpers
-    └── process.rs          # Command execution wrappers
+└── lib.rs                  # Tauri commands, sidecar process management
 ```
 
 **Rules:**
-- Tauri commands are thin HTTP-like handlers. Business logic lives in `services/`.
-- `services/` must be testable without Tauri context. Use dependency injection.
-- `models/` are plain structs with `Serialize`/`Deserialize`.
+- The Tauri relay is intentionally thin — it spawns the Node.js sidecar and forwards JSON commands.
+- All agent logic lives in `agent-sidecar/`.
+- Tauri commands return `Result<T, String>` with user-friendly error messages.
+
+### Agent Sidecar (Node.js)
+
+```
+agent-sidecar/src/
+└── index.ts                # pi-mono SDK: auth, models, sessions, extensions
+```
+
+**Rules:**
+- Communicates with Tauri via stdin/stdout JSON lines.
+- Uses `@earendil-works/pi-coding-agent` (pi-mono SDK) for all agent capabilities.
+- Never write to stdout except JSON protocol messages (logging goes to stderr).
 
 ---
 
@@ -136,10 +139,10 @@ chore: bump @tauri-apps/api to 2.5.0
 
 ### PR Requirements
 
-- [ ] All tests pass (`npm test`, `cargo test`)
+- [ ] All tests pass (`npm test`, `cargo test --workspace`)
 - [ ] Lint passes (`npm run lint`, `cargo clippy`)
-- [ ] Type check passes (`tsc --noEmit`, `cargo check`)
-- [ ] Build passes (`npm run build`, `cargo build`)
+- [ ] Type check passes (`tsc --noEmit`)
+- [ ] Agent sidecar builds (`cd agent-sidecar && npm run build`)
 - [ ] Security scan passes (npm audit, cargo audit)
 - [ ] PR description explains what and why
 
@@ -159,13 +162,15 @@ Jobs:
    - `npm test`
    - `npm run build:frontend`
 
-2. **Backend Lint & Test**
-   - `cargo clippy -- -D warnings`
-   - `cargo fmt --check`
-   - `cargo test`
+2. **Agent Sidecar Lint & Build**
+   - `cd agent-sidecar && npm ci`
+   - `npx tsc --noEmit`
+   - `npm run build`
 
 3. **Tauri Build Check**
-   - `cargo tauri build` (smoke test — may skip on resource-limited runners)
+   - `cargo fmt --check`
+   - `cargo clippy -- -D warnings`
+   - `cargo build --workspace`
 
 ### Security Scan (`.github/workflows/security.yml`)
 
@@ -195,7 +200,7 @@ Jobs:
 | Gate | Tool | Fail Condition |
 |---|---|---|
 | Type Safety | TypeScript strict mode | Any `tsc --noEmit` error |
-| Lint | Biome (frontend), Clippy (backend) | Any warning with `--deny-warnings` |
+| Lint | Biome (frontend), Clippy (Tauri relay) | Any warning with `--deny-warnings` |
 | Format | Biome, rustfmt | Any diff from `fmt --check` |
 | Test Coverage | Vitest (c8), cargo tarpaulin | < 70% for new code |
 | Dependencies | npm audit, cargo audit | Moderate+ severity unpatched |
@@ -252,5 +257,5 @@ Before claiming a feature is complete:
 
 ---
 
-**Last Updated:** 2026-04-28  
+**Last Updated:** 2026-05-08  
 **Enforced By:** CI gates + code review

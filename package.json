@@ -1,7 +1,7 @@
 {
-	"name": "metaagents-cowork",
-	"version": "0.2.0",
-	"description": "Zosma Cowork — desktop AI coworker powered by the metaagents engine",
+	"name": "zosma-cowork",
+	"version": "0.3.0",
+	"description": "Zosma Cowork — desktop AI coworker powered by the pi-mono SDK",
 	"type": "module",
 	"scripts": {
 		"dev:frontend": "vite",

@@ -29,7 +29,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-audit
       # Workspace lockfile lives at the repo root after the workspace migration
-      # (see docs/2026-04-30-metaagents-upgrade-plan.md, Phase A).
+      # (Agent sidecar uses pi-mono SDK).
       - run: cargo audit
 
   codeql:

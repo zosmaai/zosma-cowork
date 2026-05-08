@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> [pi agent SDK](https://github.com/Dicklesworthstone/pi_agent_rust) द्वारा संचालित डेस्कटॉप AI सहकर्मी — स्ट्रीमिंग, सोच की प्रक्रिया, टूल कॉल, मल्टी-टर्न सेशन और स्टीयरिंग, सब कुछ एक सुंदर नेटिव ऐप में।
+> [pi agent SDK](https://github.com/earendil-works/pi-coding-agent) द्वारा संचालित डेस्कटॉप AI सहकर्मी — स्ट्रीमिंग, सोच की प्रक्रिया, टूल कॉल, मल्टी-टर्न सेशन और स्टीयरिंग, सब कुछ एक सुंदर नेटिव ऐप में।
 
 ![zosma-cowork-स्क्रीनशॉट](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |-----|-------|
 | फ्रंटएंड | React 19, Tailwind CSS v4, Radix UI |
 | डेस्कटॉप शेल | Tauri v2, Rust, Tokio |
-| एजेंट इंजन | [metaagents](./metaagents/) — `pi_agent_rust` SDK का Rust रैपर |
-| एजेंट SDK | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — QuickJS एक्सटेंशन के साथ इन-प्रोसेस रनटाइम |
+| एजेंट इंजन | Node.js sidecar — pi-mono SDK (`@earendil-works/pi-coding-agent`)
+| एजेंट SDK | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | टेस्टिंग | Vitest, Testing Library, jsdom, `cargo test` |
 | लिंटर | Biome (फ्रंटएंड), Clippy (Rust) |
 
@@ -40,9 +40,9 @@
 
 - [Node.js](https://nodejs.org/) 22+
 - [Rust](https://rustup.rs/) 1.85+
-- [pi coding agent](https://github.com/Dicklesworthstone/pi_agent_rust) — प्रारंभिक सेटअप के लिए एक बार इंस्टॉल करें: `npm install -g @mariozechner/pi-coding-agent`, फिर `pi` एक बार चलाएँ ताकि `~/.pi/agent/settings.json` और `~/.pi/agent/models.json` बन सकें
+- [pi coding agent](https://github.com/earendil-works/pi-coding-agent) — प्रारंभिक सेटअप के लिए एक बार इंस्टॉल करें: `npm install -g @mariozechner/pi-coding-agent`, फिर `pi` एक बार चलाएँ ताकि `~/.pi/agent/settings.json` और `~/.pi/agent/models.json` बन सकें
 
-> **नोट:** pi CLI केवल प्रारंभिक सेटअप के लिए आवश्यक है। ऐप रनटाइम पर `pi_agent_rust` SDK का सीधे उपयोग करता है — सामान्य संचालन के दौरान कोई सबप्रोसेस या CLI कॉल आवश्यक नहीं है।
+> **नोट:** pi CLI केवल प्रारंभिक सेटअप के लिए आवश्यक है। The app uses the pi-mono TypeScript SDK via a Node.js sidecar process.
 
 ### इंस्टॉल और रन
 
@@ -53,7 +53,7 @@ npm install
 # फ्रंटएंड डेवलपमेंट सर्वर चलाएँ
 npm run dev:frontend
 
-# पूरी Tauri ऐप चलाएँ (फ्रंटएंड + Rust बैकएंड + metaagents इंजन)
+# पूरी Tauri ऐप चलाएँ (फ्रंटएंड + Rust बैकएंड + Node.js agent sidecar)
 npm run dev
 ```
 

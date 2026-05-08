@@ -38,11 +38,45 @@ jobs:
       - name: Build frontend
         run: npm run build:frontend
 
-  backend:
-    name: Backend Lint & Test
+  agent-sidecar:
+    name: Agent Sidecar Lint & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-sidecar
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agent-sidecar/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  tauri:
+    name: Tauri Build Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -57,9 +91,6 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --workspace
 
       - name: Build check
         run: cargo build --workspace

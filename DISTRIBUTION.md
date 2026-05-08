@@ -4,7 +4,7 @@ This document covers all channels for distributing Zosma Cowork.
 
 ## Current Status
 
-GitHub Releases are fully automated via [`.github/workflows/release.yml`](.github/workflows/release.yml). Built on top of the [Rust pi coding agent](https://github.com/Dicklesworthstone/pi_agent_rust). Pushing a `v*.*.*` tag triggers builds for:
+GitHub Releases are fully automated via [`.github/workflows/release.yml`](.github/workflows/release.yml). Built on top of the [pi coding agent](https://github.com/earendil-works/pi-coding-agent). Pushing a `v*.*.*` tag triggers builds for:
 
 | Platform | Format | Status |
 |----------|--------|--------|

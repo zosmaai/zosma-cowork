@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Десктопный ИИ-коллега на базе [SDK pi agent](https://github.com/Dicklesworthstone/pi_agent_rust) — потоковая передача, процессы мышления, вызовы инструментов, мультитурновые сессии и управление, всё в красивом нативном приложении.
+> Десктопный ИИ-коллега на базе [SDK pi agent](https://github.com/earendil-works/pi-coding-agent) — потоковая передача, процессы мышления, вызовы инструментов, мультитурновые сессии и управление, всё в красивом нативном приложении.
 
 ![zosma-cowork-скриншот](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |------|-----------|
 | Frontend | React 19, Tailwind CSS v4, Radix UI |
 | Десктопная оболочка | Tauri v2, Rust, Tokio |
-| Движок агента | [metaagents](./metaagents/) — Rust-обёртка SDK `pi_agent_rust` |
-| SDK агента | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — внутрипроцессная среда с расширениями QuickJS |
+| Движок агента | Node.js sidecar — pi-mono SDK |
+| SDK агента | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | Тестирование | Vitest, Testing Library, jsdom, `cargo test` |
 | Линтер | Biome (frontend), Clippy (Rust) |
 
@@ -50,7 +50,7 @@ npm install
 # Запустить frontend сервер разработки
 npm run dev:frontend
 
-# Запустить полное Tauri приложение (frontend + Rust backend + движок metaagents)
+# Запустить полное Tauri приложение (frontend + Rust backend + Node.js agent sidecar)
 npm run dev
 ```
 

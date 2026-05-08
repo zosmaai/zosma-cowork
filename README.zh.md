@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> 由 [pi agent SDK](https://github.com/Dicklesworthstone/pi_agent_rust) 驱动的桌面 AI 协作者 — 流式传输、思维过程、工具调用、多轮会话和引导，全部集成在一个精美的原生应用中。
+> 由 [pi agent SDK](https://github.com/earendil-works/pi-coding-agent) 驱动的桌面 AI 协作者 — 流式传输、思维过程、工具调用、多轮会话和引导，全部集成在一个精美的原生应用中。
 
 ![zosma-cowork-截图](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |------|------|
 | 前端 | React 19, Tailwind CSS v4, Radix UI |
 | 桌面壳 | Tauri v2, Rust, Tokio |
-| 代理引擎 | [metaagents](./metaagents/) — `pi_agent_rust` SDK 的 Rust 封装 |
-| 代理 SDK | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — 内置 QuickJS 扩展的进程内运行时 |
+| 代理引擎 | Node.js sidecar — pi-mono SDK (`@earendil-works/pi-coding-agent`)
+| 代理 SDK | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | 测试 | Vitest, Testing Library, jsdom, `cargo test` |
 | 代码规范 | Biome（前端），Clippy（Rust） |
 
@@ -50,7 +50,7 @@ npm install
 # 运行前端开发服务器
 npm run dev:frontend
 
-# 运行完整 Tauri 应用（前端 + Rust 后端 + metaagents 引擎）
+# 运行完整 Tauri 应用（前端 + Rust 后端 + Node.js agent sidecar）
 npm run dev
 ```
 

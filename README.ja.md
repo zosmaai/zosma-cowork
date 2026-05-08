@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> [pi agent SDK](https://github.com/Dicklesworthstone/pi_agent_rust) を搭載したデスクトップ AI コワーカー — ストリーミング、思考プロセス、ツール呼び出し、マルチターンセッション、ステアリングをすべて美しいネイティブアプリに統合。
+> [pi agent SDK](https://github.com/earendil-works/pi-coding-agent) を搭載したデスクトップ AI コワーカー — ストリーミング、思考プロセス、ツール呼び出し、マルチターンセッション、ステアリングをすべて美しいネイティブアプリに統合。
 
 ![zosma-cowork-スクリーンショット](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |---------|------------|
 | フロントエンド | React 19, Tailwind CSS v4, Radix UI |
 | デスクトップシェル | Tauri v2, Rust, Tokio |
-| エージェントエンジン | [metaagents](./metaagents/) — `pi_agent_rust` SDK の Rust ラッパー |
-| エージェント SDK | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — QuickJS 拡張付きインプロセスランタイム |
+| エージェントエンジン | Node.js sidecar — pi-mono SDK (`@earendil-works/pi-coding-agent`)
+| エージェント SDK | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | テスト | Vitest, Testing Library, jsdom, `cargo test` |
 | リンター | Biome（フロントエンド）、Clippy（Rust） |
 
@@ -50,7 +50,7 @@ npm install
 # フロントエンド開発サーバーの実行
 npm run dev:frontend
 
-# フル Tauri アプリの実行（フロントエンド + Rust バックエンド + metaagents エンジン）
+# フル Tauri アプリの実行（フロントエンド + Rust バックエンド + Node.js agent sidecar）
 npm run dev
 ```
 

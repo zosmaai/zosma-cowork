@@ -6,7 +6,7 @@
 [![Release](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> [pi agent SDK](https://github.com/Dicklesworthstone/pi_agent_rust)로 구동되는 데스크톱 AI 동료 — 스트리밍, 사고 과정, 도구 호출, 멀티턴 세션 및 스티어링을 모두 아름다운 네이티브 앱에 통합했습니다.
+> [pi agent SDK](https://github.com/earendil-works/pi-coding-agent)로 구동되는 데스크톱 AI 동료 — 스트리밍, 사고 과정, 도구 호출, 멀티턴 세션 및 스티어링을 모두 아름다운 네이티브 앱에 통합했습니다.
 
 ![zosma-cowork-스크린샷](./assets/screenshot.png)
 
@@ -29,8 +29,8 @@
 |--------|------|
 | 프론트엔드 | React 19, Tailwind CSS v4, Radix UI |
 | 데스크톱 셸 | Tauri v2, Rust, Tokio |
-| 에이전트 엔진 | [metaagents](./metaagents/) — `pi_agent_rust` SDK의 Rust 래퍼 |
-| 에이전트 SDK | [`pi_agent_rust`](https://github.com/Dicklesworthstone/pi_agent_rust) — QuickJS 확장 포함 인프로세스 런타임 |
+| 에이전트 엔진 | Node.js sidecar — pi-mono SDK (`@earendil-works/pi-coding-agent`)
+| 에이전트 SDK | `@earendil-works/pi-coding-agent` — pi-mono TypeScript SDK
 | 테스트 | Vitest, Testing Library, jsdom, `cargo test` |
 | 린터 | Biome (프론트엔드), Clippy (Rust) |
 
@@ -50,7 +50,7 @@ npm install
 # 프론트엔드 개발 서버 실행
 npm run dev:frontend
 
-# 전체 Tauri 앱 실행 (프론트엔드 + Rust 백엔드 + metaagents 엔진)
+# 전체 Tauri 앱 실행 (프론트엔드 + Rust 백엔드 + Node.js agent sidecar)
 npm run dev
 ```
 
