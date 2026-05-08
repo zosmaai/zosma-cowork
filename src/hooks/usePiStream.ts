@@ -1,16 +1,7 @@
 import type { ChatMessage, ToolCallInfo } from "@/types";
-import type {
-	CoworkErrorPayload,
-	PiErrorEvent,
-	PiEvent,
-	PiMessageUpdateEvent,
-	PiToolCall,
-	PiToolExecutionEndEvent,
-	PiToolExecutionUpdateEvent,
-} from "@/types/pi-events";
+import type { PiEvent, PiMessageUpdateEvent } from "@/types/pi-events";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { useCallback, useReducer, useRef } from "react";
-import { trackMessageSent, trackStreamComplete, trackStreamError } from "@/lib/telemetry";
+import { useCallback, useReducer } from "react";
 
 export interface StreamState {
 	messages: ChatMessage[];
@@ -18,8 +9,6 @@ export interface StreamState {
 	isRunning: boolean;
 	status: "idle" | "thinking" | "tool_call" | "responding" | "error";
 	error: string | null;
-	/** Structured error payload from the backend (v0.3.0+). */
-	errorPayload: CoworkErrorPayload | null;
 }
 
 export type StreamAction =
@@ -37,9 +26,8 @@ export type StreamAction =
 	  }
 	| { type: "TURN_RESET" }
 	| { type: "STREAM_COMPLETE" }
-	| { type: "STREAM_ERROR"; error: string; errorPayload?: CoworkErrorPayload }
+	| { type: "STREAM_ERROR"; error: string }
 	| { type: "ABORT_STREAM" }
-	| { type: "LOAD_SESSION"; messages: ChatMessage[] }
 	| { type: "RESET" };
 
 export const INITIAL_STATE: StreamState = {
@@ -48,7 +36,6 @@ export const INITIAL_STATE: StreamState = {
 	isRunning: false,
 	status: "idle",
 	error: null,
-	errorPayload: null,
 };
 
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
@@ -77,17 +64,6 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				},
 			};
 
-		/**
-		 * TURN_RESET — accumulates into the SAME assistant message.
-		 *
-		 * When pi starts a new assistant message in its agentic loop (e.g. after
-		 * receiving a tool result), we DON'T create a new message. Instead we
-		 * keep the same streaming message, preserve all accumulated tool calls,
-		 * and reset content/thinking so the next turn's output overwrites.
-		 *
-		 * This gives a single "Pi" message per user prompt, with all tool calls
-		 * shown as a timeline within it — exactly like the pi TUI.
-		 */
 		case "TURN_RESET": {
 			const msg = state.streamingMessage;
 			if (!msg) return state;
@@ -95,12 +71,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				...state,
 				streamingMessage: {
 					...msg,
-					// Reset content: previous turn's text was typically empty
-					// (model called a tool) or just working text. The final
-					// turn will have the real response.
 					content: "",
 					thinking: "",
-					// Keep accumulated tool calls across all turns
 					toolCalls: msg.toolCalls || [],
 					isStreaming: true,
 				},
@@ -147,11 +119,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 		case "TOOL_CALL_START": {
 			const msg = state.streamingMessage;
 			if (!msg) return state;
-			// Deduplicate by tool call ID
 			const existing = msg.toolCalls || [];
-			if (existing.some((tc) => tc.id === action.toolCall.id)) {
-				return state;
-			}
+			if (existing.some((tc) => tc.id === action.toolCall.id)) return state;
 			return {
 				...state,
 				streamingMessage: {
@@ -203,16 +172,13 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				isRunning: false,
 				status: "idle",
 				error: action.error,
-				errorPayload: action.errorPayload ?? null,
 			};
 
 		case "ABORT_STREAM": {
-			// Save partial message if it has meaningful content
 			const current = state.streamingMessage;
 			const hasContent =
 				current &&
-				(current.content ||
-					current.thinking ||
+				(current.content || current.thinking ||
 					(current.toolCalls && current.toolCalls.length > 0));
 			if (hasContent) {
 				return {
@@ -226,12 +192,6 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			return { ...state, isRunning: false, status: "idle" };
 		}
 
-		case "LOAD_SESSION":
-			return {
-				...INITIAL_STATE,
-				messages: action.messages,
-			};
-
 		case "RESET":
 			return INITIAL_STATE;
 
@@ -240,63 +200,24 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 	}
 }
 
-/**
- * Safely extract tool call info from pi's actual event format.
- * Pi emits toolCall with {type:"toolCall", id, name, arguments}
- * NOT the Anthropic-style {id, type:"function", function:{name,arguments}} format.
- */
-function extractToolCallInfo(tc: PiToolCall): ToolCallInfo {
-	// Handle pi's actual format: {type:"toolCall", id, name, arguments}
-	if ("name" in tc && typeof tc.name === "string") {
-		return {
-			id: tc.id,
-			name: tc.name,
-			args: tc.arguments || {},
-			status: "running" as const,
-		};
-	}
-	// Handle legacy Anthropic-style format: {id, type:"function", function:{name,arguments}}
-	const legacy = tc as unknown as {
-		id: string;
-		function?: { name: string; arguments: string };
-	};
-	let args: Record<string, unknown> = {};
-	try {
-		if (legacy.function?.arguments) {
-			args = JSON.parse(legacy.function.arguments);
-		}
-	} catch {
-		args = { raw: legacy.function?.arguments || "" };
-	}
+function extractToolCallInfo(tc: {
+	id: string;
+	name?: string;
+	arguments?: Record<string, unknown>;
+}): ToolCallInfo {
 	return {
-		id: legacy.id || tc.id,
-		name: legacy.function?.name || "unknown",
-		args,
+		id: tc.id,
+		name: tc.name || "unknown",
+		args: tc.arguments || {},
 		status: "running" as const,
 	};
 }
 
 export function usePiStream() {
 	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
-	const streamingRef = useRef(state.streamingMessage);
-	streamingRef.current = state.streamingMessage;
 
-	const startStream = useCallback(async (prompt: string, sessionId?: string) => {
-		dispatch({ type: "START_STREAM", prompt });
-
-		// Track message sent
-		try {
-			void trackMessageSent();
-		} catch {
-			// Non-fatal
-		}
-
-		// Lazily create a session if one isn't provided.
-		let sid = sessionId;
-		if (!sid) {
-			sid = crypto.randomUUID();
-			await invoke("create_session", { sessionId: sid });
-		}
+	const startStream = useCallback(async (text: string) => {
+		dispatch({ type: "START_STREAM", prompt: text });
 
 		const channel = new Channel<PiEvent>();
 
@@ -307,7 +228,6 @@ export function usePiStream() {
 						const msgEvent = event as PiMessageUpdateEvent;
 						const ame = msgEvent.assistantMessageEvent;
 
-						// Extract model info from any message_update
 						if (msgEvent.message?.model || msgEvent.message?.provider) {
 							dispatch({
 								type: "MODEL_INFO",
@@ -317,32 +237,11 @@ export function usePiStream() {
 						}
 
 						switch (ame.type) {
-							case "thinking_start":
-								dispatch({ type: "THINKING_DELTA", delta: "" });
-								break;
 							case "thinking_delta":
 								dispatch({ type: "THINKING_DELTA", delta: ame.delta });
 								break;
-							case "thinking_end":
-								// Thinking block ended, no action needed
-								break;
-							case "text_start":
-								// Text block starting, status transitions via TEXT_DELTA
-								break;
 							case "text_delta":
 								dispatch({ type: "TEXT_DELTA", delta: ame.delta });
-								break;
-							case "text_end":
-								// Text block ended, no action needed
-								break;
-							case "toolcall_start": {
-								// Tool call arguments starting to stream
-								// We'll create the tool call entry once toolcall_end arrives
-								// with the full argument object
-								break;
-							}
-							case "toolcall_delta":
-								// Tool call arguments still streaming, ignore deltas
 								break;
 							case "toolcall_end": {
 								const tc = ame.toolCall;
@@ -352,170 +251,83 @@ export function usePiStream() {
 								});
 								break;
 							}
-							case "done":
-								// Assistant message done, but stream may continue with tool results
-								break;
-							case "error": {
-								const reason = ame.reason === "aborted" ? "Stream aborted" : "Stream error";
+							case "error":
 								dispatch({
 									type: "STREAM_ERROR",
-									error: reason,
-									errorPayload: {
-										message: reason,
-										code: ame.reason === "aborted" ? "aborted" : "error",
-										retryable: false,
-									},
+									error: ame.reason === "aborted" ? "Aborted" : "Error",
 								});
 								break;
-							}
 						}
 						break;
 					}
 
 					case "message_start": {
-						// When a new assistant message starts mid-stream (agentic turn),
-						// reset content/thinking but KEEP accumulated tool calls in the
-						// same message — this gives a single Pi message per user prompt
-						// with all tool calls shown as a timeline within it.
-						const msg = event.message;
-						if (msg?.role === "assistant" && streamingRef.current) {
+						if (event.message?.role === "assistant") {
 							dispatch({ type: "TURN_RESET" });
 						}
 						break;
 					}
 
-					case "message_end":
-						// Message ended, but more may follow
-						break;
-
-					case "tool_execution_start": {
-						// Tool is beginning execution
-						break;
-					}
-
 					case "tool_execution_update": {
-						const te = event as PiToolExecutionUpdateEvent;
+						const te = event as any;
 						dispatch({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
-							result: te.partialResult.content.map((c) => c.text).join(""),
+							result: (te.partialResult?.content || [])
+								.map((c: any) => c.text).join(""),
 							status: "running",
 						});
 						break;
 					}
 
 					case "tool_execution_end": {
-						const te = event as PiToolExecutionEndEvent;
+						const te = event as any;
 						dispatch({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
-							result: te.result.content.map((c) => c.text).join(""),
+							result: (te.result?.content || [])
+								.map((c: any) => c.text).join(""),
 							status: te.isError ? "error" : "completed",
 							isError: te.isError,
 						});
 						break;
 					}
 
-					case "turn_end":
-						// Turn ended, a new turn may start
-						break;
-
-					case "turn_start":
-						// New turn starting
-						break;
-
-					case "agent_end": {
-						dispatch({ type: "STREAM_COMPLETE" });
-						try {
-							const msg = streamingRef.current;
-							void trackStreamComplete({
-								model: msg?.model || null,
-								provider: msg?.provider || null,
-								toolCalls: msg?.toolCalls?.length || 0,
-							});
-						} catch {
-							// Non-fatal
-						}
-						break;
-					}
-
+					case "agent_end":
 					case "done":
 						dispatch({ type: "STREAM_COMPLETE" });
-						try {
-							const msg = streamingRef.current;
-							void trackStreamComplete({
-								model: msg?.model || null,
-								provider: msg?.provider || null,
-								toolCalls: msg?.toolCalls?.length || 0,
-							});
-						} catch {
-							// Non-fatal
-						}
 						break;
 
 					case "error": {
-						const errEvent = event as PiErrorEvent;
+						const errEvent = event as any;
 						dispatch({
 							type: "STREAM_ERROR",
 							error: errEvent.message || "Unknown error",
-							errorPayload: {
-								message: errEvent.message || "Unknown error",
-								details: errEvent.details,
-								provider: errEvent.provider,
-								model: errEvent.model,
-								code: errEvent.code,
-								retryable: errEvent.retryable ?? false,
-							},
 						});
-						try {
-							void trackStreamError({
-								code: errEvent.code || null,
-								provider: errEvent.provider || null,
-								model: errEvent.model || null,
-							});
-						} catch {
-							// Non-fatal
-						}
 						break;
 					}
-
-					// Ignore session, agent_start, queue_update, compaction, auto_retry, etc.
-					default:
-						break;
 				}
 			} catch (err) {
-				console.error("[cowork] Error processing stream event:", err, event);
-				// Don't crash the stream — continue processing events
+				console.error("[cowork] Error processing event:", err, event);
 			}
 		};
 
 		try {
-			await invoke("send_prompt", {
-				sessionId: sid,
-				prompt,
-				channel,
-			});
+			await invoke("send_prompt", { text, channel });
 		} catch (err) {
 			dispatch({
 				type: "STREAM_ERROR",
 				error: err instanceof Error ? err.message : String(err),
 			});
-			try {
-				void trackStreamError({ code: "invoke_error" });
-			} catch {
-				// Non-fatal
-			}
 		}
 	}, []);
 
-	const abortStream = useCallback(async (sessionId?: string) => {
+	const abortStream = useCallback(async () => {
 		dispatch({ type: "ABORT_STREAM" });
-		if (sessionId) {
-			try {
-				await invoke<boolean>("abort_session", { sessionId });
-			} catch {
-				// ignore
-			}
+		try {
+			await invoke("abort_prompt");
+		} catch {
+			// ignore
 		}
 	}, []);
 

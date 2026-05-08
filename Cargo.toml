@@ -1,35 +1,12 @@
-# Cargo workspace root
-#
-# This workspace contains the metaagents engine and the Tauri shell that
-# embeds it (Zosma Cowork product).
-# See docs/architecture/metaagents-engine.md for architecture details.
-
 [workspace]
-members = [
-    "metaagents",
-    "src-tauri",
-]
+members = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-# Bumped from 1.77.2 to 1.85 in Phase B because pi_agent_rust (the SDK
-# the metaagents engine wraps) declares rust-version = "1.85". Cargo's
-# MSRV-aware resolver requires our workspace MSRV to meet or exceed all
-# transitive deps.
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/zosmaai/zosma-cowork"
-
-[workspace.dependencies]
-# Shared deps used by both crates. Pin versions here so all members agree.
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "io-util", "process"] }
-log = "0.4"
-thiserror = "1"
-anyhow = "1"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 [profile.dev]
 # Faster incremental rebuilds during development.

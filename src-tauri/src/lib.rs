@@ -1,712 +1,190 @@
-//! Tauri backend for Zosma Cowork — thin shell over the metaagents engine.
+//! Zosma Cowork — Tauri backend
 //!
-//! This module wires the `metaagents` engine into Tauri commands. The engine
-//! replaces the old subprocess approach (`pi --mode json`) with in-process
-//! SDK sessions, giving us multi-turn conversations, steering, and <1ms
-//! prompt latency.
-//!
-//! All Zosma Cowork config lives under `~/.zosmaai/agent/`. The pi SDK is
-//! redirected to this directory via the `PI_CODING_AGENT_DIR` env var set
-//! at startup.
+//! A thin relay between the React frontend and the Node.js agent sidecar.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use serde_json::Value;
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
+use tokio::sync::{Mutex, oneshot};
 
-use metaagents::config::{self, ConfigSnapshot, ModelInfo, ProviderInfo};
-use metaagents::engine::MetaAgentsEngine;
-use metaagents::events::{categorize_engine_error, CoworkErrorPayload, CoworkEvent};
-use metaagents::ext_installer::{self as ext_installer, InstallResult};
-use metaagents::extensions::ExtensionInfo;
-use metaagents::sidecar::Sidecar;
-use serde::{Deserialize, Serialize};
-
-mod telemetry;
-
-// ---------------------------------------------------------------------------
-// Types shared with the frontend
-// ---------------------------------------------------------------------------
-
-/// Pi CLI installation status (for the welcome screen).
-#[derive(Serialize)]
-struct PiStatus {
-    installed: bool,
-    version: Option<String>,
-    path: Option<String>,
+#[derive(Default)]
+struct SidecarState {
+    child: Mutex<Option<Child>>,
+    stdin: Mutex<Option<tokio::process::ChildStdin>>,
+    ready: Arc<AtomicBool>,
 }
 
-/// Result of creating a new session.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateSessionResult {
-    session_id: String,
-}
+struct PendingPrompt { channel: Channel<Value> }
+struct PendingRequest { sender: oneshot::Sender<Result<Value, String>> }
 
-/// Payload for `set_active_model`.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SetModelPayload {
-    session_id: String,
-    provider: String,
-    model_id: String,
-}
-
-/// Full config snapshot for the frontend settings panel.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ConfigPayload {
-    default_provider: Option<String>,
-    default_model: Option<String>,
-    providers: Vec<ProviderInfo>,
-    models: Vec<ModelInfo>,
-}
-
-// ---------------------------------------------------------------------------
-// App state
-// ---------------------------------------------------------------------------
-
-/// Global state shared across all Tauri commands.
-///
-/// Holds the engine (session manager) and a cached config snapshot.
+#[derive(Default)]
 struct AppState {
-    engine: Arc<MetaAgentsEngine>,
-    config: Arc<std::sync::RwLock<ConfigSnapshot>>,
-    sidecar: Arc<tokio::sync::Mutex<Option<Sidecar>>>,
+    sidecar: SidecarState,
+    pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
+    pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
 }
 
-// ---------------------------------------------------------------------------
-// Commands — session lifecycle
-// ---------------------------------------------------------------------------
-
-/// Create a new agent session. Returns the session ID.
-#[tauri::command]
-async fn create_session(
-    session_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<CreateSessionResult, String> {
-    state
-        .engine
-        .create_default_session(session_id.clone())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(CreateSessionResult { session_id })
+fn find_sidecar_path() -> PathBuf {
+    let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("agent-sidecar");
+    let dev = d.join("src").join("index.ts");
+    if dev.exists() { dev } else { d.join("dist").join("index.js") }
 }
 
-/// Create a session with a specific provider/model.
-#[tauri::command]
-async fn create_session_with_model(
-    session_id: String,
-    provider: String,
-    model: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<CreateSessionResult, String> {
-    state
-        .engine
-        .create_session_with_model(session_id.clone(), provider, model)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(CreateSessionResult { session_id })
+fn find_node() -> String {
+    std::env::var("NODE").unwrap_or_else(|_| "node".to_string())
 }
 
-/// Send a prompt to an existing session. Events stream through the Tauri channel.
-///
-/// Errors from the SDK/engine are sent through the channel as `CoworkEvent::Error`
-/// with structured `CoworkErrorPayload` fields (provider, model, code, retryable).
-/// The invoke always returns `Ok(())` — the frontend should listen for error
-/// events on the channel rather than catching invoke exceptions.
-#[tauri::command]
-async fn send_prompt(
-    session_id: String,
-    prompt: String,
-    channel: tauri::ipc::Channel<CoworkEvent>,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let (mut event_rx, join_handle) = match state.engine.send_prompt(session_id, prompt).await {
-        Ok((rx, jh)) => (rx, jh),
-        Err(e) => {
-            // Engine couldn't start the prompt (e.g., session not found).
-            // Send a structured error through the channel.
-            let payload = categorize_engine_error(&e.to_string());
-            let _ = channel.send(CoworkEvent::Error(payload));
-            return Ok(());
-        }
-    };
-
-    // Forward engine events to the Tauri channel until the stream ends.
-    while let Some(event) = event_rx.recv().await {
-        if channel.send(event).is_err() {
-            // Channel closed — frontend probably navigated away.
-            break;
-        }
-    }
-
-    // Check the final result for errors.
-    // If the prompt failed, send a structured error through the channel
-    // rather than returning an invoke error. This lets the frontend handle
-    // errors consistently via the event stream.
-    match join_handle.await {
-        Ok(Ok(_)) => {}
-        Ok(Err(engine_err)) => {
-            let payload = categorize_engine_error(&engine_err.to_string());
-            let _ = channel.send(CoworkEvent::Error(payload));
-        }
-        Err(join_err) => {
-            let payload =
-                CoworkErrorPayload::new("Internal error: the prompt task panicked".to_string())
-                    .with_details(format!("{join_err}"))
-                    .with_code("internal");
-            let _ = channel.send(CoworkEvent::Error(payload));
-        }
-    }
-
-    // Always return Ok — errors are communicated via the event channel.
-    // Panics (task panics) will still propagate as a 500-style invoke error
-    // but we've already sent a friendly error event to the frontend first.
-    Ok(())
+async fn spawn_sidecar(zm: &str) -> Result<(Child, tokio::process::ChildStdout, tokio::process::ChildStdin), String> {
+    let p = find_sidecar_path();
+    let n = find_node();
+    log::info!("Sidecar: {} {}", n, p.display());
+    let mut c = Command::new(&n).arg(&p)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit())
+        .kill_on_drop(true).spawn().map_err(|e| format!("spawn: {e}"))?;
+    let o = c.stdout.take().ok_or("no stdout")?;
+    let mut i = c.stdin.take().ok_or("no stdin")?;
+    let msg = serde_json::json!({"type":"init","zosmaDir":zm});
+    let l = format!("{}\n", serde_json::to_string(&msg).unwrap());
+    (&mut i).write_all(l.as_bytes()).await.map_err(|e| format!("init: {e}"))?;
+    (&mut i).flush().await.map_err(|e| format!("flush: {e}"))?;
+    Ok((c, o, i))
 }
 
-/// Abort the current prompt in a session.
-#[tauri::command]
-async fn abort_session(
-    session_id: String,
-    _state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
-    // TODO: Wire up abort via the engine once the SDK exposes it.
-    // For now, return false to indicate no abort happened.
-    let _ = session_id;
-    Ok(false)
-}
+use std::process::Stdio;
 
-/// Delete a session from the engine.
-#[tauri::command]
-async fn delete_session(
-    session_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
-    Ok(state.engine.drop_session(&session_id).await)
-}
-
-/// List active session IDs from the engine.
-#[tauri::command]
-async fn list_engine_sessions(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
-    Ok(state.engine.list_sessions().await)
-}
-
-// ---------------------------------------------------------------------------
-// Commands — extensions & models
-// ---------------------------------------------------------------------------
-
-/// Discover installed extensions from pi's directories.
-#[tauri::command]
-async fn list_extensions() -> Result<Vec<ExtensionInfo>, String> {
-    Ok(metaagents::extensions::discover_extensions())
-}
-
-/// List all installed extensions with their metadata (filesystem-based).
-#[tauri::command]
-async fn list_extensions_v2() -> Result<Vec<InstallResult>, String> {
-    Ok(ext_installer::list_installed_extensions())
-}
-
-/// Payload for installing an extension.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InstallExtensionPayload {
-    /// Source string: npm:<pkg>, git URL, or local path
-    source: String,
-    /// Optional git branch/tag/ref (only used for git sources)
-    #[serde(default)]
-    ref_name: Option<String>,
-}
-
-/// Install an extension from npm, git, or local path.
-#[tauri::command]
-async fn install_extension(payload: InstallExtensionPayload) -> Result<InstallResult, String> {
-    let parsed = ext_installer::parse_source(&payload.source).map_err(|e| e.to_string())?;
-
-    match parsed.source {
-        ext_installer::ExtensionSource::Npm { package } => {
-            ext_installer::install_from_npm(&package).map_err(|e| e.to_string())
-        }
-        ext_installer::ExtensionSource::Git { url, .. } => {
-            ext_installer::install_from_git(&url, payload.ref_name.as_deref())
-                .map_err(|e| e.to_string())
-        }
-        ext_installer::ExtensionSource::Local { path } => {
-            ext_installer::install_from_local(&path).map_err(|e| e.to_string())
-        }
-    }
-}
-
-/// Uninstall an extension by ID.
-#[tauri::command]
-async fn uninstall_extension(id: String) -> Result<(), String> {
-    ext_installer::uninstall_extension(&id).map_err(|e| e.to_string())
-}
-
-/// List configured providers and models from pi's settings.
-#[tauri::command]
-async fn list_providers(state: tauri::State<'_, AppState>) -> Result<ConfigPayload, String> {
-    let config = state.config.read().unwrap_or_else(|e| e.into_inner());
-    let defaults = config::default_model(&config);
-    Ok(ConfigPayload {
-        default_provider: defaults.as_ref().map(|(p, _)| p.clone()),
-        default_model: defaults.as_ref().map(|(_, m)| m.clone()),
-        providers: config.providers.clone(),
-        models: config.models.clone(),
-    })
-}
-
-/// Change the active model for a session.
-#[tauri::command]
-async fn set_active_model(
-    payload: SetModelPayload,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    state
-        .engine
-        .set_session_model(payload.session_id, payload.provider, payload.model_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Reload config from disk (call after settings change).
-#[tauri::command]
-async fn reload_config(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let fresh = config::load_config();
-    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
-    *guard = fresh;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Commands — provider configuration (models.json editing)
-// ---------------------------------------------------------------------------
-
-/// Get the raw models.json provider configuration for the frontend editor.
-///
-/// Returns the full content of models.json as a JSON value, or an empty
-/// `{"providers":{}}` if the file doesn't exist.
-#[tauri::command]
-async fn get_models_config() -> Result<serde_json::Value, String> {
-    Ok(config::read_models_json_raw())
-}
-
-/// Save a complete provider configuration to models.json.
-///
-/// This is called after the frontend finishes editing providers. It
-/// replaces the entire file content, so the frontend must send the
-/// complete state.
-#[tauri::command]
-async fn save_models_config(
-    content: serde_json::Value,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    config::write_models_json_raw(&content)?;
-    // Reload config so the engine picks up changes
-    let fresh = config::load_config();
-    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
-    *guard = fresh;
-    Ok(())
-}
-
-/// Add or update a single provider in models.json.
-///
-/// `provider_id` is the key (e.g., "openai", "anthropic").
-/// `config` is a JSON object with the provider settings.
-#[tauri::command]
-async fn upsert_provider(
-    provider_id: String,
-    config_json: serde_json::Value,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    config::upsert_provider(&provider_id, &config_json)?;
-    // Reload config
-    let fresh = config::load_config();
-    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
-    *guard = fresh;
-    Ok(())
-}
-
-/// Delete a provider from models.json.
-#[tauri::command]
-async fn delete_provider_cmd(
-    provider_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    config::delete_provider(&provider_id)?;
-    // Reload config
-    let fresh = config::load_config();
-    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
-    *guard = fresh;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Commands — auth configuration (auth.json)
-// ---------------------------------------------------------------------------
-
-/// Save an API key for a built-in provider in auth.json.
-///
-/// Creates the file if it doesn't exist. Merges with existing entries.
-/// Uses the standard pi auth format.
-///
-/// Also reloads the cached ConfigSnapshot so the new provider/models
-/// appear immediately without requiring an app restart.
-#[tauri::command]
-async fn save_auth_key(
-    provider_id: String,
-    api_key: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    config::save_auth_api_key(&provider_id, &api_key)?;
-
-    // Reload cached config so the new provider/models appear immediately
-    let fresh = config::load_config();
-    let mut guard = state.config.write().unwrap_or_else(|e| e.into_inner());
-    *guard = fresh;
-
-    Ok(())
-}
-
-/// Check if any provider has a valid API key in auth.json.
-///
-/// Returns true if at least one provider entry has type "api_key" with a non-empty key.
-#[tauri::command]
-async fn has_any_credentials() -> bool {
-    config::has_any_api_keys()
-}
-
-/// List all providers that have API keys configured in auth.json.
-#[tauri::command]
-async fn list_auth_providers() -> Vec<String> {
-    config::list_auth_providers()
-}
-
-// ---------------------------------------------------------------------------
-// Commands — sidecar (Pi extension compatibility)
-// ---------------------------------------------------------------------------
-
-/// Resolve the sidecar entry point path (dev vs prod).
-fn resolve_sidecar_entry(app: &tauri::AppHandle) -> std::path::PathBuf {
-    use tauri::Manager;
-
-    // Try bundled resource first (production)
-    if let Ok(path) = app
-        .path()
-        .resolve("sidecar/sidecar.mjs", tauri::path::BaseDirectory::Resource)
-    {
-        return path;
-    }
-
-    // Fallback for dev mode: resolve relative to project root
-    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("src-sidecar")
-        .join("sidecar.mjs");
-    if dev_path.exists() {
-        return dev_path;
-    }
-
-    // Last resort: assume it's next to the binary
-    std::path::PathBuf::from("sidecar.mjs")
-}
-
-/// Start the Node.js sidecar process for Pi extension compatibility.
-#[tauri::command]
-async fn start_sidecar(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let entry = resolve_sidecar_entry(&app);
-    log::info!("Sidecar entry point: {}", entry.display());
-
-    let mut sidecar_guard = state.sidecar.lock().await;
-    if sidecar_guard.is_some() && sidecar_guard.as_ref().unwrap().is_running().await {
-        return Ok(serde_json::json!({"status": "already_running"}));
-    }
-
-    let sidecar = Sidecar::new(None, entry);
-    sidecar.start().await.map_err(|e| e.to_string())?;
-    *sidecar_guard = Some(sidecar);
-
-    Ok(serde_json::json!({"status": "started"}))
-}
-
-/// Invoke a tool in a loaded extension via the sidecar.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidecarInvokePayload {
-    extension_id: String,
-    tool_name: String,
-    #[serde(default)]
-    args: serde_json::Value,
-}
-
-#[tauri::command]
-async fn sidecar_invoke(
-    payload: SidecarInvokePayload,
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let sidecar_guard = state.sidecar.lock().await;
-    let sidecar = sidecar_guard
-        .as_ref()
-        .ok_or_else(|| "Sidecar not started. Call start_sidecar first.".to_string())?;
-
-    sidecar
-        .invoke_tool(&payload.extension_id, &payload.tool_name, payload.args)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// List all available tools in an extension via the sidecar.
-#[tauri::command]
-async fn sidecar_list_tools(
-    extension_id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let sidecar_guard = state.sidecar.lock().await;
-    let sidecar = sidecar_guard
-        .as_ref()
-        .ok_or_else(|| "Sidecar not started. Call start_sidecar first.".to_string())?;
-
-    sidecar
-        .list_tools(&extension_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Load an extension from a filesystem path via the sidecar.
-#[tauri::command]
-async fn sidecar_load_extension(
-    extension_path: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let sidecar_guard = state.sidecar.lock().await;
-    let sidecar = sidecar_guard
-        .as_ref()
-        .ok_or_else(|| "Sidecar not started. Call start_sidecar first.".to_string())?;
-
-    sidecar
-        .load_extension(&extension_path)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Check if the sidecar is running.
-#[tauri::command]
-async fn sidecar_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    let sidecar_guard = state.sidecar.lock().await;
-    match sidecar_guard.as_ref() {
-        Some(s) => Ok(s.is_running().await),
-        None => Ok(false),
-    }
-}
-
-/// List all loaded extensions and their tools from the sidecar.
-///
-/// Returns a map of extension ID -> { tools: ["tool1", "tool2"], path: "/path" }.
-/// Returns an empty object if the sidecar is not running.
-#[tauri::command]
-async fn list_extension_tools(
-    state: tauri::State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let sidecar_guard = state.sidecar.lock().await;
-    match sidecar_guard.as_ref() {
-        Some(sidecar) if sidecar.is_running().await => {
-            let result = sidecar
-                .list_all_extensions()
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(result)
-        }
-        _ => Ok(serde_json::json!({})),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Commands — pi CLI (welcome flow)
-// ---------------------------------------------------------------------------
-
-/// Check if the pi CLI is installed.
-#[tauri::command]
-async fn check_pi_status() -> Result<PiStatus, String> {
-    let which_output = std::process::Command::new("which")
-        .arg("pi")
-        .output()
-        .map_err(|e| format!("Failed to run which: {e}"))?;
-
-    let path = if which_output.status.success() {
-        Some(
-            String::from_utf8_lossy(&which_output.stdout)
-                .trim()
-                .to_string(),
-        )
-    } else {
-        None
-    };
-
-    let version = if path.is_some() {
-        match std::process::Command::new("pi").arg("--version").output() {
-            Ok(output) if output.status.success() => {
-                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+async fn read_stdout(
+    mut out: tokio::process::ChildStdout,
+    pp: Arc<Mutex<HashMap<String, PendingPrompt>>>,
+    pr: Arc<Mutex<HashMap<String, PendingRequest>>>,
+    rd: Arc<AtomicBool>,
+    app: AppHandle,
+) {
+    let mut lines = BufReader::new(&mut out).lines();
+    while let Ok(Some(l)) = lines.next_line().await {
+        if l.trim().is_empty() { continue; }
+        let m: Value = match serde_json::from_str(&l) { Ok(v) => v, _ => continue };
+        match m.get("type").and_then(|v| v.as_str()).unwrap_or("") {
+            "ready" => { rd.store(true, Ordering::Release); log::info!("Ready"); let _ = app.emit("ready", m); }
+            "event" => { if let Some(e) = m.get("event") { for (_, p) in pp.lock().await.iter() { let _ = p.channel.send(e.clone()); } } }
+            "done" => { if let Some(id) = m.get("id").and_then(|v| v.as_str()) { pp.lock().await.remove(id); } }
+            "result" => { if let Some(id) = m.get("id").and_then(|v| v.as_str()) { if let Some(p) = pr.lock().await.remove(id) { let _ = p.sender.send(Ok(m.get("data").cloned().unwrap_or(Value::Null))); } } }
+            "error" => {
+                let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let t = m.get("message").and_then(|v| v.as_str()).unwrap_or("err");
+                if let Some(p) = pr.lock().await.remove(id) { let _ = p.sender.send(Err(t.into())); }
+                else if let Some(p) = pp.lock().await.get(id) { let _ = p.channel.send(serde_json::json!({"type":"error","message":t})); }
             }
-            _ => None,
+            _ => {}
         }
-    } else {
-        None
-    };
-
-    Ok(PiStatus {
-        installed: path.is_some(),
-        version,
-        path,
-    })
-}
-
-/// Install the pi CLI globally via npm.
-#[tauri::command]
-async fn install_pi() -> Result<String, String> {
-    let output = std::process::Command::new("npm")
-        .args(["install", "-g", "@mariozechner/pi-coding-agent"])
-        .output()
-        .map_err(|e| format!("Failed to run npm install: {e}"))?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(format!(
-            "npm install failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ))
     }
+    log::warn!("Sidecar stdout closed");
 }
 
-/// Get engine banner for diagnostics / about dialog.
-#[tauri::command]
-fn engine_banner() -> String {
-    metaagents::banner()
+async fn scmd(state: &AppState, m: &Value) -> Result<(), String> {
+    let mut s = state.sidecar.stdin.lock().await;
+    let i = s.as_mut().ok_or("no sidecar")?;
+    let l = format!("{}\n", serde_json::to_string(m).map_err(|e| e.to_string())?);
+    i.write_all(l.as_bytes()).await.map_err(|e| e.to_string())?;
+    i.flush().await.map_err(|e| e.to_string())
 }
 
-// ---------------------------------------------------------------------------
-// App entry
-// ---------------------------------------------------------------------------
+async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<Value, String> {
+    let id = m.get("id").and_then(|v| v.as_str()).ok_or("no id")?.to_string();
+    let (tx, rx) = oneshot::channel();
+    state.pending_requests.lock().await.insert(id, PendingRequest { sender: tx });
+    scmd(state, m).await?;
+    tokio::time::timeout(t, rx).await.map_err(|_| "timeout".to_string())?.map_err(|_| "closed".to_string())?
+}
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command] async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
+    scmd_r(&s, &serde_json::json!({"type":"get_models","id":"gm"}), std::time::Duration::from_secs(30)).await
+        .map(|r| r.get("models").cloned().unwrap_or(Value::Array(vec![])))
+}
+
+#[tauri::command] async fn send_prompt(text: String, ch: Channel<Value>, s: State<'_, AppState>) -> Result<(), String> {
+    if !s.sidecar.ready.load(Ordering::Acquire) { return Err("not ready".into()); }
+    let id = format!("p-{}", uuid_v4());
+    s.pending_prompts.lock().await.insert(id.clone(), PendingPrompt { channel: ch });
+    scmd(&s, &serde_json::json!({"type":"prompt","id":id,"text":text})).await
+}
+
+#[tauri::command] async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
+    scmd(&s, &serde_json::json!({"type":"abort","id":"ab"})).await
+}
+
+#[tauri::command] async fn set_active_model(provider: String, model: String, s: State<'_, AppState>) -> Result<Value, String> {
+    scmd_r(&s, &serde_json::json!({"type":"set_model","id":"sm","provider":provider,"model":model}), std::time::Duration::from_secs(10)).await
+}
+
+#[tauri::command] async fn save_auth_key(provider: String, key: String, s: State<'_, AppState>) -> Result<Value, String> {
+    scmd_r(&s, &serde_json::json!({"type":"save_auth","id":"sa","provider":provider,"key":key}), std::time::Duration::from_secs(30)).await
+}
+
+#[tauri::command] async fn has_credentials(s: State<'_, AppState>) -> Result<bool, String> {
+    if !s.sidecar.ready.load(Ordering::Acquire) { return Ok(false); }
+    let r = scmd_r(&s, &serde_json::json!({"type":"get_models","id":"hc"}), std::time::Duration::from_secs(30)).await?;
+    Ok(r.get("models").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) > 0)
+}
+
+#[tauri::command] async fn reload_sidecar(s: State<'_, AppState>) -> Result<Value, String> {
+    scmd_r(&s, &serde_json::json!({"type":"reload","id":"rl"}), std::time::Duration::from_secs(30)).await
+}
+
+#[tauri::command] async fn open_url(url: String) -> Result<(), String> {
+    let st = std::process::Command::new("sh")
+        .arg("-c").arg(format!("xdg-open '{}' || open '{}' || start '' '{}'", &url, &url, &url))
+        .status().map_err(|e| format!("open: {e}"))?;
+    if !st.success() { return Err(format!("exit: {}", st)); }
+    Ok(())
+}
+
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        (n & 0xFFFF_FFFF) as u32, ((n >> 32) & 0xFFFF) as u16,
+        (((n >> 48) as u16) & 0x0FFF) | 0x4000, (((n >> 24) as u16) & 0x3FFF) | 0x8000,
+        (n as u64) & 0xFFFF_FFFF_FFFF)
+}
+
 pub fn run() {
-    // Redirect the pi SDK to use ~/.zosmaai/agent/ instead of ~/.pi/agent/
-    let agent_dir = config::ensure_agent_dir().expect("Failed to create agent directory");
-    std::env::set_var("PI_CODING_AGENT_DIR", agent_dir.to_string_lossy().as_ref());
-
-    let engine = Arc::new(MetaAgentsEngine::new());
-    let config = Arc::new(std::sync::RwLock::new(config::load_config()));
-
-    // Telemetry: event queue + background flush task
-    let (telemetry_queue, flush_rx) = telemetry::TelemetryQueue::new();
-    let telemetry_queue = std::sync::Arc::new(telemetry_queue);
-
-    // Sidecar — clone the Arc so we can pass it to the setup closure
-    let sidecar_state: Arc<tokio::sync::Mutex<Option<Sidecar>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
-    let sidecar_state_for_setup = sidecar_state.clone();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(telemetry_queue)
-        .manage(AppState {
-            engine,
-            config,
-            sidecar: sidecar_state,
-        })
-        .setup(move |app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-
-            // Spawn background telemetry flush task
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                telemetry::spawn_flush_task(app_handle, flush_rx).await;
+        .setup(|app| {
+            let h = app.handle().clone();
+            let st: AppState = AppState::default();
+            let zd = std::env::var("ZOSMA_DIR").unwrap_or_else(|_| {
+                format!("{}/.zosmaai", std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
             });
-
-            // Auto-start sidecar for Pi extension compatibility
-            let sidecar_app = app.handle().clone();
-            tokio::spawn(async move {
-                let entry = resolve_sidecar_entry(&sidecar_app);
-                log::info!("Auto-starting sidecar: {}", entry.display());
-
-                let sidecar = Sidecar::new(None, entry);
-                match sidecar.start().await {
-                    Ok(()) => {
-                        log::info!("Sidecar started successfully with auto-discovery");
-                        let mut guard = sidecar_state_for_setup.lock().await;
-                        *guard = Some(sidecar);
+            let pp = st.pending_prompts.clone();
+            let pr = st.pending_requests.clone();
+            let rd = Arc::clone(&st.sidecar.ready);
+            app.manage(st);
+            tauri::async_runtime::spawn(async move {
+                match spawn_sidecar(&zd).await {
+                    Ok((c, o, i)) => {
+                        let s: State<AppState> = h.state();
+                        *s.sidecar.child.lock().await = Some(c);
+                        *s.sidecar.stdin.lock().await = Some(i);
+                        read_stdout(o, pp, pr, rd, h.clone()).await;
                     }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to auto-start sidecar: {}. Extensions will not be available.",
-                            e
-                        );
-                    }
+                    Err(e) => log::error!("Sidecar: {e}"),
                 }
             });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Session lifecycle
-            create_session,
-            create_session_with_model,
-            send_prompt,
-            abort_session,
-            delete_session,
-            list_engine_sessions,
-            // Extensions & models
-            list_extensions,
-            list_extensions_v2,
-            install_extension,
-            uninstall_extension,
-            list_providers,
-            set_active_model,
-            reload_config,
-            // Provider configuration
-            get_models_config,
-            save_models_config,
-            upsert_provider,
-            delete_provider_cmd,
-            // Auth configuration (auth.json)
-            save_auth_key,
-            has_any_credentials,
-            list_auth_providers,
-            // Sidecar (Pi extension compatibility)
-            start_sidecar,
-            sidecar_invoke,
-            sidecar_list_tools,
-            sidecar_load_extension,
-            sidecar_status,
-            list_extension_tools,
-            // Pi CLI (welcome flow)
-            check_pi_status,
-            install_pi,
-            // Diagnostics
-            engine_banner,
-            // Telemetry
-            telemetry::telemetry_enabled,
-            telemetry::telemetry_device_id,
-            telemetry::telemetry_set_enabled,
-            telemetry::telemetry_reset_device_id,
-            telemetry::send_telemetry_event,
-            telemetry::flush_telemetry,
-            telemetry::report_crash,
-            telemetry::get_app_logs,
+            get_models, send_prompt, abort_prompt, set_active_model,
+            save_auth_key, has_credentials, reload_sidecar, open_url,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error running tauri");
 }

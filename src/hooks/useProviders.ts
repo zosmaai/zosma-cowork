@@ -1,21 +1,19 @@
-import type { ConfigPayload, ModelInfo } from "@/types";
+import type { ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Custom event fired when config should be reloaded (e.g., after saving an API key). */
-const CONFIG_RELOAD_EVENT = "config-reload";
-
 export function useProviders() {
-	const [config, setConfig] = useState<ConfigPayload | null>(null);
+	const [models, setModels] = useState<ModelInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	const refresh = useCallback(async () => {
 		setLoading(true);
 		try {
-			const payload = await invoke<ConfigPayload>("list_providers");
-			setConfig(payload);
+			const result: ModelInfo[] = await invoke("get_models");
+			setModels(Array.isArray(result) ? result : []);
 		} catch (err) {
-			console.error("Failed to load providers:", err);
+			console.error("Failed to load models:", err);
+			setModels([]);
 		} finally {
 			setLoading(false);
 		}
@@ -25,39 +23,38 @@ export function useProviders() {
 		refresh();
 	}, [refresh]);
 
-	// Listen for config reload events (e.g., after saving an API key)
 	const refreshRef = useRef(refresh);
 	refreshRef.current = refresh;
 
 	useEffect(() => {
-		function handleConfigReload() {
+		function handleReload() {
 			refreshRef.current();
 		}
-		window.addEventListener(CONFIG_RELOAD_EVENT, handleConfigReload);
-		return () => window.removeEventListener(CONFIG_RELOAD_EVENT, handleConfigReload);
+		window.addEventListener("config-reload", handleReload);
+		return () => window.removeEventListener("config-reload", handleReload);
 	}, []);
 
-	const setModel = useCallback(
-		async (sessionId: string, provider: string, modelId: string) => {
-			await invoke("set_active_model", {
-				payload: { sessionId, provider, modelId },
-			});
-			await refresh();
-		},
-		[refresh],
-	);
+	const setModel = useCallback(async (provider: string, modelId: string) => {
+		await invoke("set_active_model", { provider, model: modelId });
+	}, []);
 
 	const modelsForProvider = useCallback(
 		(providerId: string): ModelInfo[] => {
-			if (!config) return [];
-			return config.models.filter((m) => m.provider === providerId);
+			return models.filter((m) => m.provider === providerId);
 		},
-		[config],
+		[models],
 	);
 
+	const providers = Array.from(new Set(models.map((m) => m.provider))).map((id) => ({
+		id,
+		name: id.charAt(0).toUpperCase() + id.slice(1),
+		api: "",
+		modelCount: models.filter((m) => m.provider === id).length,
+	}));
+
 	return {
-		config,
-		providers: config?.providers ?? [],
+		models,
+		providers,
 		loading,
 		refresh,
 		setModel,

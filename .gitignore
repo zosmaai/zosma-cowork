@@ -6,6 +6,8 @@
 .DS_Store
 .env
 .env.local
+agent-sidecar/node_modules
+agent-sidecar/dist
 # Cargo build artifacts
 /target
 /src-tauri/target

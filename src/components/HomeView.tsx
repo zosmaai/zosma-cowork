@@ -1,166 +1,175 @@
-import { Code2, FileSearch, Lightbulb, ListTodo, Rocket, Sparkles } from "lucide-react";
+import { useCallback, useState } from "react";
 
-/** Capability card shown on the welcome screen. */
-interface CapabilityCard {
-	icon: "code" | "debug" | "research" | "automate";
-	title: string;
-	description: string;
+interface OnboardingProps {
+	onComplete: (apiKey: string) => Promise<void>;
 }
 
-const CAPABILITIES: CapabilityCard[] = [
-	{
-		icon: "code",
-		title: "Write & debug code",
-		description: "Generate, fix, and explain code across any language or framework.",
-	},
-	{
-		icon: "debug",
-		title: "Debug like a pro",
-		description: "Share errors, logs, or screenshots — get instant root-cause analysis.",
-	},
-	{
-		icon: "research",
-		title: "Research & learn",
-		description: "Ask complex questions and get thorough, cited answers.",
-	},
-	{
-		icon: "automate",
-		title: "Automate tasks",
-		description: "Run shell commands, manage files, and orchestrate workflows.",
-	},
-];
+type Step = "welcome" | "api-key";
 
-const SUGGESTIONS = [
-	"Explain this codebase to me",
-	"Help me debug a failing test",
-	"Write a REST API endpoint",
-	"Refactor this function for clarity",
-	"What's the best way to structure a React app?",
-	"Review my Terraform config",
-];
+export function HomeView({ onComplete }: OnboardingProps) {
+	const [step, setStep] = useState<Step>("welcome");
+	const [apiKey, setApiKey] = useState("");
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
-/** Maps capability icon names to Lucide components. */
-const ICON_MAP = {
-	code: Code2,
-	debug: Lightbulb,
-	research: FileSearch,
-	automate: ListTodo,
-};
+	const handleSave = useCallback(async () => {
+		const trimmed = apiKey.trim();
+		if (!trimmed) return;
+		setSaving(true);
+		setError(null);
+		try {
+			await onComplete(trimmed);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to save API key");
+		} finally {
+			setSaving(false);
+		}
+	}, [apiKey, onComplete]);
 
-interface HomeViewProps {
-	/** When true, shows the welcome screen (no credentials yet). */
-	showWelcome: boolean;
-	/** Callback to navigate to provider setup. */
-	onConnectProvider?: () => void;
-	/** Callback when a suggestion is clicked. */
-	onSuggestion?: (text: string) => void;
-}
-
-export function HomeView({ showWelcome, onConnectProvider, onSuggestion }: HomeViewProps) {
-	if (showWelcome) {
-		return <WelcomeScreen onConnectProvider={onConnectProvider} />;
-	}
-	return <HomeScreen onSuggestion={onSuggestion} />;
-}
-
-/* ------------------------------------------------------------------ */
-/* Welcome Screen (no credentials yet)                                */
-/* ------------------------------------------------------------------ */
-
-function WelcomeScreen({ onConnectProvider }: { onConnectProvider?: () => void }) {
-	return (
-		<div className="flex flex-col items-center justify-center h-full px-8 py-12 max-w-3xl mx-auto">
-			{/* Hero */}
-			<div className="text-center mb-10">
-				<div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
-					<Sparkles className="w-8 h-8" style={{ color: "hsl(var(--primary))" }} />
+	if (step === "welcome") {
+		return (
+			<div className="flex flex-col items-center justify-center h-full px-8 py-12 max-w-lg mx-auto">
+				<div className="text-center mb-8">
+					<div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-4">
+						<span className="text-2xl">✦</span>
+					</div>
+					<h1 className="text-2xl font-bold text-foreground mb-3">
+						Welcome to Zosma Cowork
+					</h1>
+					<p className="text-sm text-muted-foreground leading-relaxed">
+						Zosma Cowork uses <strong>OpenCode Go</strong> to give you access
+						to top open-source coding models for a low monthly fee.
+					</p>
 				</div>
-				<h1 className="text-4xl font-bold text-foreground mb-3">Welcome to Zosma Cowork</h1>
-				<p className="text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
-					Your AI-powered coding companion. Connect an AI provider to get started — no local models required.
-				</p>
-			</div>
 
-			{/* CTA */}
-			{onConnectProvider && (
-				<div className="mb-10">
+				<div className="w-full space-y-4 mb-8">
+					<div className="bg-muted/50 rounded-xl p-4 space-y-3">
+						<div className="flex items-start gap-3">
+							<span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-500 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+								1
+							</span>
+							<div>
+								<p className="text-sm font-medium text-foreground">
+									Sign up for OpenCode Go
+								</p>
+								<p className="text-xs text-muted-foreground mt-1">
+									Subscribe for <strong>$5</strong> your first month, then{" "}
+									<strong>$10/month</strong>. Cancel anytime.
+								</p>
+							</div>
+						</div>
+						<div className="flex items-start gap-3">
+							<span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-500 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+								2
+							</span>
+							<div>
+								<p className="text-sm font-medium text-foreground">
+									Get your API key
+								</p>
+								<p className="text-xs text-muted-foreground mt-1">
+									Copy the key from your OpenCode dashboard.
+								</p>
+							</div>
+						</div>
+						<div className="flex items-start gap-3">
+							<span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-500 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+								3
+							</span>
+							<div>
+								<p className="text-sm font-medium text-foreground">
+									Paste it here
+								</p>
+								<p className="text-xs text-muted-foreground mt-1">
+									Enter your key on the next screen and start coding.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div className="w-full space-y-3">
 					<button
 						type="button"
-						onClick={onConnectProvider}
-						className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 hover:scale-[1.02]"
+						onClick={async () => {
+							const { invoke } = await import("@tauri-apps/api/core");
+							invoke("open_url", { url: "https://opencode.ai/auth" }).catch(() => {
+								window.open("https://opencode.ai/auth", "_blank");
+							});
+						}}
+						className="block w-full text-center px-4 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 cursor-pointer"
 						style={{
 							background: "hsl(var(--primary))",
 							color: "hsl(var(--primary-foreground))",
 						}}
 					>
-						<Rocket className="w-4 h-4" />
-						Connect AI Provider
+						Sign up for OpenCode Go →
+					</button>
+					<button
+						type="button"
+						onClick={() => setStep("api-key")}
+						className="block w-full text-center px-4 py-2.5 rounded-lg text-sm font-medium text-foreground hover:bg-muted/50 transition-all cursor-pointer"
+					>
+						I already have a key — Next
 					</button>
 				</div>
-			)}
-
-			{/* Capabilities */}
-			<div className="grid grid-cols-2 gap-4 w-full max-w-xl">
-				{CAPABILITIES.map((cap) => {
-					const Icon = ICON_MAP[cap.icon];
-					return (
-						<div
-							key={cap.title}
-							className="p-4 rounded-xl border bg-card"
-							style={{ borderColor: "hsl(var(--border))" }}
-						>
-							<Icon className="w-5 h-5 mb-2" style={{ color: "hsl(var(--primary))" }} />
-							<h3 className="text-sm font-semibold text-foreground mb-1">{cap.title}</h3>
-							<p className="text-xs text-muted-foreground leading-relaxed">{cap.description}</p>
-						</div>
-					);
-				})}
 			</div>
+		);
+	}
 
-			{/* Learn more */}
-			<p className="mt-8 text-xs text-muted-foreground">
-				Learn more about{" "}
-				<a
-					href="https://www.zosma.ai/zosma-cowork/ai-providers"
-					target="_blank"
-					rel="noopener noreferrer"
-					className="text-primary hover:underline"
-				>
-					AI providers →
-				</a>
-			</p>
-		</div>
-	);
-}
-
-/* ------------------------------------------------------------------ */
-/* Home Screen (credentials configured, no active chat)               */
-/* ------------------------------------------------------------------ */
-
-function HomeScreen({ onSuggestion }: { onSuggestion?: (text: string) => void }) {
 	return (
-		<div className="flex flex-col items-center justify-center h-full px-8 py-12 max-w-2xl mx-auto">
-			{/* Header */}
+		<div className="flex flex-col items-center justify-center h-full px-8 py-12 max-w-lg mx-auto">
 			<div className="text-center mb-8">
-				<h1 className="text-3xl font-bold text-foreground mb-2">What are you working on?</h1>
+				<div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-4">
+					<span className="text-2xl">🔑</span>
+				</div>
+				<h1 className="text-2xl font-bold text-foreground mb-2">
+					Enter your API Key
+				</h1>
 				<p className="text-sm text-muted-foreground">
-					Start a conversation or pick a suggestion below.
+					Paste your OpenCode Go API key below. It stays on your machine.
 				</p>
 			</div>
 
-			{/* Suggestion chips */}
-			<div className="flex flex-wrap justify-center gap-2 max-w-lg">
-				{SUGGESTIONS.map((text) => (
-					<button
-						key={text}
-						type="button"
-						onClick={() => onSuggestion?.(text)}
-						className="px-4 py-2 rounded-full text-xs font-medium border transition-all hover:border-primary/50 hover:bg-primary/5"
-						style={{ borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))" }}
-					>
-						{text}
-					</button>
-				))}
+			<div className="w-full space-y-4">
+				<div>
+					<input
+						type="password"
+						value={apiKey}
+						onChange={(e) => setApiKey(e.target.value)}
+						placeholder="sk-..."
+						className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+						autoFocus
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && apiKey.trim() && !saving) {
+								handleSave();
+							}
+						}}
+					/>
+					{error && (
+						<p className="text-xs text-red-500 mt-2">{error}</p>
+					)}
+				</div>
+
+				<button
+					type="button"
+					disabled={!apiKey.trim() || saving}
+					onClick={handleSave}
+					className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
+					style={{
+						background: "hsl(var(--primary))",
+						color: "hsl(var(--primary-foreground))",
+					}}
+				>
+					{saving ? "Saving..." : "Start Chatting"}
+				</button>
+
+				<button
+					type="button"
+					onClick={() => setStep("welcome")}
+					className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+				>
+					← Back
+				</button>
 			</div>
 		</div>
 	);
