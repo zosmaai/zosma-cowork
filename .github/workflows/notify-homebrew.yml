@@ -1,0 +1,26 @@
+name: Notify Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Dispatch release to homebrew-tap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "Dispatching version ${VERSION} to zosmaai/homebrew-tap"
+
+          gh api /repos/zosmaai/homebrew-tap/dispatches \
+            --method POST \
+            --field event_type="release-published" \
+            --field client_payload="{\"version\": \"${VERSION}\"}"
