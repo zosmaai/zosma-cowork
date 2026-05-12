@@ -97,10 +97,53 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
+      # ── Code Signing & Notarization ──────────────────────────────
+      #
+      # macOS code signing & notarization (Apple Developer Program required)
+      # Steps below are no-ops when secrets are not configured.
+      #
+      # To enable:
+      #   1. Set APPLE_SIGNING_IDENTITY (e.g. "Developer ID Application: Your Name (TEAMID)")
+      #   2. Set APPLE_TEAM_ID (10-char team ID from developer.apple.com)
+      #   3. Set APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD for notarization
+      #   GitHub Secrets: APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD
+
+      - name: Configure macOS signing identity
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> $GITHUB_ENV
+            echo "✅ macOS signing configured"
+          else
+            echo "⚠️  APPLE_SIGNING_IDENTITY not set — skipping code signing"
+          fi
+
+      - name: Configure Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WINDOWS_SIGNING_CERT }}" -ne "") {
+            $certPath = "$env:RUNNER_TEMP/cert.pfx"
+            [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}") | Set-Content -Path $certPath -AsByteStream
+            echo "WINDOWS_SIGNING_CERT_PATH=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "WINDOWS_SIGNING_PASSWORD=${{ secrets.WINDOWS_SIGNING_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "✅ Windows signing configured"
+          } else {
+            echo "⚠️  WINDOWS_SIGNING_CERT not set — skipping code signing"
+          }
+
+      - name: Build & sign Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ env.APPLE_ID }}
+          APPLE_PASSWORD: ${{ env.APPLE_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Zosma Cowork ${{ github.ref_name }}"
