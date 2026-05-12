@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Zosma Cowork",
+  "productName": "zosma-cowork",
   "version": "0.3.0",
   "identifier": "ai.zosma.cowork",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Zosma Cowork",
+        "title": "zosma-cowork",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

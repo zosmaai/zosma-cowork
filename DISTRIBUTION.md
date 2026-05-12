@@ -1,6 +1,6 @@
 # Distribution Guide
 
-This document covers all channels for distributing Zosma Cowork.
+This document covers all channels for distributing zosma-cowork.
 
 ## Current Status
 
@@ -60,7 +60,7 @@ Download the latest `.msi` or `.exe` from the [Releases page](https://github.com
 ```bash
 # Download the .deb from the latest release
 curl -sL -o zosma-cowork.deb \
-  "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/Zosma.Cowork_0.7.0_amd64.deb"
+  "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/zosma-cowork_0.7.0_amd64.deb"
 sudo dpkg -i zosma-cowork.deb
 ```
 
@@ -69,7 +69,7 @@ sudo dpkg -i zosma-cowork.deb
 ```bash
 # Download the AppImage
 curl -sL -o zosma-cowork.AppImage \
-  "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/Zosma.Cowork_0.7.0_amd64.AppImage"
+  "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/zosma-cowork_0.7.0_amd64.AppImage"
 chmod +x zosma-cowork.AppImage
 ./zosma-cowork.AppImage
 ```
@@ -123,12 +123,12 @@ cask "zosma-cowork" do
   version "0.7.0"
   sha256 arm:   "...", intel: "..."
 
-  url "https://github.com/zosmaai/zosma-cowork/releases/download/v#{version}/Zosma.Cowork_#{version}_aarch64.dmg"
-  name "Zosma Cowork"
+  url "https://github.com/zosmaai/zosma-cowork/releases/download/v#{version}/zosma-cowork_#{version}_aarch64.dmg"
+  name "zosma-cowork"
   desc "Desktop AI coworker built on the pi coding agent"
   homepage "https://github.com/zosmaai/zosma-cowork"
 
-  app "Zosma Cowork.app"
+  app "zosma-cowork.app"
 end
 ```
 
@@ -145,7 +145,7 @@ PackageVersion: "0.7.0"
 InstallerType: msi
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/Zosma.Cowork_0.7.0_x64_en-US.msi
+    InstallerUrl: https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/zosma-cowork_0.7.0_x64_en-US.msi
     InstallerSha256: 28e84942d16d5a44a930002e9afd824d2010c4abf7176dce31db89b97f5c2fb8
     ProductCode: "{9229EE7D-C4AE-4F0D-A6BF-E39EA1E2215B}"
 ```
@@ -183,8 +183,8 @@ Add to a custom bucket or [Scoop Extras](https://github.com/ScoopInstaller/Extra
 ```json
 {
   "version": "0.7.0",
-  "url": "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/Zosma.Cowork_0.7.0_x64-setup.exe",
-  "bin": "Zosma Cowork.exe"
+  "url": "https://github.com/zosmaai/zosma-cowork/releases/download/v0.7.0/zosma-cowork_0.7.0_x64-setup.exe",
+  "bin": "zosma-cowork.exe"
 }
 ```
 
