@@ -51,4 +51,4 @@ for (const f of ["index.cjs", "index.d.ts", "index.js", "index.js.map", "index.d
 console.log("[prebuild] Copying bundle...");
 cpSync(bundlePath, join(targetDir, "index.cjs"));
 
-console.log("[prebuild] Done (%.1f MB)", code.length / 1024 / 1024);
+console.log(`[prebuild] Done (${(code.length / 1024 / 1024).toFixed(1)} MB)`);

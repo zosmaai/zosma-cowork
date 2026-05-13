@@ -263,6 +263,19 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			if (!msg) {
 				return { ...state, isRunning: false, status: "idle", streamingMessage: null };
 			}
+			// Skip empty streaming messages — MESSAGE_END creates a fresh
+			// blank streaming message after finalizing the real content,
+			// and STREAM_COMPLETE can fire after that, adding a ghost.
+			const isEmpty =
+				!msg.content && !msg.thinking && (!msg.toolCalls || msg.toolCalls.length === 0);
+			if (isEmpty) {
+				return {
+					...state,
+					isRunning: false,
+					status: "idle",
+					streamingMessage: null,
+				};
+			}
 			return {
 				...state,
 				isRunning: false,

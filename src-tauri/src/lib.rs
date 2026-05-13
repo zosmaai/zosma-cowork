@@ -34,28 +34,66 @@ struct AppState {
     pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
 }
 
+fn is_production_bundle() -> bool {
+    // On macOS, the .app bundle has the executable at
+    // <bundle>/Contents/MacOS/<executable>. Detect this by checking if the
+    // current exe path contains ".app/Contents/MacOS/".
+    if let Ok(exe) = std::env::current_exe() {
+        let path = exe.to_string_lossy();
+        if path.contains(".app/Contents/MacOS/") || path.contains(".app/Contents/Resources/") {
+            return true;
+        }
+    }
+    false
+}
+
 fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
-    // In dev mode, use the source directory
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    if is_production_bundle() {
+        // In production, the bundled sidecar is a single self-contained CJS file
+        // (all dependencies inlined by esbuild, no node_modules/ needed).
+        // It lives at <bundle>/Contents/Resources/agent-sidecar/index.cjs.
+        return app
+            .path()
+            .resource_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("agent-sidecar")
+            .join("index.cjs");
+    }
+    // In dev mode, use the source directory.
+    // When running via `tauri dev` or the binary directly from the build
+    // directory, use the TypeScript source so tsx picks up live changes.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .join("agent-sidecar")
         .join("src")
-        .join("index.ts");
-    if dev.exists() {
-        return dev;
-    }
-    // In production, the bundled sidecar is a single self-contained CJS file
-    // (all dependencies inlined by esbuild, no node_modules/ needed)
-    app.path()
-        .resource_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("agent-sidecar")
-        .join("index.cjs")
+        .join("index.ts")
 }
 
 fn find_node() -> String {
-    std::env::var("NODE").unwrap_or_else(|_| "node".to_string())
+    // Allow override via NODE env var (useful for testing and CI)
+    if let Ok(path) = std::env::var("NODE") {
+        if !path.is_empty() {
+            return path;
+        }
+    }
+    // Check common Node.js installation paths.
+    // macOS GUI apps launched via Finder inherit a minimal PATH
+    // (/usr/bin:/bin:/usr/sbin:/sbin) which excludes Homebrew paths,
+    // so we need to check these explicitly.
+    let candidates = [
+        "/opt/homebrew/bin/node",  // Homebrew Apple Silicon
+        "/opt/homebrew/opt/node/bin/node", // Homebrew Node formula (no @version)
+        "/usr/local/bin/node",     // Homebrew Intel / general
+        "/usr/bin/node",           // macOS bundled or pkgsrc
+    ];
+    for path in &candidates {
+        if std::path::Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+    // Last resort — rely on PATH (works in dev terminal, CI, Linux, Windows)
+    "node".to_string()
 }
 
 async fn spawn_sidecar(
