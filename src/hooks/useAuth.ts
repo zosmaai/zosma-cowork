@@ -36,6 +36,19 @@ export function useAuth() {
 		};
 	}, [refresh]);
 
+	// Re-check on any provider auth change. ProviderAuthSection dispatches
+	// `config-reload` after a successful OAuth sign-in (and on sign-out),
+	// and `saveApiKey` dispatches it too. Listening here means a subscription
+	// sign-in flips `hasCredentials` immediately without waiting for the
+	// post-OAuth `initAgent` reload to emit a fresh `ready` event.
+	useEffect(() => {
+		function handle() {
+			refresh();
+		}
+		window.addEventListener("config-reload", handle);
+		return () => window.removeEventListener("config-reload", handle);
+	}, [refresh]);
+
 	const saveApiKey = useCallback(
 		async (apiKey: string) => {
 			await invoke("save_auth_key", { provider: "opencode-go", key: apiKey });

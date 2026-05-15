@@ -56,10 +56,20 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 		try {
 			const data = await invoke<AuthStatus>("get_auth_status");
 			setAuthStatus(data);
+			return;
 		} catch (err) {
 			// Sidecar may not be ready yet — that's fine, leave status null.
 			if (typeof err === "string" && err.toLowerCase().includes("not ready")) {
 				return;
+			}
+			// Transient failure (e.g. happens immediately after oauth_completed
+			// before the in-memory AuthStorage cache has propagated). Retry once.
+			await new Promise((r) => setTimeout(r, 300));
+			try {
+				const data = await invoke<AuthStatus>("get_auth_status");
+				setAuthStatus(data);
+			} catch (retryErr) {
+				console.warn("[provider-auth] get_auth_status failed:", retryErr);
 			}
 		}
 	}, []);
@@ -110,6 +120,22 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 					setPhase("done");
 					setStatusMessage(null);
 					setError(null);
+					// Optimistic local update so the button flips to "Sign Out"
+					// immediately, independent of any race or silent failure in
+					// the subsequent get_auth_status round-trip.
+					setAuthStatus((prev) => {
+						const supported = prev?.supported ?? [provider];
+						const others = (prev?.providers ?? []).filter(
+							(p) => p.id !== provider,
+						);
+						return {
+							supported,
+							providers: [
+								...others,
+								{ id: provider, type: "oauth" as const },
+							],
+						};
+					});
 					refreshStatus();
 					onChange?.();
 					window.dispatchEvent(new CustomEvent("config-reload"));

@@ -12,6 +12,20 @@ import { ProviderAuthSection } from "./ProviderAuthSection";
 
 interface OnboardingProps {
 	onComplete: (apiKey: string) => Promise<void>;
+	/**
+	 * Optional escape hatch: dismiss the connect flow without configuring a
+	 * provider and let the parent jump the user to Settings (where they can
+	 * pick any provider and finish setup later).
+	 */
+	onSkipToSettings?: () => void;
+	/**
+	 * Dismiss the Connect modal entirely. Renders a Skip / Continue
+	 * affordance in the top-right of the "connect" step (never on splash).
+	 * Label flips to "Continue" when at least one subscription (OAuth)
+	 * provider is signed in.
+	 */
+	onDismiss?: () => void;
+	hasSubscription?: boolean;
 }
 
 type Step = "splash" | "connect";
@@ -22,7 +36,12 @@ const PROVIDERS = [
 	{ id: "openai-codex", label: "ChatGPT", icon: "💬", desc: "Use your ChatGPT Plus / Pro subscription" },
 ] as const;
 
-export function HomeView({ onComplete }: OnboardingProps) {
+export function HomeView({
+	onComplete,
+	onSkipToSettings,
+	onDismiss,
+	hasSubscription,
+}: OnboardingProps) {
 	const [step, setStep] = useState<Step>("splash");
 	const [apiKey, setApiKey] = useState("");
 	const [saving, setSaving] = useState(false);
@@ -136,8 +155,28 @@ export function HomeView({ onComplete }: OnboardingProps) {
 
 	// ── Connect ─────────────────────────────────────────────────
 	return (
-		<div className="flex flex-col items-center h-full px-8 py-8 max-w-lg mx-auto overflow-y-auto">
-			<h1 className="text-xl font-bold mb-1" style={{ color: "hsl(var(--foreground))" }}>
+		<div className="relative h-full w-full">
+			{onDismiss && (
+				<button
+					type="button"
+					onClick={onDismiss}
+					aria-label={hasSubscription ? "Continue" : "Skip"}
+					className="absolute top-4 right-4 z-20 text-xs font-medium px-3 py-1.5 rounded-full transition-colors cursor-pointer hover:opacity-90"
+					style={{
+						background: hasSubscription
+							? "hsl(var(--primary))"
+							: "hsl(var(--muted))",
+						color: hasSubscription
+							? "hsl(var(--primary-foreground))"
+							: "hsl(var(--muted-foreground))",
+					}}
+				>
+					{hasSubscription ? "Continue →" : "Skip"}
+				</button>
+			)}
+			<div className="h-full w-full overflow-y-auto">
+				<div className="flex flex-col items-center px-8 py-8 max-w-lg mx-auto">
+					<h1 className="text-xl font-bold mb-1" style={{ color: "hsl(var(--foreground))" }}>
 				Connect your AI
 			</h1>
 			<p className="text-sm mb-6 text-center" style={{ color: "hsl(var(--muted-foreground))" }}>
@@ -272,16 +311,18 @@ export function HomeView({ onComplete }: OnboardingProps) {
 				{/* ═══ ZONE 3: Advanced / Bring your own ═══ */}
 				<div className="text-center">
 					<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-						Have a different provider? Use a local model, Google Gemini, or any API
-						{" — "}
-						<span
-							className="font-medium"
+						Have a different provider? Use a local model, Google Gemini, or any API.
+					</p>
+					{onSkipToSettings && (
+						<button
+							type="button"
+							onClick={onSkipToSettings}
+							className="mt-2 text-xs font-medium underline-offset-4 hover:underline cursor-pointer"
 							style={{ color: "hsl(var(--primary))" }}
 						>
-							configure in Settings
-						</span>
-						.
-					</p>
+							Configure in Settings →
+						</button>
+					)}
 				</div>
 
 				{/* Back */}
@@ -301,6 +342,8 @@ export function HomeView({ onComplete }: OnboardingProps) {
 				<p className="text-[10px] text-center pt-4" style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}>
 					🇮🇳 Made in India — With ❤️ from Zosma AI
 				</p>
+			</div>
+				</div>
 			</div>
 		</div>
 	);

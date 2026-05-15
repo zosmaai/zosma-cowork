@@ -6,6 +6,7 @@ import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
 import type { ChatMessage } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface SessionEntry {
@@ -32,7 +33,15 @@ function App() {
 	const { models } = useProviders();
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
 	const [showKeyEntry, setShowKeyEntry] = useState(false);
+	// User explicitly chose "configure in Settings" — bypass the Connect
+	// modal even without stored credentials.
+	const [skipOnboarding, setSkipOnboarding] = useState(false);
 	const [sidebarView, setSidebarView] = useState("chats");
+	// True iff at least one subscription (OAuth) provider is signed in.
+	// Drives the "Skip" → "Continue" label flip on the Connect modal —
+	// note this is *narrower* than `hasCredentials`, which is true for any
+	// API-key save too.
+	const [hasSubscription, setHasSubscription] = useState(false);
 
 	// Session management
 	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
@@ -42,6 +51,11 @@ function App() {
 	const [loadingSession, setLoadingSession] = useState(false);
 
 	const needsOnboarding = authLoading === false && !hasCredentials;
+	// Whether to render the Connect / API-key modal. Either we're forcing
+	// it (initial onboarding, unless the user explicitly skipped) or the
+	// user opened "Change API Key" from Settings.
+	const showConnectModal =
+		(needsOnboarding && !skipOnboarding) || showKeyEntry;
 
 	// Settings persistence
 	const settingsLoadedRef = useRef(false);
@@ -85,6 +99,51 @@ function App() {
 			loadSessionList().catch(() => {});
 		}
 	}, [needsOnboarding, showKeyEntry]);
+
+	// A successful OAuth sign-in should dismiss the Connect modal even
+	// when it was opened via "Change API Key" (where `hasCredentials` was
+	// already true and so `needsOnboarding` never flips). We listen for
+	// the Tauri `oauth_completed` event specifically — NOT `config-reload`,
+	// because the latter also fires on sign-out/key-remove and would
+	// otherwise wrongly dump a just-signed-out user back into chat with
+	// no credentials.
+	useEffect(() => {
+		let unlisten: (() => void) | undefined;
+		(async () => {
+			unlisten = await listen("oauth_completed", () => {
+				setShowKeyEntry(false);
+			});
+		})();
+		return () => unlisten?.();
+	}, []);
+
+	// Track whether any subscription (OAuth) is signed in. Refreshes on
+	// mount, on sidecar "ready", and on every `config-reload` (which fires
+	// for both sign-in and sign-out, so we always re-check).
+	useEffect(() => {
+		async function refresh() {
+			try {
+				const res = await invoke<{
+					providers: Array<{ id: string; type: string }>;
+				}>("get_auth_status");
+				const any = (res.providers ?? []).some((p) => p.type === "oauth");
+				setHasSubscription(any);
+			} catch {
+				// Sidecar may not be ready yet — leave existing state.
+			}
+		}
+		refresh();
+		const onReload = () => refresh();
+		window.addEventListener("config-reload", onReload);
+		let unlisten: (() => void) | undefined;
+		(async () => {
+			unlisten = await listen("ready", () => refresh());
+		})();
+		return () => {
+			window.removeEventListener("config-reload", onReload);
+			unlisten?.();
+		};
+	}, []);
 
 	async function loadSessionList() {
 		try {
@@ -271,7 +330,7 @@ function App() {
 	return (
 		<div className="flex h-screen bg-background">
 			{/* Sidebar */}
-			{!needsOnboarding && !showKeyEntry && (
+			{!showConnectModal && (
 				<Sidebar
 					view={sidebarView}
 					sessions={sidebarSessions}
@@ -290,7 +349,7 @@ function App() {
 			{/* Main content */}
 			<div className="flex-1 flex flex-col min-w-0">
 				{/* Header bar */}
-				{!needsOnboarding && (
+				{!showConnectModal && (
 					<header className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
 						<div className="flex items-center gap-2">
 							<h1 className="text-sm font-semibold text-foreground">Zosma Cowork</h1>
@@ -312,12 +371,22 @@ function App() {
 
 				{/* Content */}
 				<main className="flex-1 flex flex-col min-h-0">
-					{needsOnboarding || showKeyEntry ? (
+					{showConnectModal ? (
 						<HomeView
 							onComplete={async (apiKey) => {
 								await handleOnboardingComplete(apiKey);
 								setShowKeyEntry(false);
 							}}
+							onSkipToSettings={() => {
+								setSkipOnboarding(true);
+								setShowKeyEntry(false);
+								setSidebarView("settings");
+							}}
+							onDismiss={() => {
+								setSkipOnboarding(true);
+								setShowKeyEntry(false);
+							}}
+							hasSubscription={hasSubscription}
 						/>
 					) : loadingSession ? (
 						<div className="flex-1 flex items-center justify-center">
