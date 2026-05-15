@@ -257,9 +257,25 @@ function App() {
 		}
 	};
 
-	const handleOnboardingComplete = async (apiKey: string) => {
-		await saveApiKey(apiKey);
-	};
+	// ── Connect-modal handlers (passed to <HomeView>) ──
+	const handleConnectComplete = useCallback(
+		async (apiKey: string) => {
+			await saveApiKey(apiKey);
+			setShowKeyEntry(false);
+		},
+		[saveApiKey],
+	);
+
+	const handleSkipToSettings = useCallback(() => {
+		setSkipOnboarding(true);
+		setShowKeyEntry(false);
+		setSidebarView("settings");
+	}, []);
+
+	const handleDismissConnect = useCallback(() => {
+		setSkipOnboarding(true);
+		setShowKeyEntry(false);
+	}, []);
 
 	const handleNewSession = useCallback(async () => {
 		try {
@@ -373,19 +389,9 @@ function App() {
 				<main className="flex-1 flex flex-col min-h-0">
 					{showConnectModal ? (
 						<HomeView
-							onComplete={async (apiKey) => {
-								await handleOnboardingComplete(apiKey);
-								setShowKeyEntry(false);
-							}}
-							onSkipToSettings={() => {
-								setSkipOnboarding(true);
-								setShowKeyEntry(false);
-								setSidebarView("settings");
-							}}
-							onDismiss={() => {
-								setSkipOnboarding(true);
-								setShowKeyEntry(false);
-							}}
+							onComplete={handleConnectComplete}
+							onSkipToSettings={handleSkipToSettings}
+							onDismiss={handleDismissConnect}
 							hasSubscription={hasSubscription}
 						/>
 					) : loadingSession ? (
