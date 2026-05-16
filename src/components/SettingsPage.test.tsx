@@ -17,13 +17,13 @@ vi.mock("./SkillsPanel", () => ({
 
 vi.mock("./ProviderAuthSection", () => ({
 	ProviderAuthSection: function MockAuth() {
-		return null;
+		return "AUTH_SECTION_MOCK";
 	},
 }));
 
 vi.mock("./CustomInstructions", () => ({
 	CustomInstructions: function MockInstructions() {
-		return null;
+		return "INSTRUCTIONS_MOCK";
 	},
 }));
 
@@ -52,48 +52,79 @@ beforeAll(() => {
 	}
 });
 
+// In jsdom, CSS media queries aren't evaluated, so both desktop (hidden md:flex)
+// and mobile (md:hidden) layouts render simultaneously. For nav button clicks,
+// we target the first match which is the desktop sidebar nav button (DOM order).
+function clickNavButton(name: string | RegExp) {
+	const buttons = screen.getAllByRole("button", { name });
+	if (buttons.length > 0) {
+		fireEvent.click(buttons[0]);
+	}
+}
+
 describe("SettingsPage", () => {
 	it("renders the close button", () => {
 		const onClose = vi.fn();
 		render(<SettingsPage onClose={onClose} />);
-		expect(
-			screen.getByRole("button", { name: /close/i }),
-		).toBeDefined();
+		const buttons = screen.getAllByRole("button", { name: /close/i });
+		expect(buttons.length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("calls onClose when close button is clicked", () => {
 		const onClose = vi.fn();
 		render(<SettingsPage onClose={onClose} />);
-		fireEvent.click(screen.getByRole("button", { name: /close/i }));
+		fireEvent.click(screen.getAllByRole("button", { name: /close/i })[0]);
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders Authentication section heading", () => {
+	it("renders all navigation section items", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Authentication")).toBeDefined();
+		// Desktop sidebar nav buttons - they'll have duplicates from mobile bar,
+		// but at least one instance of each must exist
+		expect(screen.getAllByRole("button", { name: "Authentication" }).length).toBeGreaterThanOrEqual(
+			1,
+		);
+		expect(screen.getAllByRole("button", { name: "Extensions" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Skills" }).length).toBeGreaterThanOrEqual(1);
+		expect(
+			screen.getAllByRole("button", { name: /Custom Instructions/ }).length,
+		).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Theme" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Telemetry" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "About" }).length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("renders Extensions section heading", () => {
+	it("shows Authentication content by default", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Extensions")).toBeDefined();
+		// Default section is Authentication — its content should render (3 provider rows)
+		expect(screen.getAllByText("AUTH_SECTION_MOCK").length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("renders Skills section heading", () => {
+	it("navigates to Extensions section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Skills")).toBeDefined();
+		clickNavButton("Extensions");
+		expect(screen.getByRole("heading", { name: "Extensions" })).toBeDefined();
 	});
 
-	it("renders Theme section heading", () => {
+	it("navigates to Theme section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Theme")).toBeDefined();
+		clickNavButton("Theme");
+		expect(screen.getByRole("heading", { name: "Theme" })).toBeDefined();
 	});
 
-	it("renders Custom Instructions section heading", () => {
+	it("navigates to Custom Instructions section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Custom Instructions")).toBeDefined();
+		clickNavButton(/Custom Instructions/);
+		expect(screen.getAllByText("INSTRUCTIONS_MOCK").length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("renders Telemetry section when provided", () => {
+	it("navigates to Skills section on click", () => {
+		render(<SettingsPage onClose={vi.fn()} />);
+		clickNavButton("Skills");
+		expect(screen.getByRole("heading", { name: "Skills" })).toBeDefined();
+	});
+
+	it("renders Telemetry content when telemetry props provided", () => {
 		render(
 			<SettingsPage
 				onClose={vi.fn()}
@@ -101,26 +132,26 @@ describe("SettingsPage", () => {
 				onTelemetryToggle={vi.fn()}
 			/>,
 		);
-		expect(screen.getByText("Telemetry")).toBeDefined();
+		clickNavButton("Telemetry");
+		expect(screen.getByRole("heading", { name: "Telemetry" })).toBeDefined();
 	});
 
-	it("renders About section", () => {
+	it("renders About section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("About")).toBeDefined();
+		clickNavButton("About");
+		expect(screen.getByRole("heading", { name: "About" })).toBeDefined();
 	});
 
 	it("renders Send Feedback button", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.getByText("Send Feedback")).toBeDefined();
+		expect(screen.getAllByText("Send Feedback").length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("shows FeedbackDialog when Send Feedback is clicked", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		// Before click, no dialog
-		expect(screen.queryByText("FEEDBACK_DIALOG_OPEN")).toBeNull();
-		fireEvent.click(screen.getByText("Send Feedback"));
-		// After click, dialog should be visible
-		expect(screen.getByText("FEEDBACK_DIALOG_OPEN")).toBeDefined();
+		expect(screen.queryAllByText("FEEDBACK_DIALOG_OPEN").length).toBe(0);
+		fireEvent.click(screen.getAllByText("Send Feedback")[0]);
+		expect(screen.getAllByText("FEEDBACK_DIALOG_OPEN").length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("calls onClose when Escape key is pressed", () => {
