@@ -565,9 +565,10 @@ async fn search_discover(query: String, s: State<'_, AppState>) -> Result<Value,
 
 #[tauri::command]
 async fn search_skills(query: String, s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("ssk-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"search_skills","id":"ssk","query": query}),
+        &serde_json::json!({"type":"search_skills","id": id, "query": query}),
         std::time::Duration::from_secs(35),
     )
     .await
