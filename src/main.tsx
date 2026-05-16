@@ -1,6 +1,6 @@
+import { reactErrorHandler } from "@sentry/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { reactErrorHandler } from "@sentry/react";
 import "./App.css";
 import App from "./App";
 import { applyTheme, getSavedTheme } from "./lib/themes";

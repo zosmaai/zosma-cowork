@@ -50,10 +50,7 @@ export function setTelemetryEnabled(isEnabled: boolean): void {
 	void invoke("set_analytics_enabled", { enabled: isEnabled }).catch(() => {});
 }
 
-export function trackEvent(
-	name: string,
-	props?: Record<string, string | number>,
-): void {
+export function trackEvent(name: string, props?: Record<string, string | number>): void {
 	if (!enabled) return;
 
 	// Fire-and-forget via our in-house analytics IPC.

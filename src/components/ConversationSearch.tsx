@@ -1,4 +1,4 @@
-import { Plus, Search, Clock, MessageSquare, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 interface Session {
@@ -39,9 +39,7 @@ export function ConversationSearch({
 		if (!query.trim()) return sessions;
 		const q = query.toLowerCase();
 		return sessions.filter(
-			(s) =>
-				s.title.toLowerCase().includes(q) ||
-				s.lastMessage.toLowerCase().includes(q),
+			(s) => s.title.toLowerCase().includes(q) || s.lastMessage.toLowerCase().includes(q),
 		);
 	}, [sessions, query]);
 
@@ -84,10 +82,7 @@ export function ConversationSearch({
 					</div>
 				) : (
 					filtered.map((session) => (
-						<div
-							key={session.id}
-							className="relative group"
-						>
+						<div key={session.id} className="relative group">
 							<button
 								type="button"
 								onClick={() => onSelect(session.id)}
@@ -100,9 +95,7 @@ export function ConversationSearch({
 								<div className="flex items-start gap-2">
 									<MessageSquare className="w-4 h-4 mt-0.5 shrink-0 opacity-60" />
 									<div className="flex-1 min-w-0">
-										<span className="text-sm font-medium truncate block">
-											{session.title}
-										</span>
+										<span className="text-sm font-medium truncate block">{session.title}</span>
 										<p className="text-xs text-sidebar-foreground/50 truncate mt-0.5">
 											{session.lastMessage}
 										</p>

@@ -4,11 +4,11 @@ import { SettingsPage } from "@/components/SettingsPage";
 import { ShareExport } from "@/components/ShareExport";
 import { Sidebar } from "@/components/Sidebar";
 import { TelemetryConsentDialog } from "@/components/TelemetryConsentDialog";
-import { trackEvent } from "@/lib/telemetry";
 import { useAuth } from "@/hooks/useAuth";
 import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
 import { useTelemetry } from "@/hooks/useTelemetry";
+import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -96,8 +96,7 @@ function App() {
 	// Whether to render the Connect / API-key modal. Either we're forcing
 	// it (initial onboarding, unless the user explicitly skipped) or the
 	// user opened "Change API Key" from Settings.
-	const showConnectModal =
-		(needsOnboarding && !skipOnboarding) || showKeyEntry;
+	const showConnectModal = (needsOnboarding && !skipOnboarding) || showKeyEntry;
 
 	// Settings persistence
 	const settingsLoadedRef = useRef(false);
@@ -281,9 +280,7 @@ function App() {
 
 			// Keep loadedSessionMessages — startStream only produces the new turn.
 			// Merging happens in the stream-complete effect above.
-			const finalText = personaRef.current
-				? `${personaRef.current}\n\n---\n\n${text}`
-				: text;
+			const finalText = personaRef.current ? `${personaRef.current}\n\n---\n\n${text}` : text;
 			startStream(finalText);
 		},
 		[activeSessionFile, startStream, models, activeModelId],

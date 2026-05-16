@@ -100,8 +100,7 @@ export function ArtifactPreview({
 				)}
 				{artifactType === "unknown" && (
 					<div className="p-3 text-[11px] text-muted-foreground text-center">
-						Unknown file type. File written to{" "}
-						<code className="font-mono">{filePath}</code>
+						Unknown file type. File written to <code className="font-mono">{filePath}</code>
 					</div>
 				)}
 			</div>

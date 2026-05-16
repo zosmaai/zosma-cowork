@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useArtifactLoader } from "./useArtifactLoader";
 
 const mockReadTextFile = vi.hoisted(() => vi.fn());

@@ -10,11 +10,11 @@
  *   - Read shows file content directly
  */
 
+import { useArtifactLoader } from "@/hooks/useArtifactLoader";
 import type { ToolCallInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { useArtifactLoader } from "@/hooks/useArtifactLoader";
 import { ArtifactPreview } from "./ArtifactPreview";
 
 // ─── Main timeline ──────────────────────────────────────────────────

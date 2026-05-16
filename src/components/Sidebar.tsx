@@ -1,10 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import {
-	MessageSquare,
-	NotebookPen,
-	Settings,
-} from "lucide-react";
+import { MessageSquare, NotebookPen, Settings } from "lucide-react";
 import { ConversationSearch } from "./ConversationSearch";
 import { PromptTemplates } from "./PromptTemplates";
 

@@ -12,6 +12,7 @@
  *                      {"type":"error", "id":"...", "message":"..."}
  */
 
+import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -20,7 +21,6 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -225,6 +225,12 @@ interface RemoveSkillCommand {
 	name: string;
 }
 
+interface FetchSkillPackumentCommand {
+	type: "fetch_skill_packument";
+	id: string;
+	packageName: string;
+}
+
 type Command =
 	| InitCommand
 	| GetModelsCommand
@@ -253,7 +259,8 @@ type Command =
 	| SearchSkillsCommand
 	| ListSkillsCommand
 	| InstallSkillCommand
-	| RemoveSkillCommand;
+	| RemoveSkillCommand
+	| FetchSkillPackumentCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -327,7 +334,6 @@ function cleanStaleLocks(dir: string): void {
 		}
 	}
 }
-
 
 // ---------------------------------------------------------------------------
 // Session persistence helpers
@@ -966,11 +972,8 @@ async function main() {
 								});
 							});
 						} catch (err: unknown) {
-							const errAny = err as
-								| { name?: string; message?: string }
-								| undefined;
-							const cancelled =
-								errAny?.name === "AbortError" || ac.signal.aborted;
+							const errAny = err as { name?: string; message?: string } | undefined;
+							const cancelled = errAny?.name === "AbortError" || ac.signal.aborted;
 							log(
 								"OAuth login %s for %s: %s",
 								cancelled ? "cancelled" : "failed",
@@ -983,9 +986,7 @@ async function main() {
 								data: {
 									success: false,
 									cancelled,
-									error: cancelled
-										? undefined
-										: String(errAny?.message ?? err),
+									error: cancelled ? undefined : String(errAny?.message ?? err),
 								},
 							});
 							send({
@@ -993,9 +994,7 @@ async function main() {
 								event: {
 									kind: cancelled ? "oauth_cancelled" : "oauth_failed",
 									provider,
-									error: cancelled
-										? undefined
-										: String(errAny?.message ?? err),
+									error: cancelled ? undefined : String(errAny?.message ?? err),
 								},
 							});
 						} finally {
@@ -1295,11 +1294,7 @@ async function main() {
 								skip--;
 								continue;
 							}
-							if (
-								chars[i] === escChar &&
-								i + 1 < chars.length &&
-								chars[i + 1] === "["
-							) {
+							if (chars[i] === escChar && i + 1 < chars.length && chars[i + 1] === "[") {
 								let j = i + 2;
 								while (j < chars.length && /[0-9;]/.test(chars[j])) {
 									j++;
@@ -1318,13 +1313,17 @@ async function main() {
 						for (let i = 0; i < lines.length; i++) {
 							const line = lines[i].trim();
 							// Match lines like "owner/repo@skill-name 1.2K installs"
-							const match = line.match(/^([\w._-]+\/[\w._-]+(?:@[\w._-]+)?)\s+([\d.]+[KMG]?)\s+installs$/);
+							const match = line.match(
+								/^([\w._-]+\/[\w._-]+(?:@[\w._-]+)?)\s+([\d.]+[KMG]?)\s+installs$/,
+							);
 							if (match) {
 								const id = match[1];
 								const countStr = match[2];
 								let installCount = 0;
-								if (countStr.endsWith("M")) installCount = Math.round(Number.parseFloat(countStr) * 1_000_000);
-								else if (countStr.endsWith("K")) installCount = Math.round(Number.parseFloat(countStr) * 1_000);
+								if (countStr.endsWith("M"))
+									installCount = Math.round(Number.parseFloat(countStr) * 1_000_000);
+								else if (countStr.endsWith("K"))
+									installCount = Math.round(Number.parseFloat(countStr) * 1_000);
 								else installCount = Number.parseInt(countStr, 10) || 0;
 								// Next line is the URL
 								const urlLine = i + 1 < lines.length ? lines[i + 1].trim() : "";

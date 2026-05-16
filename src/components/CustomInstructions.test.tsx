@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomInstructions } from "./CustomInstructions";
 
 const mockInvoke = vi.fn();
@@ -20,9 +20,7 @@ describe("CustomInstructions", () => {
 	it("renders the textarea", () => {
 		render(<CustomInstructions />);
 		expect(
-			screen.getByPlaceholderText(
-				"e.g. You are a senior developer who prefers TypeScript...",
-			),
+			screen.getByPlaceholderText("e.g. You are a senior developer who prefers TypeScript..."),
 		).toBeDefined();
 	});
 

@@ -21,10 +21,7 @@ const bulletPoints = [
 	"Crash reports to help fix bugs",
 ];
 
-export function TelemetryConsentDialog({
-	onEnable,
-	onDismiss,
-}: TelemetryConsentDialogProps) {
+export function TelemetryConsentDialog({ onEnable, onDismiss }: TelemetryConsentDialogProps) {
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
 			<div className="w-full max-w-md mx-4 rounded-xl border border-border bg-card p-8 shadow-lg">
@@ -42,8 +39,8 @@ export function TelemetryConsentDialog({
 
 				{/* Description */}
 				<p className="text-sm text-muted-foreground text-center mb-4">
-					Zosma Cowork is free and open-source. Opting in helps us build a
-					better product for everyone — completely anonymously.
+					Zosma Cowork is free and open-source. Opting in helps us build a better product for
+					everyone — completely anonymously.
 				</p>
 
 				{/* Bullet points */}
@@ -58,18 +55,10 @@ export function TelemetryConsentDialog({
 
 				{/* Buttons */}
 				<div className="space-y-2">
-					<Button
-						variant="default"
-						className="w-full"
-						onClick={onEnable}
-					>
+					<Button variant="default" className="w-full" onClick={onEnable}>
 						Enable Telemetry
 					</Button>
-					<Button
-						variant="secondary"
-						className="w-full"
-						onClick={onDismiss}
-					>
+					<Button variant="secondary" className="w-full" onClick={onDismiss}>
 						Not Now
 					</Button>
 				</div>

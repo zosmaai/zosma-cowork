@@ -19,7 +19,9 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
  * Mock Tauri `invoke` function.
  * Provide an optional implementation for specific commands.
  */
-export function mockInvoke(impl?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>) {
+export function mockInvoke(
+	impl?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>,
+) {
 	if (impl) mockInvokeFn.mockImplementation(impl);
 	return mockInvokeFn;
 }

@@ -6,7 +6,7 @@
  */
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TEMPLATES, CATEGORIES, type PromptTemplate } from "@/data/templates";
+import { CATEGORIES, type PromptTemplate, TEMPLATES } from "@/data/templates";
 import {
 	BarChart3,
 	BookOpen,

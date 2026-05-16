@@ -1,9 +1,9 @@
+import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { trackEvent } from "@/lib/telemetry";
-import { Paperclip, X } from "lucide-react";
 import type { ModelInfo } from "@/types";
+import { Paperclip, X } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ModelSelector } from "./ModelSelector";
-import { usePasteDetection } from "@/hooks/usePasteDetection";
 
 interface MessageInputProps {
 	onSend: (message: string) => void;
@@ -147,11 +147,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 									}}
 									title={img.name}
 								>
-									<img
-										src={img.dataUrl}
-										alt={img.name}
-										className="w-5 h-5 rounded object-cover"
-									/>
+									<img src={img.dataUrl} alt={img.name} className="w-5 h-5 rounded object-cover" />
 									<span className="truncate">
 										{img.name.length > 30 ? `${img.name.slice(0, 27)}…` : img.name}
 									</span>
@@ -222,12 +218,15 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						</div>
 						<button
 							type="submit"
-							disabled={disabled || (!text.trim() && attachedFiles.length === 0 && pastedImages.length === 0)}
+							disabled={
+								disabled ||
+								(!text.trim() && attachedFiles.length === 0 && pastedImages.length === 0)
+							}
 							className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
 							style={{
 								background: "hsl(var(--primary))",
 								color: "hsl(var(--primary-foreground))",
-								}}
+							}}
 						>
 							Send →
 						</button>

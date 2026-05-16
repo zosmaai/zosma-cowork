@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 
 // Mock child components that make Tauri IPC calls to avoid unhandled rejections
@@ -125,13 +125,7 @@ describe("SettingsPage", () => {
 	});
 
 	it("renders Telemetry content when telemetry props provided", () => {
-		render(
-			<SettingsPage
-				onClose={vi.fn()}
-				telemetryEnabled={false}
-				onTelemetryToggle={vi.fn()}
-			/>,
-		);
+		render(<SettingsPage onClose={vi.fn()} telemetryEnabled={false} onTelemetryToggle={vi.fn()} />);
 		clickNavButton("Telemetry");
 		expect(screen.getByRole("heading", { name: "Telemetry" })).toBeDefined();
 	});

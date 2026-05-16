@@ -32,8 +32,18 @@ type Step = "splash" | "connect";
 
 const PROVIDERS = [
 	{ id: "anthropic", label: "Claude Pro/Max", icon: "🤖", desc: "Use your Claude subscription" },
-	{ id: "github-copilot", label: "GitHub Copilot", icon: "🐙", desc: "Use your GitHub subscription" },
-	{ id: "openai-codex", label: "ChatGPT", icon: "💬", desc: "Use your ChatGPT Plus / Pro subscription" },
+	{
+		id: "github-copilot",
+		label: "GitHub Copilot",
+		icon: "🐙",
+		desc: "Use your GitHub subscription",
+	},
+	{
+		id: "openai-codex",
+		label: "ChatGPT",
+		icon: "💬",
+		desc: "Use your ChatGPT Plus / Pro subscription",
+	},
 ] as const;
 
 export function HomeView({
@@ -109,7 +119,10 @@ export function HomeView({
 					<FeatureRow icon="🧩" text="All pi extensions, skills & themes work out of the box" />
 					<FeatureRow icon="🔒" text="Your code stays local — no data leaves your machine" />
 					<FeatureRow icon="🆓" text="100% free & open-source — no subscriptions, no caps" />
-					<FeatureRow icon="👥" text="Set up a minimal harness for non-technical friends & colleagues" />
+					<FeatureRow
+						icon="👥"
+						text="Set up a minimal harness for non-technical friends & colleagues"
+					/>
 				</div>
 
 				{/* Made in India branding */}
@@ -163,9 +176,7 @@ export function HomeView({
 					aria-label={hasSubscription ? "Continue" : "Skip"}
 					className="absolute top-4 right-4 z-20 text-xs font-medium px-3 py-1.5 rounded-full transition-colors cursor-pointer hover:opacity-90"
 					style={{
-						background: hasSubscription
-							? "hsl(var(--primary))"
-							: "hsl(var(--muted))",
+						background: hasSubscription ? "hsl(var(--primary))" : "hsl(var(--muted))",
 						color: hasSubscription
 							? "hsl(var(--primary-foreground))"
 							: "hsl(var(--muted-foreground))",
@@ -177,172 +188,175 @@ export function HomeView({
 			<div className="h-full w-full overflow-y-auto">
 				<div className="flex flex-col items-center px-8 py-8 max-w-lg mx-auto">
 					<h1 className="text-xl font-bold mb-1" style={{ color: "hsl(var(--foreground))" }}>
-				Connect your AI
-			</h1>
-			<p className="text-sm mb-6 text-center" style={{ color: "hsl(var(--muted-foreground))" }}>
-				Choose how to connect — your credentials stay on your machine.
-			</p>
-
-			<div className="w-full space-y-5">
-				{/* ═══ ZONE 1: Quick Start — API Key (most prominent) ═══ */}
-				<div
-					className="rounded-xl border-2 p-4 space-y-3"
-					style={{
-						borderColor: "hsl(var(--primary) / 0.3)",
-						background: "hsl(var(--primary) / 0.05)",
-					}}
-				>
-					<div className="flex items-center gap-2">
-						<span className="text-lg">⚡</span>
-						<span className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-							Quick Start — Paste an API Key
-						</span>
-					</div>
-					<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-						The fastest way to start. Get a key from OpenCode Go and paste it below.
+						Connect your AI
+					</h1>
+					<p className="text-sm mb-6 text-center" style={{ color: "hsl(var(--muted-foreground))" }}>
+						Choose how to connect — your credentials stay on your machine.
 					</p>
 
-					<input
-						type="password"
-						value={apiKey}
-						onChange={(e) => setApiKey(e.target.value)}
-						placeholder="OpenCode Go API key (sk-…)"
-						className="w-full px-4 py-2.5 rounded-xl border bg-transparent text-sm outline-none transition-colors"
-						style={{
-							borderColor: "hsl(var(--border))",
-							color: "hsl(var(--foreground))",
-						}}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" && apiKey.trim() && !saving) {
-								handleSave();
-							}
-						}}
-					/>
-					{error && (
-						<p className="text-xs" style={{ color: "hsl(var(--destructive))" }}>
-							{error}
-						</p>
-					)}
-
-					<button
-						type="button"
-						disabled={!apiKey.trim() || saving}
-						onClick={handleSave}
-						className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
-						style={{
-							background: "hsl(var(--primary))",
-							color: "hsl(var(--primary-foreground))",
-						}}
-					>
-						{saving ? "Saving..." : "Save & Start Chatting"}
-					</button>
-				</div>
-
-				{/* ═══ ZONE 2: OAuth Provider Cards ═══ */}
-				<div>
-					<div className="flex items-center gap-2 mb-3">
-						<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
-						<span
-							className="text-[10px] uppercase tracking-wider shrink-0"
-							style={{ color: "hsl(var(--muted-foreground))" }}
+					<div className="w-full space-y-5">
+						{/* ═══ ZONE 1: Quick Start — API Key (most prominent) ═══ */}
+						<div
+							className="rounded-xl border-2 p-4 space-y-3"
+							style={{
+								borderColor: "hsl(var(--primary) / 0.3)",
+								background: "hsl(var(--primary) / 0.05)",
+							}}
 						>
-							or sign in with a subscription
-						</span>
-						<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
-					</div>
+							<div className="flex items-center gap-2">
+								<span className="text-lg">⚡</span>
+								<span className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>
+									Quick Start — Paste an API Key
+								</span>
+							</div>
+							<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+								The fastest way to start. Get a key from OpenCode Go and paste it below.
+							</p>
 
-					<div className="space-y-2">
-						{PROVIDERS.map((p) => {
-							const isExpanded = expandedProvider === p.id;
-							return (
-								<div
-									key={p.id}
-									className="rounded-xl border overflow-hidden transition-all"
-									style={{
-										borderColor: isExpanded
-											? "hsl(var(--primary) / 0.3)"
-											: "hsl(var(--border))",
-									}}
+							<input
+								type="password"
+								value={apiKey}
+								onChange={(e) => setApiKey(e.target.value)}
+								placeholder="OpenCode Go API key (sk-…)"
+								className="w-full px-4 py-2.5 rounded-xl border bg-transparent text-sm outline-none transition-colors"
+								style={{
+									borderColor: "hsl(var(--border))",
+									color: "hsl(var(--foreground))",
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && apiKey.trim() && !saving) {
+										handleSave();
+									}
+								}}
+							/>
+							{error && (
+								<p className="text-xs" style={{ color: "hsl(var(--destructive))" }}>
+									{error}
+								</p>
+							)}
+
+							<button
+								type="button"
+								disabled={!apiKey.trim() || saving}
+								onClick={handleSave}
+								className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
+								style={{
+									background: "hsl(var(--primary))",
+									color: "hsl(var(--primary-foreground))",
+								}}
+							>
+								{saving ? "Saving..." : "Save & Start Chatting"}
+							</button>
+						</div>
+
+						{/* ═══ ZONE 2: OAuth Provider Cards ═══ */}
+						<div>
+							<div className="flex items-center gap-2 mb-3">
+								<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
+								<span
+									className="text-[10px] uppercase tracking-wider shrink-0"
+									style={{ color: "hsl(var(--muted-foreground))" }}
 								>
-									{/* Card header — always visible */}
-									<button
-										type="button"
-										onClick={() => handleProviderSelect(p.id)}
-										className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 cursor-pointer"
-										style={{
-											background: isExpanded ? "hsl(var(--muted) / 0.2)" : "transparent",
-										}}
-									>
-										<span className="text-xl">{p.icon}</span>
-										<div className="flex-1 min-w-0">
-											<div
-												className="text-sm font-medium"
-												style={{ color: "hsl(var(--foreground))" }}
-											>
-												{p.label}
-											</div>
-											<div
-												className="text-xs"
-												style={{ color: "hsl(var(--muted-foreground))" }}
-											>
-												{p.desc}
-											</div>
-										</div>
-										<span
-											className="text-xs shrink-0"
-											style={{ color: "hsl(var(--muted-foreground))" }}
+									or sign in with a subscription
+								</span>
+								<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
+							</div>
+
+							<div className="space-y-2">
+								{PROVIDERS.map((p) => {
+									const isExpanded = expandedProvider === p.id;
+									return (
+										<div
+											key={p.id}
+											className="rounded-xl border overflow-hidden transition-all"
+											style={{
+												borderColor: isExpanded
+													? "hsl(var(--primary) / 0.3)"
+													: "hsl(var(--border))",
+											}}
 										>
-											{isExpanded ? "▲" : "▼"}
-										</span>
-									</button>
+											{/* Card header — always visible */}
+											<button
+												type="button"
+												onClick={() => handleProviderSelect(p.id)}
+												className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 cursor-pointer"
+												style={{
+													background: isExpanded ? "hsl(var(--muted) / 0.2)" : "transparent",
+												}}
+											>
+												<span className="text-xl">{p.icon}</span>
+												<div className="flex-1 min-w-0">
+													<div
+														className="text-sm font-medium"
+														style={{ color: "hsl(var(--foreground))" }}
+													>
+														{p.label}
+													</div>
+													<div
+														className="text-xs"
+														style={{ color: "hsl(var(--muted-foreground))" }}
+													>
+														{p.desc}
+													</div>
+												</div>
+												<span
+													className="text-xs shrink-0"
+													style={{ color: "hsl(var(--muted-foreground))" }}
+												>
+													{isExpanded ? "▲" : "▼"}
+												</span>
+											</button>
 
-									{/* Expanded ProviderAuthSection */}
-									{isExpanded && (
-										<div className="px-4 pb-4">
-											<ProviderAuthSection provider={p.id} />
+											{/* Expanded ProviderAuthSection */}
+											{isExpanded && (
+												<div className="px-4 pb-4">
+													<ProviderAuthSection provider={p.id} />
+												</div>
+											)}
 										</div>
-									)}
-								</div>
-							);
-						})}
-					</div>
-				</div>
+									);
+								})}
+							</div>
+						</div>
 
-				{/* ═══ ZONE 3: Advanced / Bring your own ═══ */}
-				<div className="text-center">
-					<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-						Have a different provider? Use a local model, Google Gemini, or any API.
-					</p>
-					{onSkipToSettings && (
+						{/* ═══ ZONE 3: Advanced / Bring your own ═══ */}
+						<div className="text-center">
+							<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+								Have a different provider? Use a local model, Google Gemini, or any API.
+							</p>
+							{onSkipToSettings && (
+								<button
+									type="button"
+									onClick={onSkipToSettings}
+									className="mt-2 text-xs font-medium underline-offset-4 hover:underline cursor-pointer"
+									style={{ color: "hsl(var(--primary))" }}
+								>
+									Configure in Settings →
+								</button>
+							)}
+						</div>
+
+						{/* Back */}
 						<button
 							type="button"
-							onClick={onSkipToSettings}
-							className="mt-2 text-xs font-medium underline-offset-4 hover:underline cursor-pointer"
-							style={{ color: "hsl(var(--primary))" }}
+							onClick={() => {
+								setStep("splash");
+								setExpandedProvider(null);
+							}}
+							className="block w-full text-center text-xs py-1 cursor-pointer"
+							style={{ color: "hsl(var(--muted-foreground))" }}
 						>
-							Configure in Settings →
+							← Back
 						</button>
-					)}
-				</div>
 
-				{/* Back */}
-				<button
-					type="button"
-					onClick={() => {
-						setStep("splash");
-						setExpandedProvider(null);
-					}}
-					className="block w-full text-center text-xs py-1 cursor-pointer"
-					style={{ color: "hsl(var(--muted-foreground))" }}
-				>
-					← Back
-				</button>
-
-				{/* Made in India branding */}
-				<p className="text-[10px] text-center pt-4" style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}>
-					🇮🇳 Made in India — With ❤️ from Zosma AI
-				</p>
-			</div>
+						{/* Made in India branding */}
+						<p
+							className="text-[10px] text-center pt-4"
+							style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}
+						>
+							🇮🇳 Made in India — With ❤️ from Zosma AI
+						</p>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -1,5 +1,5 @@
-import { describe, it, expect, test } from "vitest";
-import { extractFilePaths, detectArtifactType, parentDir, type ArtifactType } from "./artifacts";
+import { describe, expect, it, test } from "vitest";
+import { type ArtifactType, detectArtifactType, extractFilePaths, parentDir } from "./artifacts";
 
 // ─── extractFilePaths ───────────────────────────────────────────────
 

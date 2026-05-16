@@ -1,6 +1,6 @@
+import { cleanupMocks, mockInvoke } from "@/test/mocks";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockInvoke, cleanupMocks } from "@/test/mocks";
 
 // Mock the telemetry service
 vi.mock("@/lib/telemetry", () => ({

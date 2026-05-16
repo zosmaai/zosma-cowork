@@ -1,8 +1,3 @@
-import { CustomInstructions } from "./CustomInstructions";
-import { ExtensionPanel } from "./ExtensionPanel";
-import { FeedbackDialog } from "./FeedbackDialog";
-import { ProviderAuthSection } from "./ProviderAuthSection";
-import { SkillsPanel } from "./SkillsPanel";
 import { THEMES, applyTheme, getSavedTheme } from "@/lib/themes";
 import type { Theme } from "@/lib/themes";
 import {
@@ -18,6 +13,11 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CustomInstructions } from "./CustomInstructions";
+import { ExtensionPanel } from "./ExtensionPanel";
+import { FeedbackDialog } from "./FeedbackDialog";
+import { ProviderAuthSection } from "./ProviderAuthSection";
+import { SkillsPanel } from "./SkillsPanel";
 
 // ─── Section definitions ──────────────────────────────────────────
 
@@ -84,11 +84,7 @@ export function SettingsPage({
 	}
 
 	return (
-		<div
-			ref={containerRef}
-			tabIndex={-1}
-			className="flex h-full bg-background"
-		>
+		<div ref={containerRef} tabIndex={-1} className="flex h-full bg-background">
 			{/* ── Desktop: left sidebar nav ── */}
 			<aside className="hidden md:flex w-56 flex-col border-r border-border bg-muted/20 shrink-0">
 				{/* Header */}
@@ -198,9 +194,7 @@ export function SettingsPage({
 						<section>
 							<div className="flex items-center gap-2 mb-4">
 								<Key className="w-4 h-4 text-foreground/50" />
-								<h2 className="text-sm font-semibold text-foreground">
-									Authentication
-								</h2>
+								<h2 className="text-sm font-semibold text-foreground">Authentication</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-card p-5 space-y-4">
 								<ProviderOAuthRow provider="anthropic" icon="🤖" />
@@ -230,9 +224,7 @@ export function SettingsPage({
 						<section>
 							<div className="flex items-center gap-2 mb-4">
 								<Puzzle className="w-4 h-4 text-foreground/50" />
-								<h2 className="text-sm font-semibold text-foreground">
-									Extensions
-								</h2>
+								<h2 className="text-sm font-semibold text-foreground">Extensions</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-card p-5">
 								<ExtensionPanel onReload={() => {}} />
@@ -258,9 +250,7 @@ export function SettingsPage({
 						<section>
 							<div className="flex items-center gap-2 mb-4">
 								<MessageSquare className="w-4 h-4 text-foreground/50" />
-								<h2 className="text-sm font-semibold text-foreground">
-									Custom Instructions
-								</h2>
+								<h2 className="text-sm font-semibold text-foreground">Custom Instructions</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-card p-5">
 								<CustomInstructions />
@@ -287,12 +277,8 @@ export function SettingsPage({
 											onClick={() => handleThemeChange(theme)}
 											className="w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 hover:bg-muted/30 border border-transparent"
 											style={{
-												background: isActive
-													? "hsl(var(--accent) / 0.3)"
-													: "transparent",
-												borderColor: isActive
-													? "hsl(var(--border))"
-													: "transparent",
+												background: isActive ? "hsl(var(--accent) / 0.3)" : "transparent",
+												borderColor: isActive ? "hsl(var(--border))" : "transparent",
 											}}
 										>
 											<div
@@ -335,9 +321,7 @@ export function SettingsPage({
 						<section>
 							<div className="flex items-center gap-2 mb-4">
 								<ShieldCheck className="w-4 h-4 text-foreground/50" />
-								<h2 className="text-sm font-semibold text-foreground">
-									Telemetry
-								</h2>
+								<h2 className="text-sm font-semibold text-foreground">Telemetry</h2>
 							</div>
 							<div className="rounded-lg border border-border bg-card p-5">
 								<div className="flex items-center justify-between">
@@ -346,9 +330,8 @@ export function SettingsPage({
 											Share anonymous usage data and crash reports
 										</p>
 										<p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-											Help improve Zosma Cowork by sending completely anonymous
-											usage statistics and crash reports. Nothing is sent unless
-											enabled. No personal data, no tracking.
+											Help improve Zosma Cowork by sending completely anonymous usage statistics and
+											crash reports. Nothing is sent unless enabled. No personal data, no tracking.
 										</p>
 									</div>
 									<label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -378,9 +361,7 @@ export function SettingsPage({
 										<span className="text-sm font-bold text-primary">ZC</span>
 									</div>
 									<div>
-										<p className="text-sm font-medium text-foreground">
-											Zosma Cowork
-										</p>
+										<p className="text-sm font-medium text-foreground">Zosma Cowork</p>
 										<p className="text-xs text-muted-foreground">
 											India's first Non-Coding Agentic Work Harness
 										</p>

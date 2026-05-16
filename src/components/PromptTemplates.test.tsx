@@ -4,11 +4,11 @@
  * Tests for the templates sidebar panel that shows reusable prompt templates.
  */
 
+import { CATEGORIES, TEMPLATES } from "@/data/templates";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PromptTemplates } from "./PromptTemplates";
-import { TEMPLATES, CATEGORIES } from "@/data/templates";
 
 describe("PromptTemplates", () => {
 	const mockOnSend = vi.fn();

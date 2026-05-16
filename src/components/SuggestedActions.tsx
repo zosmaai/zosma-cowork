@@ -1,5 +1,5 @@
 import { trackEvent } from "@/lib/telemetry";
-import { FileText, FileSearch, BarChart3, Languages, Code2 } from "lucide-react";
+import { BarChart3, Code2, FileSearch, FileText, Languages } from "lucide-react";
 
 interface Suggestion {
 	icon: React.ReactNode;
@@ -13,31 +13,36 @@ const SUGGESTIONS: Suggestion[] = [
 		icon: <FileText size={20} />,
 		title: "Write a document",
 		description: "Draft a report, proposal, or article",
-		prompt: "Write a document for me. It should be well-structured with clear sections and professional formatting.",
+		prompt:
+			"Write a document for me. It should be well-structured with clear sections and professional formatting.",
 	},
 	{
 		icon: <FileSearch size={20} />,
 		title: "Summarize a file",
 		description: "Extract key points from a long document",
-		prompt: "Please summarize the file I'll attach. Extract the key points and main takeaways in a concise format.",
+		prompt:
+			"Please summarize the file I'll attach. Extract the key points and main takeaways in a concise format.",
 	},
 	{
 		icon: <BarChart3 size={20} />,
 		title: "Analyze data",
 		description: "Review datasets and find insights",
-		prompt: "Analyze the data and provide insights, trends, and patterns you can identify. Include relevant statistics.",
+		prompt:
+			"Analyze the data and provide insights, trends, and patterns you can identify. Include relevant statistics.",
 	},
 	{
 		icon: <Languages size={20} />,
 		title: "Translate text",
 		description: "Convert between languages",
-		prompt: "Translate the following text. Keep the original meaning and tone while making it sound natural in the target language.",
+		prompt:
+			"Translate the following text. Keep the original meaning and tone while making it sound natural in the target language.",
 	},
 	{
 		icon: <Code2 size={20} />,
 		title: "Write code",
 		description: "Build a script, component, or automation",
-		prompt: "Write code for the following task. Include proper error handling, comments, and follow best practices.",
+		prompt:
+			"Write code for the following task. Include proper error handling, comments, and follow best practices.",
 	},
 ];
 
@@ -49,10 +54,7 @@ export function SuggestedActions({ onSend }: SuggestedActionsProps) {
 	return (
 		<div className="flex flex-col items-center justify-center h-full gap-6 px-8">
 			<div className="text-center">
-				<div
-					className="text-4xl font-bold mb-3"
-					style={{ color: "hsl(var(--primary))" }}
-				>
+				<div className="text-4xl font-bold mb-3" style={{ color: "hsl(var(--primary))" }}>
 					✦
 				</div>
 				<h1 className="text-xl font-semibold" style={{ color: "hsl(var(--foreground))" }}>

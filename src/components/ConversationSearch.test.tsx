@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { ConversationSearch } from "./ConversationSearch";
 
 const noop = () => {};
@@ -13,16 +13,24 @@ const mockSessions = [
 describe("ConversationSearch", () => {
 	it("renders search input", () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
-		expect(
-			screen.getByPlaceholderText("Search conversations..."),
-		).toBeDefined();
+		expect(screen.getByPlaceholderText("Search conversations...")).toBeDefined();
 	});
 
 	it("shows all sessions when search is empty", () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		expect(screen.getByText("React project setup")).toBeDefined();
 		expect(screen.getByText("API design patterns")).toBeDefined();
@@ -31,7 +39,12 @@ describe("ConversationSearch", () => {
 
 	it("filters sessions by title", async () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		const input = screen.getByPlaceholderText("Search conversations...");
 		fireEvent.change(input, { target: { value: "React" } });
@@ -42,7 +55,12 @@ describe("ConversationSearch", () => {
 
 	it("filters sessions by lastMessage content", async () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		const input = screen.getByPlaceholderText("Search conversations...");
 		fireEvent.change(input, { target: { value: "Best practices" } });
@@ -52,7 +70,12 @@ describe("ConversationSearch", () => {
 
 	it("shows no results message when nothing matches", async () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		const input = screen.getByPlaceholderText("Search conversations...");
 		fireEvent.change(input, { target: { value: "zzz_no_match" } });
@@ -62,7 +85,12 @@ describe("ConversationSearch", () => {
 	it("calls onSelect when a session is clicked", () => {
 		const onSelect = vi.fn();
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={onSelect} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={onSelect}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		fireEvent.click(screen.getByText("React project setup"));
 		expect(onSelect).toHaveBeenCalledWith("1");
@@ -70,7 +98,12 @@ describe("ConversationSearch", () => {
 
 	it("is case-insensitive", async () => {
 		render(
-			<ConversationSearch sessions={mockSessions} onSelect={noop} onNewSession={noop} onDeleteSession={noop} />,
+			<ConversationSearch
+				sessions={mockSessions}
+				onSelect={noop}
+				onNewSession={noop}
+				onDeleteSession={noop}
+			/>,
 		);
 		const input = screen.getByPlaceholderText("Search conversations...");
 		fireEvent.change(input, { target: { value: "react" } });
@@ -88,9 +121,7 @@ describe("ConversationSearch", () => {
 			/>,
 		);
 		const items = screen.getAllByRole("button");
-		const activeItem = items.find((item) =>
-			item.textContent?.includes("API design patterns"),
-		);
+		const activeItem = items.find((item) => item.textContent?.includes("API design patterns"));
 		expect(activeItem?.className).toContain("bg-sidebar-accent");
 	});
 });

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { FeedbackDialog } from "./FeedbackDialog";
 
 const mockTrackEvent = vi.fn();
@@ -27,16 +27,12 @@ describe("FeedbackDialog", () => {
 
 	it("renders message textarea", () => {
 		render(<FeedbackDialog open={true} onClose={() => {}} />);
-		expect(
-			screen.getByPlaceholderText("Describe your feedback in detail..."),
-		).toBeDefined();
+		expect(screen.getByPlaceholderText("Describe your feedback in detail...")).toBeDefined();
 	});
 
 	it("renders optional email input", () => {
 		render(<FeedbackDialog open={true} onClose={() => {}} />);
-		expect(
-			screen.getByPlaceholderText("Email (optional, if you'd like a reply)"),
-		).toBeDefined();
+		expect(screen.getByPlaceholderText("Email (optional, if you'd like a reply)")).toBeDefined();
 	});
 
 	it("submit button is disabled when message is empty", () => {
@@ -47,9 +43,7 @@ describe("FeedbackDialog", () => {
 
 	it("submit button is enabled when message is filled", () => {
 		render(<FeedbackDialog open={true} onClose={() => {}} />);
-		const textarea = screen.getByPlaceholderText(
-			"Describe your feedback in detail...",
-		);
+		const textarea = screen.getByPlaceholderText("Describe your feedback in detail...");
 		fireEvent.change(textarea, { target: { value: "Great app!" } });
 		const submitBtn = screen.getByText("Submit Feedback");
 		expect(submitBtn).not.toBeDisabled();
@@ -58,9 +52,7 @@ describe("FeedbackDialog", () => {
 	it("calls trackEvent on submit and closes", () => {
 		const onClose = vi.fn();
 		render(<FeedbackDialog open={true} onClose={onClose} />);
-		const textarea = screen.getByPlaceholderText(
-			"Describe your feedback in detail...",
-		);
+		const textarea = screen.getByPlaceholderText("Describe your feedback in detail...");
 		fireEvent.change(textarea, { target: { value: "Love this app" } });
 		fireEvent.click(screen.getByText("Submit Feedback"));
 		expect(mockTrackEvent).toHaveBeenCalledWith("app_feedback", {
@@ -72,9 +64,7 @@ describe("FeedbackDialog", () => {
 
 	it("includes category in telemetry", () => {
 		render(<FeedbackDialog open={true} onClose={() => {}} />);
-		const textarea = screen.getByPlaceholderText(
-			"Describe your feedback in detail...",
-		);
+		const textarea = screen.getByPlaceholderText("Describe your feedback in detail...");
 		fireEvent.change(textarea, { target: { value: "Button misaligned" } });
 		fireEvent.click(screen.getByText("Bug Report"));
 		fireEvent.click(screen.getByText("Submit Feedback"));
@@ -85,12 +75,8 @@ describe("FeedbackDialog", () => {
 	});
 
 	it("resets form when reopened", () => {
-		const { rerender } = render(
-			<FeedbackDialog open={true} onClose={() => {}} />,
-		);
-		const textarea = screen.getByPlaceholderText(
-			"Describe your feedback in detail...",
-		);
+		const { rerender } = render(<FeedbackDialog open={true} onClose={() => {}} />);
+		const textarea = screen.getByPlaceholderText("Describe your feedback in detail...");
 		fireEvent.change(textarea, { target: { value: "Feedback text" } });
 		fireEvent.click(screen.getByText("General"));
 
@@ -101,9 +87,8 @@ describe("FeedbackDialog", () => {
 		// Re-open
 		rerender(<FeedbackDialog open={true} onClose={() => {}} />);
 		expect(
-			(screen.getByPlaceholderText(
-				"Describe your feedback in detail...",
-			) as HTMLTextAreaElement).value,
+			(screen.getByPlaceholderText("Describe your feedback in detail...") as HTMLTextAreaElement)
+				.value,
 		).toBe("");
 	});
 });

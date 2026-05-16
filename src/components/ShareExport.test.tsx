@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { ShareExport } from "./ShareExport";
 
 const mockWriteText = vi.fn();
@@ -50,9 +50,7 @@ describe("ShareExport", () => {
 		render(<ShareExport messages={mockMessages} />);
 		fireEvent.click(screen.getByTitle("Share Zosma Cowork"));
 		await vi.waitFor(() => {
-			expect(mockWriteText).toHaveBeenCalledWith(
-				"https://github.com/zosmaai/zosma-cowork",
-			);
+			expect(mockWriteText).toHaveBeenCalledWith("https://github.com/zosmaai/zosma-cowork");
 		});
 	});
 

@@ -1,7 +1,7 @@
+import { cleanupMocks } from "@/test/mocks";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanupMocks } from "@/test/mocks";
 
 // Mock @tauri-apps/plugin-dialog
 const mockOpen = vi.hoisted(() => vi.fn());

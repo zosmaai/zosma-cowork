@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { type ArtifactType, detectArtifactType } from "@/lib/artifacts";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { useEffect, useState } from "react";
 
 export interface ArtifactData {
 	filePath: string;

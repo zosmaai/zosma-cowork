@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { trackEvent } from "@/lib/telemetry";
-import { Clipboard, Download, FolderOpen } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/types";
-import { useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Clipboard, Download, FolderOpen } from "lucide-react";
+import { useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FeedbackButtons } from "./FeedbackButtons";
@@ -15,7 +15,9 @@ interface ChatMessageProps {
 }
 
 function extractFilePath(content: string): string | null {
-	const match = content.match(/(?:Written|Created|Wrote)\s+(?:\d+\s+lines\s+)?(?:to\s+)?(.+?)(?:\s+\(|$)/m);
+	const match = content.match(
+		/(?:Written|Created|Wrote)\s+(?:\d+\s+lines\s+)?(?:to\s+)?(.+?)(?:\s+\(|$)/m,
+	);
 	return match?.[1]?.trim() ?? null;
 }
 
@@ -196,38 +198,38 @@ export function ChatMessageItem({ message, detailsExpanded }: ChatMessageProps) 
 					<div className="flex items-center justify-between mt-1.5">
 						<FeedbackButtons />
 						<div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-						<button
-							type="button"
-							onClick={() => copyToClipboard(message.content)}
-							aria-label="Copy content"
-							className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-						>
-							<Clipboard size={12} />
-							{copied ? "Copied!" : "Copy"}
-						</button>
-						<button
-							type="button"
-							onClick={() => saveToFile(message.content)}
-							disabled={saving}
-							aria-label="Save to file"
-							className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
-						>
-							<Download size={12} />
-							{saving ? "Saving..." : "Save"}
-						</button>
-						{filePath && (
 							<button
 								type="button"
-								onClick={() => openFolder(filePath)}
-								aria-label="Open folder"
+								onClick={() => copyToClipboard(message.content)}
+								aria-label="Copy content"
 								className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
 							>
-								<FolderOpen size={12} />
-								Open Folder
+								<Clipboard size={12} />
+								{copied ? "Copied!" : "Copy"}
 							</button>
-						)}
+							<button
+								type="button"
+								onClick={() => saveToFile(message.content)}
+								disabled={saving}
+								aria-label="Save to file"
+								className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+							>
+								<Download size={12} />
+								{saving ? "Saving..." : "Save"}
+							</button>
+							{filePath && (
+								<button
+									type="button"
+									onClick={() => openFolder(filePath)}
+									aria-label="Open folder"
+									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+								>
+									<FolderOpen size={12} />
+									Open Folder
+								</button>
+							)}
+						</div>
 					</div>
-				</div>
 				)}
 			</div>
 		</div>

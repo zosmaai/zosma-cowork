@@ -9,7 +9,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AuthStatusEntry = {
@@ -32,8 +32,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const PROVIDER_DESCRIPTIONS: Record<string, string> = {
-	anthropic:
-		"Use your existing Claude Pro or Claude Max subscription instead of an API key.",
+	anthropic: "Use your existing Claude Pro or Claude Max subscription instead of an API key.",
 	"github-copilot": "Use your GitHub Copilot subscription.",
 	"openai-codex": "Use your ChatGPT Plus / Pro subscription.",
 };
@@ -125,15 +124,10 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 					// the subsequent get_auth_status round-trip.
 					setAuthStatus((prev) => {
 						const supported = prev?.supported ?? [provider];
-						const others = (prev?.providers ?? []).filter(
-							(p) => p.id !== provider,
-						);
+						const others = (prev?.providers ?? []).filter((p) => p.id !== provider);
 						return {
 							supported,
-							providers: [
-								...others,
-								{ id: provider, type: "oauth" as const },
-							],
+							providers: [...others, { id: provider, type: "oauth" as const }],
 						};
 					});
 					refreshStatus();
@@ -222,11 +216,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 
 	return (
 		<div
-			className={
-				compact
-					? "space-y-2"
-					: "w-full rounded-xl border p-4 space-y-3"
-			}
+			className={compact ? "space-y-2" : "w-full rounded-xl border p-4 space-y-3"}
 			style={
 				compact
 					? undefined
@@ -239,20 +229,13 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 			<div className="flex items-start justify-between gap-3">
 				<div className="flex-1 min-w-0">
 					<div
-						className={
-							compact
-								? "text-xs font-medium"
-								: "text-sm font-semibold"
-						}
+						className={compact ? "text-xs font-medium" : "text-sm font-semibold"}
 						style={{ color: "hsl(var(--foreground))" }}
 					>
 						Sign in with {label}
 					</div>
 					{!compact && description && (
-						<p
-							className="text-xs mt-1"
-							style={{ color: "hsl(var(--muted-foreground))" }}
-						>
+						<p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
 							{description}
 						</p>
 					)}
@@ -261,18 +244,12 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 			</div>
 
 			{statusMessage && (
-				<p
-					className="text-xs"
-					style={{ color: "hsl(var(--muted-foreground))" }}
-				>
+				<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
 					{statusMessage}
 				</p>
 			)}
 			{error && (
-				<p
-					className="text-xs"
-					style={{ color: "hsl(var(--destructive))" }}
-				>
+				<p className="text-xs" style={{ color: "hsl(var(--destructive))" }}>
 					{error}
 				</p>
 			)}

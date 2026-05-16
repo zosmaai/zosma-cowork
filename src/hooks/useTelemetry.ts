@@ -7,14 +7,14 @@
  * 3. Frontend telemetry service gating (Aptabase + Sentry)
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	initTelemetry as initTelemetryService,
+	trackEvent as serviceTrackEvent,
 	setSentryDsn,
 	setTelemetryEnabled as setServiceTelemetryEnabled,
-	trackEvent as serviceTrackEvent,
 } from "@/lib/telemetry";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface UseTelemetryReturn {
 	isEnabled: boolean;
@@ -94,12 +94,9 @@ export function useTelemetry(): UseTelemetryReturn {
 		}
 	}, []);
 
-	const trackEvent = useCallback(
-		(name: string, props?: Record<string, string | number>) => {
-			serviceTrackEvent(name, props);
-		},
-		[],
-	);
+	const trackEvent = useCallback((name: string, props?: Record<string, string | number>) => {
+		serviceTrackEvent(name, props);
+	}, []);
 
 	return {
 		isEnabled,

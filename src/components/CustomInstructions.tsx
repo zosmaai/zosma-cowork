@@ -64,9 +64,7 @@ export function CustomInstructions() {
 					Save
 				</button>
 				{saved && (
-					<span className="text-[10px] text-primary font-medium transition-opacity">
-						Saved!
-					</span>
+					<span className="text-[10px] text-primary font-medium transition-opacity">Saved!</span>
 				)}
 			</div>
 		</div>

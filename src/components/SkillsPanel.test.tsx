@@ -1,25 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SkillsPanel } from "./SkillsPanel";
 
-// Track what mockInvoke returns for different commands
+// Mock Tauri invoke
 const mockInvoke = vi.fn();
-const mockResponses = new Map<string, unknown>();
-
-mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
-	const key = cmd + (args ? JSON.stringify(args) : "");
-	if (mockResponses.has(key)) return Promise.resolve(mockResponses.get(key));
-	// Fallback: match just the command name
-	for (const [k, v] of mockResponses) {
-		if (k === cmd) return Promise.resolve(v);
-	}
-	return Promise.resolve(null);
-});
-
-function setMock(cmd: string, response: unknown, args?: Record<string, unknown>) {
-	const key = args ? cmd + JSON.stringify(args) : cmd;
-	mockResponses.set(key, response);
-}
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
@@ -27,9 +11,15 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 describe("SkillsPanel", () => {
 	beforeEach(() => {
-		mockResponses.clear();
+		mockInvoke.mockReset();
 		// Default: no installed skills
-		setMock("list_skills", []);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_skills") return Promise.resolve([]);
+			if (cmd === "search_skills") return Promise.resolve({ results: [] });
+			if (cmd === "install_skill") return Promise.resolve({ success: true });
+			if (cmd === "remove_skill") return Promise.resolve({ success: true });
+			return Promise.resolve(null);
+		});
 	});
 
 	afterEach(() => {
@@ -38,155 +28,201 @@ describe("SkillsPanel", () => {
 
 	it("renders the search input", () => {
 		render(<SkillsPanel />);
-		expect(screen.getByPlaceholderText("Search skills...")).toBeDefined();
+		expect(screen.getByPlaceholderText("Search skills by name or keyword...")).toBeDefined();
 	});
 
-	it("renders section titles", () => {
+	it("renders Installed Skills section", () => {
 		render(<SkillsPanel />);
 		expect(screen.getByText("Installed Skills")).toBeDefined();
 	});
 
-	it("shows loading state while searching", async () => {
-		setMock("search_skills", { results: [] });
+	it("shows empty state when no installed skills", () => {
 		render(<SkillsPanel />);
-		const input = screen.getByPlaceholderText("Search skills...");
+		expect(screen.getByText("No skills installed yet")).toBeDefined();
+	});
+
+	it("calls search_skills IPC with debounced query", async () => {
+		render(<SkillsPanel />);
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
 		fireEvent.change(input, { target: { value: "typescript" } });
-		// Should show section title immediately
-		await vi.waitFor(() => {
+
+		// Should show searching state
+		await waitFor(() => {
 			expect(screen.getByText("Search results")).toBeDefined();
 		});
-	});
 
-	it("displays search results from IPC", async () => {
-		setMock("search_skills", {
-			results: [
-				{
-					id: "wshobson/agents@typescript-advanced-types",
-					installCount: 41200,
-					url: "https://skills.sh/wshobson/agents/typescript-advanced-types",
-				},
-				{
-					id: "github/awesome-copilot@javascript-typescript-jest",
-					installCount: 10500,
-					url: "https://skills.sh/github/awesome-copilot/javascript-typescript-jest",
-				},
-			],
-		});
-		render(<SkillsPanel />);
-		const input = screen.getByPlaceholderText("Search skills...");
-		fireEvent.change(input, { target: { value: "typescript" } });
-		await vi.waitFor(() => {
-			expect(
-				screen.getByText("wshobson/agents@typescript-advanced-types"),
-			).toBeDefined();
-		});
-		expect(screen.getByText("41.2K installs")).toBeDefined();
-	});
-
-	it("displays installed skills from IPC on mount", async () => {
-		setMock("list_skills", [
-			{
-				name: "find-skills",
-				path: "/home/user/.agents/skills/find-skills",
-				scope: "project",
-				agents: ["Codex"],
+		// Wait for debounce and verify IPC was called
+		await waitFor(
+			() => {
+				expect(mockInvoke).toHaveBeenCalledWith("search_skills", {
+					query: "typescript",
+				});
 			},
-		]);
+			{ timeout: 1000 },
+		);
+	});
+
+	it("displays search results with ExtensionCards", async () => {
+		mockInvoke.mockImplementation((cmd: string, _args?: Record<string, unknown>) => {
+			if (cmd === "list_skills") return Promise.resolve([]);
+			if (cmd === "search_skills") {
+				return Promise.resolve({
+					results: [
+						{
+							id: "wshobson/agents@typescript-advanced-types",
+							installCount: 41200,
+							url: "https://skills.sh/wshobson/agents/typescript-advanced-types",
+							npmData: null,
+						},
+						{
+							id: "github/awesome-copilot@jest-typescript",
+							installCount: 10500,
+							url: "https://skills.sh/github/awesome-copilot/jest-typescript",
+							npmData: null,
+						},
+					],
+				});
+			}
+			return Promise.resolve(null);
+		});
+
 		render(<SkillsPanel />);
-		await vi.waitFor(() => {
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
+		fireEvent.change(input, { target: { value: "typescript" } });
+
+		await waitFor(() => {
+			expect(screen.getByText("wshobson/agents@typescript-advanced-types")).toBeDefined();
+		});
+		expect(screen.getByText("41.2K")).toBeDefined();
+		expect(screen.getByText("10.5K")).toBeDefined();
+	});
+
+	it("displays installed skills with Remove button", async () => {
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_skills") {
+				return Promise.resolve([
+					{
+						name: "find-skills",
+						path: "/home/user/.agents/skills/find-skills",
+						scope: "project",
+						agents: ["Codex"],
+					},
+				]);
+			}
+			return Promise.resolve(null);
+		});
+
+		render(<SkillsPanel />);
+
+		await waitFor(() => {
 			expect(screen.getByText("find-skills")).toBeDefined();
 		});
+
+		// Should show Remove button for installed skills
+		const removeButtons = screen.getAllByTitle("Remove skill");
+		expect(removeButtons.length).toBeGreaterThan(0);
 	});
 
-	it("calls install_skill IPC when install button clicked", async () => {
-		setMock("search_skills", {
-			results: [{ id: "test/skill@my-skill", installCount: 100, url: "" }],
+	it("calls install_skill IPC when Install button clicked", async () => {
+		mockInvoke.mockImplementation((cmd: string, _args?: Record<string, unknown>) => {
+			if (cmd === "list_skills") return Promise.resolve([]);
+			if (cmd === "search_skills") {
+				return Promise.resolve({
+					results: [{ id: "test/skill@my-skill", installCount: 100, url: "", npmData: null }],
+				});
+			}
+			if (cmd === "install_skill") return Promise.resolve({ success: true });
+			return Promise.resolve(null);
 		});
-		setMock("list_skills", []);
-		setMock("install_skill", { success: true }, { source: "test/skill@my-skill" });
+
 		render(<SkillsPanel />);
-		const input = screen.getByPlaceholderText("Search skills...");
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
 		fireEvent.change(input, { target: { value: "test" } });
-		await vi.waitFor(() => {
+
+		await waitFor(() => {
 			expect(screen.getByText("test/skill@my-skill")).toBeDefined();
 		});
-		const installBtn = screen.getByTitle("Install skill");
-		fireEvent.click(installBtn);
+
+		const installButtons = screen.getAllByTitle("Install skill");
+		fireEvent.click(installButtons[0]);
+
 		expect(mockInvoke).toHaveBeenCalledWith("install_skill", {
 			source: "test/skill@my-skill",
 		});
 	});
 
-	it("calls remove_skill IPC when remove button clicked", async () => {
-		setMock("list_skills", [
-			{
-				name: "find-skills",
-				path: "/path",
-				scope: "project",
-				agents: ["Codex"],
-			},
-		]);
-		setMock("remove_skill", { success: true }, { name: "find-skills" });
-		render(<SkillsPanel />);
-		await vi.waitFor(() => {
-			expect(screen.getByText("find-skills")).toBeDefined();
-		});
-		const removeBtn = screen.getByTitle("Remove skill");
-		fireEvent.click(removeBtn);
-		expect(mockInvoke).toHaveBeenCalledWith("remove_skill", { name: "find-skills" });
-	});
-
-	it("refreshes installed list after install", async () => {
-		let skillsList: { name: string; path: string; scope: string; agents: string[] }[] =
-			[];
+	it("opens ExtensionDetail modal when card is clicked", async () => {
 		mockInvoke.mockImplementation((cmd: string) => {
-			if (cmd === "search_skills")
+			if (cmd === "list_skills") return Promise.resolve([]);
+			if (cmd === "search_skills") {
 				return Promise.resolve({
-					results: [{ id: "test/skill@my-skill", installCount: 100, url: "" }],
+					results: [
+						{
+							id: "test/pkg",
+							installCount: 100,
+							url: "https://skills.sh/test/pkg",
+							npmData: null,
+						},
+					],
 				});
-			if (cmd === "list_skills") return Promise.resolve(skillsList);
-			if (cmd === "install_skill") {
-				skillsList = [
-					{
-						name: "my-skill",
-						path: "/p",
-						scope: "project",
-						agents: ["Pi"],
-					},
-				];
-				return Promise.resolve({ success: true });
 			}
 			return Promise.resolve(null);
 		});
-		render(<SkillsPanel />);
-		const input = screen.getByPlaceholderText("Search skills...");
-		fireEvent.change(input, { target: { value: "test" } });
-		await vi.waitFor(() => {
-			expect(screen.getByText("test/skill@my-skill")).toBeDefined();
-		});
-		const installBtn = screen.getByTitle("Install skill");
-		fireEvent.click(installBtn);
-		await vi.waitFor(() => {
-			expect(screen.getByText("my-skill")).toBeDefined();
-		});
-	});
 
-	it("shows empty state when no installed skills", () => {
 		render(<SkillsPanel />);
-		expect(
-			screen.getByText("No skills installed yet. Search above to find skills."),
-		).toBeDefined();
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
+		fireEvent.change(input, { target: { value: "test" } });
+
+		await waitFor(() => {
+			expect(screen.getByText("test/pkg")).toBeDefined();
+		});
+
+		// Click the card (it's a button with the skill ID)
+		const card = screen.getByText("test/pkg").closest("button") || screen.getByText("test/pkg");
+		fireEvent.click(card);
+
+		// Detail modal should appear
+		await waitFor(() => {
+			expect(screen.getByText("Loading details...")).toBeDefined();
+		});
 	});
 
 	it("shows empty results message when search returns nothing", async () => {
-		setMock("search_skills", { results: [] });
 		render(<SkillsPanel />);
-		const input = screen.getByPlaceholderText("Search skills...");
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
 		fireEvent.change(input, { target: { value: "zzznotexist" } });
-		await vi.waitFor(() => {
+
+		await waitFor(() => {
 			expect(mockInvoke).toHaveBeenCalledWith("search_skills", {
 				query: "zzznotexist",
 			});
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText(/No skills found for/)).toBeDefined();
+		});
+	});
+
+	it("shows skill count in search results header", async () => {
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_skills") return Promise.resolve([]);
+			if (cmd === "search_skills") {
+				return Promise.resolve({
+					results: [
+						{ id: "a/b@c", installCount: 1, url: "", npmData: null },
+						{ id: "d/e@f", installCount: 2, url: "", npmData: null },
+					],
+				});
+			}
+			return Promise.resolve(null);
+		});
+
+		render(<SkillsPanel />);
+		const input = screen.getByPlaceholderText("Search skills by name or keyword...");
+		fireEvent.change(input, { target: { value: "test" } });
+
+		await waitFor(() => {
+			expect(screen.getByText("2 skills")).toBeDefined();
 		});
 	});
 });

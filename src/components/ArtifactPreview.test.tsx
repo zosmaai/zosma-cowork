@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 
 describe("ArtifactPreview", () => {
@@ -45,11 +45,7 @@ describe("ArtifactPreview", () => {
 
 	it("renders code block for code files", () => {
 		render(
-			<ArtifactPreview
-				filePath="/tmp/script.ts"
-				fileContent="const x = 1;"
-				artifactType="code"
-			/>,
+			<ArtifactPreview filePath="/tmp/script.ts" fileContent="const x = 1;" artifactType="code" />,
 		);
 		expect(screen.getByTestId("artifact-filename")).toHaveTextContent("script.ts");
 		expect(screen.getByText("const x = 1;")).toBeInTheDocument();
@@ -57,11 +53,7 @@ describe("ArtifactPreview", () => {
 
 	it("shows fallback message for unknown artifacts", () => {
 		render(
-			<ArtifactPreview
-				filePath="/tmp/file.xyz"
-				fileContent="some data"
-				artifactType="unknown"
-			/>,
+			<ArtifactPreview filePath="/tmp/file.xyz" fileContent="some data" artifactType="unknown" />,
 		);
 		expect(screen.getByText(/unknown file type/i)).toBeInTheDocument();
 		expect(screen.getByText("/tmp/file.xyz")).toBeInTheDocument();

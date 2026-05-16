@@ -13,13 +13,8 @@ vi.mock("@sentry/react", () => ({
 	reactErrorHandler: vi.fn(() => vi.fn()),
 }));
 
-const {
-	initTelemetry,
-	resetTelemetry,
-	setTelemetryEnabled,
-	setSentryDsn,
-	trackEvent,
-} = await import("./telemetry");
+const { initTelemetry, resetTelemetry, setTelemetryEnabled, setSentryDsn, trackEvent } =
+	await import("./telemetry");
 
 describe("telemetry service", () => {
 	afterEach(() => {
@@ -82,10 +77,7 @@ describe("telemetry service", () => {
 			setTelemetryEnabled(true);
 			setTelemetryEnabled(false);
 			trackEvent("after_disable");
-			expect(mockInvoke).not.toHaveBeenCalledWith(
-				"track_analytics_event",
-				expect.anything(),
-			);
+			expect(mockInvoke).not.toHaveBeenCalledWith("track_analytics_event", expect.anything());
 		});
 	});
 
