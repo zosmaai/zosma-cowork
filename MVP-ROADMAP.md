@@ -449,3 +449,253 @@ The app stores data in `~/.zosmaai/cowork/` — separate from `~/.pi/agent/` (pi
 ---
 
 *This document is a living artifact. Update as decisions are made and priorities shift.*
+
+---
+
+## 🗂️ Phase 5: Office Document Generation (DOCX/PPTX/XLSX)
+
+**Goal:** Give every user the ability to create, edit, and preview professional Microsoft Office documents (Word, PowerPoint, Excel) through natural language — no design skills needed.
+
+### Why This Matters
+
+| Insight | Implication |
+|---------|------------|
+| Zosma's target users are laptop/Windows users working in Microsoft Office 365 | Office documents are table stakes for founders — pitch decks, business plans, financial models, reports, proposals |
+| AI agents can generate content but produce ugly, unformatted documents | Human-level layout awareness is the differentiator |
+| No desktop AI app has native Office document creation | First-mover advantage for Zosma Cowork |
+| Existing libraries need code; OfficeCLI gives agents a CLI-native way to build documents | The agent (not a separate service) drives the creation loop |
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 Zosma Cowork + Office Docs               │
+│                                                          │
+│  User: "Create a pitch deck for my AI startup"           │
+│       │                                                   │
+│       ▼                                                   │
+│  Agent (pi) receives request                              │
+│       │                                                   │
+│       ├─ ▶ Reads OfficeCLI skill rules                     │
+│       ├─ ▶ Calls OfficeCLI via pi tools                    │
+│       │    (create → add → set → format → watch)           │
+│       ├─ ▶ Previews in browser via `officecli watch`       │
+│       └─ ▶ Saves .pptx/.docx/.xlsx to user's project      │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │           OfficeCLI (single binary)               │    │
+│  │  • DOM path: /slide[1]/shape[@name=Title]        │    │
+│  │  • View modes: outline, stats, issues, html      │    │
+│  │  • Live preview: `officecli watch file.pptx`     │    │
+│  │  • Batch ops: multiple edits, one save cycle      │    │
+│  │  • Validate: OpenXML schema checks               │    │
+│  └──────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Tool Layer for the Agent
+
+The agent needs a set of pi tools wrapping OfficeCLI commands. These sit between the agent's reasoning and the OfficeCLI binary:
+
+```
+Tool: create_document
+  → officecli create <path>.docx|.pptx|.xlsx
+
+Tool: edit_document
+  → officecli add|set|remove <path> <dom-path> --prop ...
+
+Tool: read_document
+  → officecli view <path> <mode>  (outline|text|html|issues|stats)
+
+Tool: preview_document
+  → officecli watch <path> --browser
+
+Tool: find_and_format
+  → officecli set <path> / --prop find=<text> --prop bold=true
+
+Tool: batch_edit
+  → officecli batch <path> < batch.json
+```
+
+### Supported Document Types
+
+#### 📄 Word (.docx)
+| Feature | OfficeCLI Support | Notes |
+|---------|:---:|-------|
+| Paragraphs & runs | ✅ | Bold, italic, color, size, font, spacing |
+| Tables | ✅ | Merge cells, borders, shading, widths |
+| Headers/footers | ✅ | First-page diff, odd/even |
+| Images (PNG/JPG/GIF/SVG) | ✅ | SVG auto-rasterized for older Word |
+| Charts | ✅ | Bar, line, pie, scatter |
+| Hyperlinks & TOC | ✅ | Auto-generated TOC |
+| Footnotes/endnotes | ✅ | Proper reference numbering |
+| Tracked changes & comments | ✅ | Agent-reviewable edit proposals |
+| Equations | ✅ | OMML math format |
+| Watermarks | ✅ | Text and picture |
+| Section breaks & margins | ✅ | Different orientations in same doc |
+| Content controls | ✅ | Structured fill-in forms |
+| i18n & RTL | ✅ | Per-script font slots, BCP-47 lang tags |
+| Document protection | ✅ | Read-only, edit restrictions |
+
+#### 📽️ PowerPoint (.pptx)
+| Feature | OfficeCLI Support | Notes |
+|---------|:---:|-------|
+| Slides & layouts | ✅ | Slide masters, custom layouts |
+| Shapes (text, rect, ellipse, etc.) | ✅ | Precise positioning (cm/inches) |
+| Tables on slides | ✅ | With styling |
+| Charts | ✅ | All chart types |
+| Images & SVG | ✅ | SVG support |
+| Connectors & groups | ✅ | Smart shapes with connectors |
+| Video & audio | ✅ | Embedded media |
+| Morph transitions | ✅ | `morph-ppt` and `morph-ppt-3d` skills |
+| 3D models | ✅ | 3D model support |
+| Slide notes & comments | ✅ | Speaker notes, reviewer comments |
+| Placeholders | ✅ | Template-based slides |
+
+#### 📊 Excel (.xlsx)
+| Feature | OfficeCLI Support | Notes |
+|---------|:---:|-------|
+| Sheets, rows, cells | ✅ | Rich text in cells |
+| Cell merging & styling | ✅ | Borders, fills, fonts, alignment |
+| 20+ chart types | ✅ | Bar, column, line, pie, scatter, etc. |
+| Pivot tables | ✅ | Rows, cols, values, filters, sort, aggregators |
+| Conditional formatting | ✅ | Color scales, data bars, icon sets |
+| Data validation | ✅ | Dropdowns, ranges, custom formulas |
+| Autofilter & sorting | ✅ | Interactive filtering |
+| Named ranges | ✅ | Formula-friendly references |
+| Sparklines | ✅ | Inline mini-charts |
+| OLE objects | ✅ | Embedded content |
+
+### Design Rules (Human-Level Quality)
+
+OfficeCLI alone produces functional documents. **Design rules make them beautiful.**
+
+#### For Presentations (Pitch Decks, Reports)
+| Rule | Detail |
+|------|--------|
+| Color palette | Match topic: dark navy/slate for tech, warm for creative, clean white for enterprise |
+| Typography | Title 36-44pt, subtitle 18-24pt, body 14-16pt. Sans-serif headers, serif for body text |
+| Layout variation | Never two identical slide layouts in a row. Mix title/section → content → chart → image → quote |
+| Margins & spacing | 0.5" margins minimum, 0.3-0.5" between blocks, never touch edges |
+| Bullet hierarchy | Indented properly. Max 3 levels. Use icons in colored circles, not plain dots |
+| Charts | Clean axis labels, consistent legend placement, accessible colorblind-friendly palettes |
+| Images | Proper aspect ratios, no stretching, alt text for accessibility |
+
+#### For Documents (Reports, Proposals)
+| Rule | Detail |
+|------|--------|
+| Table of contents | Auto-generated, page numbers aligned right |
+| Heading hierarchy | H1 → H2 → H3. Never skip levels. Consistent numbering or not, pick one |
+| Paragraph spacing | 6pt after paragraphs. No double-spacing between sections unless intentional |
+| Page numbers | Footer, centered or right-aligned. Title page often omitted |
+| Table styling | Header row bold with shading, alternating row colors, borders consistent |
+| Bullet/numbering | Proper Word bullet library (not unicode bullets). Multi-level list styles |
+| Smart quotes | Always use curly quotes, straight for code |
+
+#### For Spreadsheets (Financial Models, Reports)
+| Rule | Detail |
+|------|--------|
+| Header row | Bold, colored background, frozen |
+| Number formatting | Consistent decimal places, currency symbols, percentage format |
+| Column widths | Content-aware. Wrap text or expand columns |
+| Color coding | Green for inputs, blue for formulas, red for warnings, no garish defaults |
+| Print area | Set correctly with page margins, scaling, repeat header rows |
+
+### 5.1 | Install OfficeCLI on first document request
+
+When a user asks to create a document, the agent checks if OfficeCLI is available:
+- If not installed → download the binary to `~/.zosmaai/cowork/bin/officecli`
+- If already installed → verify version is recent enough
+- Future: bundle OfficeCLI in Zosma Cowork's own dependencies
+
+```bash
+# Install (automatic in agent flow)
+curl -fsSL https://github.com/iOfficeAI/OfficeCLI/raw/main/install.sh | bash
+# Or download binary directly
+curl -L -o ~/.zosmaai/cowork/bin/officecli https://github.com/iOfficeAI/OfficeCLI/releases/latest/download/officecli-linux-x64
+chmod +x ~/.zosmaai/cowork/bin/officecli
+```
+
+### 5.2 | Make OfficeCLI available as pi tools in the sidecar
+
+Register pi tools for each OfficeCLI operation. These are defined in `agent-sidecar/src/tools/`:
+
+| Tool Name | OfficeCLI Command | Purpose |
+|-----------|------------------|---------|
+| `create_document` | `officecli create <path>` | Create blank DOCX/PPTX/XLSX |
+| `add_document_element` | `officecli add <path> <path> --prop ...` | Add slides, shapes, paragraphs |
+| `set_document_element` | `officecli set <path> <path> --prop ...` | Format text, resize, recolor |
+| `remove_document_element` | `officecli remove <path> <path>` | Delete elements |
+| `read_document` | `officecli view <path> <mode>` | Read as outline/text/issues |
+| `batch_edit_document` | `officecli batch <path> < batch.json` | Multiple edits, one save |
+| `preview_document` | `officecli watch <path>` | Live preview in browser |
+| `validate_document` | `officecli validate <path>` | Check against OpenXML schema |
+| `find_and_format` | `officecli set <path> / --prop find=...` | Find & replace with formatting |
+
+### 5.3 | Add "Documents" section in the right panel
+
+A new collapsible section in the right panel showing:
+- Recent documents created in the current session
+- Preview thumbnails (via `officecli view <path> html` rendered as iframe)
+- Quick actions: "Open file", "Share", "Export"
+- Status: generating, ready, error
+
+### 5.4 | Ship with built-in document templates for common use cases
+
+| Template | Documents Included |
+|----------|------------------|
+| 🚀 Startup Pitch | Pitch deck (12 slides), Executive summary (Word), Financial model (Excel) |
+| 📊 Business Report | Quarterly review (PPTX), Full report (DOCX), Data appendix (XLSX) |
+| 📝 Proposal | Technical proposal (DOCX), Scope overview (PPTX), Budget (XLSX) |
+| 📐 Academic | Paper template (DOCX), Presentation (PPTX) |
+
+Each template is a skill file the agent loads (`officecli load_skill pitch-deck`) combined with cow-specific design rules.
+
+### 5.5 | Agent prompt enhancement — natural language to document
+
+Augment the system prompt with a `Document Generation` capability block so the agent knows how to use these tools:
+
+```markdown
+## Document Generation
+
+You can create professional Office documents (DOCX, PPTX, XLSX) using OfficeCLI.
+
+### Multi-step workflow:
+1. **Plan**: Understand the document type, audience, and required sections
+2. **Create**: Generate the file structure with create_document
+3. **Build**: Add content element by element (slides, paragraphs, tables, charts)
+4. **Format**: Apply design rules — colors, fonts, spacing, alignment
+5. **Review**: Preview via preview_document or read_document to check quality
+6. **Fix**: Address any issues found in read_document issues mode
+7. **Deliver**: Present the final file path to the user
+
+### Design rules:
+- Always vary slide layouts (never two identical in a row)
+- Use consistent color palettes matching the topic
+- Set proper margins (0.5" min) and spacing
+- For tables: bold header with shading, alternating row colors
+- For charts: clean axis labels, accessible palettes
+- Always validate document before presenting to user
+```
+
+### Phased Rollout
+
+| # | Task | Details |
+|---|------|---------|
+| 5.1 | Agent-side OfficeCLI detection + install | Check `which officecli`, download if missing to `~/.zosmaai/cowork/bin/`, verify version |
+| 5.2 | pi tool wrappers | Create the 8 pi tool definitions in the sidecar that call OfficeCLI with JSON output parsing |
+| 5.3 | Design rules as skill files | Port pptx skill color palettes + layout rules + font pairings as loadable skill files |
+| 5.4 | Documents right-panel UI | Recent docs list, preview thumbnails, quick actions |
+| 5.5 | Document templates | Ship 3-5 template packs as first-party assets |
+| 5.6 | Agent prompt augmentation | Inject the Document Generation capability block into system instructions |
+| 5.7 | QA loop | Preview → detect issues → fix cycle. Subagent-driven visual QA for PPTX layout |
+| 5.8 | Tests | End-to-end tests: create doc → edit → view → validate pipeline |
+
+### Success Criteria
+
+- User says "Create a pitch deck for my startup" → agent produces a professional 10-12 slide deck in <2 minutes
+- User says "Generate a quarterly report from this data" → agent creates a Word doc with formatted tables, TOC, and charts
+- User says "Build a financial model" → agent creates an Excel sheet with formulas, formatting, and pivot tables
+- Documents open correctly in Microsoft Office 365, Google Docs/Sheets, LibreOffice
+- Documents pass OfficeCLI validation (no OpenXML schema errors)
+- Documents pass visual QA (formatted correctly, consistent design)
