@@ -961,10 +961,30 @@ async function main() {
 									});
 								},
 								onPrompt: async (prompt) => {
-									// Not expected for browser-flow OAuth; reject so the
-									// SDK surfaces a clear error instead of hanging.
+									// Some providers (notably GitHub Copilot) ask for a
+									// GitHub Enterprise URL during the OAuth flow with a
+									// "blank for github.com" affordance. There's no input
+									// surface in the desktop UI for this, so accept the
+									// blank default. Any prompt whose placeholder reads as
+									// "blank for <something>" or "default <something>" is
+									// safe to default — the SDK validates the result and
+									// will report a clear error if the empty answer is
+									// rejected. Everything else still throws.
+									const msg = String(prompt.message ?? "").trim();
+									const placeholder = String(prompt.placeholder ?? "").trim();
+									const blankIsValid =
+										/blank for|default[: ]/i.test(placeholder) ||
+										/enterprise/i.test(msg);
+									if (blankIsValid) {
+										log(
+											"OAuth prompt auto-answered with empty (message=%s, placeholder=%s)",
+											msg,
+											placeholder,
+										);
+										return "";
+									}
 									throw new Error(
-										`Interactive prompts are not supported in the desktop OAuth flow (message: ${prompt.message})`,
+										`Interactive prompts are not supported in the desktop OAuth flow (message: ${msg})`,
 									);
 								},
 								onProgress: (message) => {
