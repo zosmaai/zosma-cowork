@@ -118,6 +118,31 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
         .join("index.ts")
 }
 
+/// Pick the first candidate that exists and is NOT a `#!`-shebang shim.
+/// `fetch-node.mjs` writes shell-script placeholders for variants it
+/// didn't download; spawning one of those gives EPIPE on the next write.
+fn pick_real_node(candidates: &[PathBuf]) -> Option<PathBuf> {
+    use std::io::Read;
+    for p in candidates {
+        if !p.exists() {
+            continue;
+        }
+        let mut buf = [0u8; 2];
+        match std::fs::File::open(p).and_then(|mut f| f.read(&mut buf).map(|n| (n, buf))) {
+            Ok((2, [b'#', b'!'])) => {
+                log::warn!("Skipping shim Node.js placeholder: {:?}", p);
+                continue;
+            }
+            Ok(_) => return Some(p.clone()),
+            Err(e) => {
+                log::warn!("Failed to read Node.js candidate {:?}: {}", p, e);
+                continue;
+            }
+        }
+    }
+    None
+}
+
 fn find_node(app: &tauri::AppHandle) -> PathBuf {
     // 1. Allow override via NODE env var (useful for testing and CI)
     if let Ok(path) = std::env::var("NODE") {
@@ -129,67 +154,45 @@ fn find_node(app: &tauri::AppHandle) -> PathBuf {
     // 2. Try bundled Node.js in app resources (production builds)
     // In production, Tauri bundles Node.js as a resource.
     // macOS universal builds ship both node-arm64 and node-x64.
+    //
+    // fetch-node.mjs creates `#!/bin/bash; exit 1` shim placeholders for
+    // any variants it didn't download (so Tauri's resource validation
+    // passes). Spawning a shim succeeds at the OS level but the shim
+    // immediately exits, leaving the next write_all() to its stdin with
+    // EPIPE ("Broken pipe (os error 32)"). Use `pick_real_node` to skip
+    // shims by sniffing the first two bytes for a shebang.
     if !cfg!(debug_assertions) {
         if let Ok(resource_dir) = app.path().resource_dir() {
             let binaries_dir = resource_dir.join("binaries");
 
             #[cfg(target_os = "windows")]
-            {
-                // During Windows builds, fetch-node.mjs copies node.exe → node
-                // so the Tauri resource entry "binaries/node" works cross-platform.
-                // Check "node" first (Tauri-bundled), then "node.exe" (direct copy).
-                let bundled_path = binaries_dir.join("node");
-                if bundled_path.exists() {
-                    log::info!("Using bundled Node.js: {:?}", bundled_path);
-                    return bundled_path;
-                }
-                let bundled_exe = binaries_dir.join("node.exe");
-                if bundled_exe.exists() {
-                    log::info!("Using bundled Node.js: {:?}", bundled_exe);
-                    return bundled_exe;
-                }
-            }
+            let candidates = [binaries_dir.join("node"), binaries_dir.join("node.exe")];
 
             #[cfg(target_os = "macos")]
-            {
-                // Universal builds: pick the right arch at runtime
+            let candidates = {
                 let current_arch = std::process::Command::new("uname")
                     .arg("-m")
                     .output()
                     .ok()
                     .and_then(|o| String::from_utf8(o.stdout).ok())
                     .unwrap_or_default();
-
-                if current_arch.starts_with("arm") {
-                    // Apple Silicon — use arm64 binary
-                    let bundled_path = binaries_dir.join("node-arm64");
-                    if bundled_path.exists() {
-                        log::info!("Using bundled Node.js (arm64): {:?}", bundled_path);
-                        return bundled_path;
-                    }
+                let arch_specific = if current_arch.starts_with("arm") {
+                    binaries_dir.join("node-arm64")
                 } else {
-                    // Intel — use x64 binary
-                    let bundled_path = binaries_dir.join("node-x64");
-                    if bundled_path.exists() {
-                        log::info!("Using bundled Node.js (x64): {:?}", bundled_path);
-                        return bundled_path;
-                    }
-                }
-                // Fallback to generic "node"
-                let bundled_path = binaries_dir.join("node");
-                if bundled_path.exists() {
-                    log::info!("Using bundled Node.js: {:?}", bundled_path);
-                    return bundled_path;
-                }
-            }
+                    binaries_dir.join("node-x64")
+                };
+                // Try the arch-specific name first (correct for universal
+                // builds), then the generic `node` (correct for single-arch
+                // builds where the arch-specific name was a shim).
+                [arch_specific, binaries_dir.join("node")]
+            };
 
             #[cfg(target_os = "linux")]
-            {
-                let bundled_path = binaries_dir.join("node");
-                if bundled_path.exists() {
-                    log::info!("Using bundled Node.js: {:?}", bundled_path);
-                    return bundled_path;
-                }
+            let candidates = [binaries_dir.join("node")];
+
+            if let Some(real) = pick_real_node(&candidates) {
+                log::info!("Using bundled Node.js: {:?}", real);
+                return real;
             }
         }
     }

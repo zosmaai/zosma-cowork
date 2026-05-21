@@ -168,10 +168,36 @@ function downloadAndExtract(targetTriple) {
 
 	console.log(`[fetch-node] ✅ Done — Node.js ${NODE_VERSION} bundled`);
 
-		// Create stub placeholders for any missing variants so Tauri resource validation passes.
+	// For single-arch (auto-detected) builds, fetch-node.mjs only places a real
+	// binary at `binaries/node`. The Rust runtime's `find_node` looks at the
+	// arch-specific variants first, which would hit the shim placeholder
+	// created below. To prevent that EPIPE trap, also copy the real binary
+	// into the matching arch-specific name so any code path that prefers
+	// arch-specific names gets a working binary.
+	const isWin = platform() === "win32";
+	if (!Array.isArray(config) && !isWin) {
+		const arch = process.arch;
+		const matchingName =
+			arch === "arm64" ? "node-arm64" : arch === "x64" ? "node-x64" : null;
+		if (matchingName) {
+			const realNode = join(binariesDir, "node");
+			const matchingPath = join(binariesDir, matchingName);
+			// Overwrite unconditionally — the repo tracks `#!`-shebang shim
+			// placeholders for both arch variants so Tauri resource validation
+			// passes when checked out fresh; without this we'd leave a stale
+			// shim in place that find_node would have to skip.
+			if (existsSync(realNode)) {
+				copyFileSync(realNode, matchingPath);
+				execSync(`chmod +x "${matchingPath}"`, { stdio: "inherit" });
+				console.log(`[fetch-node]   ✅ Mirrored node → ${matchingName}`);
+			}
+		}
+	}
+
+	// Create stub placeholders for any STILL-missing variants so Tauri
+	// resource validation passes. Real binaries created above take precedence.
 	// On Windows, use .cmd stubs because bash scripts won't execute.
 	const allVariants = ["node", "node-arm64", "node-x64"];
-	const isWin = platform() === "win32";
 	for (const v of allVariants) {
 		const p = join(binariesDir, v);
 		if (!existsSync(p)) {
