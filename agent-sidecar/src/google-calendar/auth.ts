@@ -148,9 +148,13 @@ export async function calendarConnectionStatus(): Promise<{
 }> {
 	const config = await readConfig();
 	const scope = config?.tokens.scope ?? "";
+	// Space-delimited scope string from Google's token endpoint.
+	// Split + exact match avoids substring-injection false positives
+	// (e.g. an attacker-controlled URL containing the scope as a substring).
+	const scopes = scope ? scope.split(/\s+/) : [];
 	return {
 		connected: Boolean(config),
-		hasCalendarScope: scope.includes(CALENDAR_SCOPE),
+		hasCalendarScope: scopes.some((s) => s === CALENDAR_SCOPE),
 		configPath: CONFIG_PATH,
 	};
 }
