@@ -30,6 +30,14 @@ interface ChatViewProps {
 	/** Slash-command registry + dispatch (epic #179). */
 	commands?: Command[];
 	onRunCommand?: (cmd: Command, args: string) => void;
+	/** Issue #201, PR 2 — queue a steering message on the active session. */
+	onSteer?: (text: string) => void;
+	/** Issue #201, PR 2 — queue a follow-up message on the active session. */
+	onFollowUp?: (text: string) => void;
+	/** Issue #201, PR 3 — SDK queue snapshot for composer affordance. */
+	queue?: { steering: readonly string[]; followUp: readonly string[] };
+	/** Issue #201, PR 3 — user pressed Ctrl+↑ to edit the pending queue. */
+	onEditQueue?: () => void;
 }
 
 export function ChatView({
@@ -49,6 +57,10 @@ export function ChatView({
 	draft,
 	commands,
 	onRunCommand,
+	onSteer,
+	onFollowUp,
+	queue,
+	onEditQueue,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -98,6 +110,18 @@ export function ChatView({
 
 	const allMessages = streamingMessage ? [...messages, streamingMessage] : messages;
 	const isEmpty = messages.length === 0 && !streamingMessage;
+	const queuedItems = [
+		...(queue?.steering ?? []).map((text, i) => ({
+			key: `s:${i}:${text}`,
+			kind: "steer" as const,
+			text,
+		})),
+		...(queue?.followUp ?? []).map((text, i) => ({
+			key: `f:${i}:${text}`,
+			kind: "follow_up" as const,
+			text,
+		})),
+	];
 
 	return (
 		<div className="chat-font flex flex-col flex-1 min-h-0">
@@ -119,6 +143,44 @@ export function ChatView({
 								models={models}
 							/>
 						))}
+						{/* Issue #201 PR3 follow-up: queued messages render AFTER
+						    streamingMessage — they are work the agent will do NEXT,
+						    so chronologically they belong below the current bubble.
+						    Threaded visual: a left vertical line ties the queued
+						    items to the in-progress bubble above (pi-TUI inspired).
+						    Source of truth is the `queue` prop — NOT state.messages
+						    — so clearQueue() drops every bubble atomically. */}
+						{queuedItems.length > 0 && (
+							<div data-testid="queued-section" className="mx-auto max-w-3xl px-6 mt-1 mb-3">
+								<div
+									data-testid="queued-thread"
+									className="ml-11 border-l-2 pl-4 py-1 space-y-1.5 text-sm"
+									style={{ borderColor: "hsl(var(--border))" }}
+								>
+									{queuedItems.map((item) => (
+										<div
+											key={item.key}
+											className="relative text-muted-foreground/90 leading-relaxed"
+										>
+											{/* Tiny node-dot connecting each item to the thread line. */}
+											<span
+												className="absolute -left-[1.30rem] top-2 h-1.5 w-1.5 rounded-full"
+												style={{ background: "hsl(var(--border))" }}
+												aria-hidden="true"
+											/>
+											<span className="font-medium text-muted-foreground">
+												{item.kind === "steer" ? "Steering " : "Follow-up "}
+											</span>
+											<span className="text-muted-foreground/60">· </span>
+											<span className="whitespace-pre-wrap">{item.text}</span>
+										</div>
+									))}
+									<div className="text-xs text-muted-foreground/60">
+										Ctrl+↑ to edit all queued messages
+									</div>
+								</div>
+							</div>
+						)}
 						<div ref={messagesEndRef} />
 					</div>
 				)}
@@ -140,7 +202,15 @@ export function ChatView({
 					key={sessionKey}
 					ref={inputRef}
 					onSend={onSend}
-					disabled={isRunning}
+					/* Issue #201: while streaming, the input stays enabled and
+					   Enter/Alt+Enter route to steer/follow-up instead of starting
+					   a fresh prompt. `disabled` is reserved for hard-blocks like
+					   "no model selected" or "sidecar not ready". */
+					streaming={isRunning}
+					onSteer={onSteer}
+					onFollowUp={onFollowUp}
+					queue={queue}
+					onEditQueue={onEditQueue}
 					models={models}
 					currentModelId={currentModelId}
 					onModelSelect={onModelSelect}

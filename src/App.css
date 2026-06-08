@@ -419,9 +419,16 @@ body::before {
 }
 .app-wallpaper body::before,
 body[data-wallpaper]::before {
-	background-image: var(--app-wallpaper, none);
+	/* Dim scrim layered over the chosen backdrop keeps glass panels legible. */
+	background-image: linear-gradient(
+			rgba(0, 0, 0, var(--app-wallpaper-dim, 0)),
+			rgba(0, 0, 0, var(--app-wallpaper-dim, 0))
+		), var(--app-wallpaper, none);
 	background-size: cover;
 	background-position: center;
+	/* Expand past the viewport so blur doesn't reveal faded edges. */
+	inset: -2.5rem;
+	filter: blur(var(--app-wallpaper-blur, 0px));
 	animation: none;
 }
 
@@ -438,6 +445,21 @@ body[data-wallpaper]::before {
 #root {
 	position: relative;
 	z-index: 1;
+}
+
+/* ── Background settings: react-colorful picker sizing ── */
+.wallpaper-color-picker .react-colorful {
+	width: 196px;
+	height: 168px;
+}
+.wallpaper-color-picker .react-colorful__saturation {
+	border-radius: 10px 10px 0 0;
+}
+.wallpaper-color-picker .react-colorful__last-control {
+	border-radius: 0 0 10px 10px;
+}
+.wallpaper-color-picker .react-colorful__hue {
+	height: 20px;
 }
 
 /* ── Elevation / glass utilities ──

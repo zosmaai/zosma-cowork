@@ -14,6 +14,14 @@ export interface ChatMessage {
 	isStreaming?: boolean;
 	model?: string;
 	provider?: string;
+	/**
+	 * Subclass tag for issue #201 PR 3 queued bubbles. Plain user prompts
+	 * carry no `kind`. Steer/follow-up messages queued mid-turn are
+	 * tagged so ChatView can render a small "queued·steer" /
+	 * "queued·follow-up" badge, and so the composer's Ctrl+↑ edit-mode
+	 * can preserve original kind on re-queue.
+	 */
+	kind?: "queued-steer" | "queued-follow-up";
 }
 
 export interface ToolCallInfo {

@@ -4,6 +4,7 @@ import {
 	Cloud,
 	FileText,
 	Globe,
+	Image as ImageIcon,
 	Info,
 	KeyRound,
 	MessageSquare,
@@ -16,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { About } from "./settings/About";
 import { Authentication } from "./settings/Authentication";
+import { Background } from "./settings/Background";
 import { Extensions } from "./settings/Extensions";
 import { GoogleIntegration } from "./settings/GoogleIntegration";
 import { Instructions } from "./settings/Instructions";
@@ -40,6 +42,7 @@ type SectionId =
 	| "skills"
 	| "custom-instructions"
 	| "theme"
+	| "background"
 	| "telemetry"
 	| "remote-access"
 	| "about";
@@ -55,6 +58,7 @@ const SECTIONS: {
 	{ id: "skills", label: "Skills", Icon: Zap },
 	{ id: "custom-instructions", label: "Custom Instructions", Icon: FileText },
 	{ id: "theme", label: "Theme", Icon: Palette },
+	{ id: "background", label: "Background", Icon: ImageIcon },
 	{ id: "telemetry", label: "Telemetry", Icon: BarChart2 },
 	{ id: "remote-access", label: "Remote Access", Icon: Globe },
 	{ id: "about", label: "About", Icon: Info },
@@ -303,7 +307,10 @@ function SectionContent({
 			{activeSection === "integrations" && <GoogleIntegration />}
 			{activeSection === "skills" && <Skills />}
 			{activeSection === "custom-instructions" && <Instructions />}
-			{activeSection === "theme" && <Theme fontScale={fontScale} onFontScaleChange={onFontScaleChange} />}
+			{activeSection === "theme" && (
+				<Theme fontScale={fontScale} onFontScaleChange={onFontScaleChange} />
+			)}
+			{activeSection === "background" && <Background />}
 			{activeSection === "telemetry" && (
 				<Telemetry enabled={telemetryEnabled} onToggle={onTelemetryToggle} />
 			)}

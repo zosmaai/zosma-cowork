@@ -482,6 +482,18 @@ async fn read_stdout(
                             let _ = app.emit(kind, e.clone());
                         }
                     }
+                    // Pi SDK session-level events (queue_update,
+                    // session_info_changed, etc.) use `type` instead of
+                    // `kind`. The composer (#201 PR 3) needs to know about
+                    // queue mutations EVEN WHEN NO PROMPT IS ACTIVE — e.g.
+                    // after the agent finishes and a follow-up dequeues.
+                    // Emit those globally so a `listen("queue_update", ...)`
+                    // in React works regardless of streaming state.
+                    if let Some(t) = e.get("type").and_then(|v| v.as_str()) {
+                        if t == "queue_update" {
+                            let _ = app.emit("queue_update", e.clone());
+                        }
+                    }
                     for (_, p) in pp.lock().await.iter() {
                         let _ = p.channel.send(e.clone());
                     }
@@ -621,6 +633,100 @@ async fn send_prompt(
 #[tauri::command]
 async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
     scmd(&s, &serde_json::json!({"type":"abort","id":"ab"})).await
+}
+
+/// Build the JSONL payload sent to the sidecar for a `steer` command.
+///
+/// Factored out as a pure function so the wire shape is unit-testable
+/// without spinning up a real sidecar process. The Tauri command
+/// [`steer_prompt`] is a thin wrapper that generates an id and forwards
+/// the payload via [`scmd_r`].
+///
+/// See `agent-sidecar/src/steering.ts` for the matching handler and
+/// pi-coding-agent's `docs/rpc.md` for the protocol reference (cowork
+/// uses `text` rather than pi's `message` to stay internally consistent
+/// with the existing `prompt` command).
+fn build_steer_payload(id: &str, text: &str) -> Value {
+    serde_json::json!({
+        "type": "steer",
+        "id": id,
+        "text": text,
+    })
+}
+
+/// Build the JSONL payload sent to the sidecar for a `clear_queue` command.
+/// Issue #201 PR 3 — atomically drains the SDK queue. No `text` field: this
+/// command takes no input. The sidecar replies with the drained
+/// `{steering, followUp}` arrays in a `result` envelope.
+fn build_clear_queue_payload(id: &str) -> Value {
+    serde_json::json!({
+        "type": "clear_queue",
+        "id": id,
+    })
+}
+
+/// Build the JSONL payload sent to the sidecar for a `follow_up` command.
+/// See [`build_steer_payload`] for rationale.
+fn build_follow_up_payload(id: &str, text: &str) -> Value {
+    serde_json::json!({
+        "type": "follow_up",
+        "id": id,
+        "text": text,
+    })
+}
+
+/// Queue a steering message on the active session. Delivered after the
+/// current assistant turn finishes its tool calls, before the next LLM
+/// call. Round-trips through `scmd_r` with a short timeout because the
+/// sidecar replies with a one-shot `result` / `error` envelope (no
+/// streaming channel — streaming events keep flowing on the existing
+/// prompt channel).
+#[tauri::command]
+async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+    if !s.sidecar.ready.load(Ordering::Acquire) {
+        return Err("not ready".into());
+    }
+    let id = format!("st-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &build_steer_payload(&id, &text),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+}
+
+/// Queue a follow-up message on the active session. Delivered after the
+/// agent has no more tool calls or steering messages pending.
+#[tauri::command]
+async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+    if !s.sidecar.ready.load(Ordering::Acquire) {
+        return Err("not ready".into());
+    }
+    let id = format!("fu-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &build_follow_up_payload(&id, &text),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+}
+
+/// Drain the active session's steer + follow-up queue and return the
+/// drained `{steering, followUp}` arrays. Issue #201 PR 3 — the desktop
+/// composer calls this when the user presses Ctrl+↑ to recall pending
+/// queued messages for editing. Idempotent on an empty queue.
+#[tauri::command]
+async fn clear_queue(s: State<'_, AppState>) -> Result<Value, String> {
+    if !s.sidecar.ready.load(Ordering::Acquire) {
+        return Err("not ready".into());
+    }
+    let id = format!("cq-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &build_clear_queue_payload(&id),
+        std::time::Duration::from_secs(5),
+    )
+    .await
 }
 
 /// Answer an extension UI dialog (ctx.ui.select/confirm/input/editor). `id` is
@@ -1122,6 +1228,65 @@ async fn read_skill_md(path: String, _s: State<'_, AppState>) -> Result<Value, S
         "content": content,
         "path": skill_md.to_string_lossy().to_string(),
     }))
+}
+
+// ── Background wallpaper (#191) ──────────────────────────────────────
+//
+// The webview can't read arbitrary files the user picks (fs scope is limited
+// to ~/.zosmaai/cowork/**, and there's no asset protocol), so the picked image
+// is copied into the wallpapers dir by Rust and read back as bytes at apply
+// time. Keeping both file ops in Rust avoids any Tauri config/capability change.
+
+const WALLPAPER_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
+
+fn wallpapers_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| format!("Cannot find home directory: {e}"))?;
+    let dir = PathBuf::from(home)
+        .join(".zosmaai")
+        .join("cowork")
+        .join("wallpapers");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create wallpapers dir: {e}"))?;
+    Ok(dir)
+}
+
+/// Copy a user-picked image into the wallpapers dir. Returns the stored filename.
+/// A single active slot is kept (`wallpaper.<ext>`), overwriting any previous one
+/// of the same extension; stale slots with other extensions are removed.
+#[tauri::command]
+fn import_wallpaper(src_path: String) -> Result<String, String> {
+    let src = PathBuf::from(&src_path);
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .filter(|e| WALLPAPER_EXTS.contains(&e.as_str()))
+        .ok_or_else(|| "Unsupported image type (use PNG, JPG, WEBP or GIF).".to_string())?;
+
+    let dir = wallpapers_dir()?;
+    // Drop any previous wallpaper slot so we don't accumulate files.
+    for other in WALLPAPER_EXTS {
+        let p = dir.join(format!("wallpaper.{other}"));
+        if p.exists() {
+            let _ = fs::remove_file(&p);
+        }
+    }
+
+    let filename = format!("wallpaper.{ext}");
+    let dest = dir.join(&filename);
+    fs::copy(&src, &dest).map_err(|e| format!("Failed to copy image: {e}"))?;
+    Ok(filename)
+}
+
+/// Read a stored wallpaper image's bytes by filename (no path traversal allowed).
+#[tauri::command]
+fn read_wallpaper(filename: String) -> Result<Vec<u8>, String> {
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("Invalid wallpaper filename.".to_string());
+    }
+    let path = wallpapers_dir()?.join(&filename);
+    fs::read(&path).map_err(|e| format!("Failed to read wallpaper: {e}"))
 }
 
 /// Extract a YAML frontmatter field from SKILL.md content
@@ -1735,6 +1900,9 @@ pub fn run() {
             get_active_model,
             send_prompt,
             abort_prompt,
+            steer_prompt,
+            follow_up_prompt,
+            clear_queue,
             send_ui_response,
             set_active_model,
             save_auth_key,
@@ -1768,6 +1936,8 @@ pub fn run() {
             read_skill_md,
             install_skill,
             remove_skill,
+            import_wallpaper,
+            read_wallpaper,
             start_remote_server,
             stop_remote_server,
             get_remote_status,
@@ -1779,4 +1949,76 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_clear_queue_payload, build_follow_up_payload, build_steer_payload};
+
+    // Wire-format guards: the sidecar's `case "steer"` / `case "follow_up"` /
+    // `case "clear_queue"` handlers (agent-sidecar/src/index.ts) read these
+    // exact fields. Drift here = silent breakage on the React → Rust → sidecar
+    // path.
+
+    #[test]
+    fn steer_payload_uses_steer_type_with_text_and_id() {
+        let p = build_steer_payload("st-abc", "hi there");
+        assert_eq!(p["type"], "steer");
+        assert_eq!(p["id"], "st-abc");
+        assert_eq!(p["text"], "hi there");
+    }
+
+    #[test]
+    fn follow_up_payload_uses_follow_up_type_with_text_and_id() {
+        let p = build_follow_up_payload("fu-xyz", "after you finish");
+        assert_eq!(p["type"], "follow_up");
+        assert_eq!(p["id"], "fu-xyz");
+        assert_eq!(p["text"], "after you finish");
+    }
+
+    #[test]
+    fn steer_payload_preserves_text_with_newlines_and_unicode() {
+        // Steering messages are user-authored composer input — must not
+        // be mangled by serialization. The Tauri → sidecar transport is
+        // LF-delimited JSONL so embedded `\n` and Unicode line separators
+        // must round-trip via JSON escaping.
+        let p = build_steer_payload("id", "line one\nline two — café");
+        let serialized = serde_json::to_string(&p).unwrap();
+        // The newline inside the user's text is escaped, never raw.
+        assert!(
+            !serialized.contains("line one\nline two"),
+            "raw newline leaked into JSONL frame: {serialized}"
+        );
+        assert!(serialized.contains("line one\\nline two"));
+        assert!(serialized.contains("caf\u{00e9}"));
+    }
+
+    #[test]
+    fn clear_queue_payload_uses_clear_queue_type_with_id_only() {
+        // No text field — clear_queue takes no input from the user. The
+        // sidecar reads `type` to dispatch and `id` to route the response
+        // envelope back through `pending_requests`.
+        let p = build_clear_queue_payload("cq-abc");
+        assert_eq!(p["type"], "clear_queue");
+        assert_eq!(p["id"], "cq-abc");
+        // Defensive: ensure no extra fields snuck in that the sidecar
+        // doesn't expect (sidecar's strict TS Command union would refuse).
+        let obj = p.as_object().expect("clear_queue payload is an object");
+        assert_eq!(
+            obj.len(),
+            2,
+            "unexpected fields in clear_queue payload: {p}"
+        );
+    }
+
+    #[test]
+    fn payloads_are_pure_no_shared_state_between_calls() {
+        // Two calls with the same id must produce byte-identical JSON.
+        let a = build_steer_payload("same", "hello");
+        let b = build_steer_payload("same", "hello");
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+    }
 }

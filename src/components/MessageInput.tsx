@@ -47,6 +47,32 @@ interface MessageInputProps {
 	 */
 	commands?: Command[];
 	onRunCommand?: (cmd: Command, args: string) => void;
+	/**
+	 * True while the agent is actively responding. The composer stays
+	 * **enabled** in this state and routes Enter to `onSteer` (mid-turn
+	 * course correction) and Alt+Enter to `onFollowUp` (post-turn task) —
+	 * matching pi-coding-agent's TUI shortcuts. See issue #201.
+	 */
+	streaming?: boolean;
+	/** Queue a steering message on the running session (issue #201, PR 1). */
+	onSteer?: (message: string) => void;
+	/** Queue a follow-up message on the running session (issue #201, PR 1). */
+	onFollowUp?: (message: string) => void;
+	/**
+	 * Pending steer + follow-up messages on the active session
+	 * (issue #201, PR 3). When either array is non-empty the composer
+	 * surfaces a small "N queued — Ctrl+↑ to edit" summary and Ctrl+↑
+	 * fires {@link onEditQueue}.
+	 */
+	queue?: { steering: readonly string[]; followUp: readonly string[] };
+	/**
+	 * User pressed Ctrl+↑ to edit pending queued messages. The parent
+	 * should atomically drain the SDK queue (via `clearQueue`) and load
+	 * the drained messages into the composer through the existing
+	 * {@link draft} prop. While editing, the SDK queue is empty so
+	 * nothing accidentally fires.
+	 */
+	onEditQueue?: () => void;
 }
 
 export interface MessageInputHandle {
@@ -65,6 +91,11 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			draft,
 			commands,
 			onRunCommand,
+			streaming = false,
+			onSteer,
+			onFollowUp,
+			queue,
+			onEditQueue,
 		},
 		ref,
 	) => {
@@ -181,7 +212,22 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			}
 		}, [pastedImages.length]);
 
-		async function handleSubmit(e?: React.FormEvent) {
+		/**
+		 * Submit the composer. `intent` decides which callback receives the
+		 * payload:
+		 *   - `"send"`     : start a fresh turn (idle mode — default)
+		 *   - `"steer"`    : mid-turn course-correction (streaming + Enter)
+		 *   - `"follow_up"`: post-turn task (streaming + Alt+Enter)
+		 *
+		 * If the requested callback isn't wired (e.g. `onSteer` missing during
+		 * streaming) the submit is suppressed — falling back to `onSend` would
+		 * start a fresh prompt, which the sidecar's prompt-scheduler would
+		 * queue behind the running turn (exactly the bug #201 is fixing).
+		 */
+		async function handleSubmit(
+			intent: "send" | "steer" | "follow_up" = "send",
+			e?: React.FormEvent,
+		) {
 			e?.preventDefault();
 			const trimmed = text.trim();
 			if ((!trimmed && attachedFiles.length === 0 && pastedImages.length === 0) || disabled) return;
@@ -199,12 +245,22 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				finalPrompt = finalPrompt ? `${finalPrompt}\n\n${trimmed}` : trimmed;
 			}
 
-			onSend(finalPrompt);
+			const handler = intent === "steer" ? onSteer : intent === "follow_up" ? onFollowUp : onSend;
+			if (!handler) return; // silent no-op is safer than misroute — see jsdoc
+
+			handler(finalPrompt);
 			setText("");
 			setAttachedFiles([]);
 			clearImages();
 			if (textareaRef.current) {
 				textareaRef.current.style.height = "auto";
+				// PR3 follow-up: keep focus on the textarea after submit so
+				// the user can type the next prompt / steer / follow-up
+				// without a mouse trip. Form submission and the React
+				// re-render that clears `text` can briefly shift focus to
+				// document.body on real DOM — explicit refocus is harmless
+				// when focus is already on the textarea.
+				textareaRef.current.focus();
 			}
 		}
 
@@ -216,8 +272,11 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			if (textareaRef.current) textareaRef.current.style.height = "auto";
 		}
 
+		/** Total pending queued messages across both kinds (#201 PR 3). */
+		const queueCount = (queue?.steering.length ?? 0) + (queue?.followUp.length ?? 0);
+
 		function handleKeyDown(e: React.KeyboardEvent) {
-			// Palette is open: its keys take precedence over send/newline.
+			// Palette is open: its keys take precedence over send/steer/newline.
 			if (paletteOpen) {
 				if (e.key === "ArrowDown") {
 					e.preventDefault();
@@ -252,15 +311,31 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					return;
 				}
 			}
-			if (e.key === "Enter" && !e.shiftKey) {
-				e.preventDefault();
-				handleSubmit();
+			// Ctrl+↑ — recall pending queued messages for editing (#201 PR 3).
+			// Works in both streaming and idle state; no-op when the queue is empty.
+			if (e.key === "ArrowUp" && e.ctrlKey && !e.shiftKey && !e.altKey) {
+				if (queueCount > 0 && onEditQueue) {
+					e.preventDefault();
+					onEditQueue();
+				}
+				return;
+			}
+			if (e.key !== "Enter" || e.shiftKey) return;
+			e.preventDefault();
+			if (streaming) {
+				handleSubmit(e.altKey ? "follow_up" : "steer");
+			} else {
+				handleSubmit("send");
 			}
 		}
 
 		const placeholder = disabled
-			? "Thinking..."
-			: "Message (Enter to send, Shift+Enter for newline)";
+			? "Not ready..."
+			: streaming
+				? queueCount > 0
+					? `Steer with Enter · Alt+Enter for follow-up · ${queueCount} queued (Ctrl+↑ to edit)`
+					: "Steer with Enter · Alt+Enter to queue follow-up"
+				: "Message (Enter to send, Shift+Enter for newline)";
 
 		const hasContent = !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
 
@@ -279,7 +354,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 
 		return (
 			<motion.form
-				onSubmit={handleSubmit}
+				onSubmit={(e) => handleSubmit(streaming ? "steer" : "send", e)}
 				className="px-4 pb-4 mx-auto w-full"
 				style={{ maxWidth: "var(--chat-composer-max-width, 852px)" }}
 				initial={prefersReducedMotion ? false : { y: 72, opacity: 0 }}
@@ -324,6 +399,26 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						inputMode="text"
 						className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
 					/>
+
+					{/* PR3 follow-up: the standalone steer/follow-up hint row and
+					    queue-summary row were removed — they looked like a second
+					    input above the main input. Hints now live in the textarea
+					    placeholder (mode-aware), and the queue surface lives in
+					    the chat as a threaded section above the composer. Idle
+					    state keeps a tiny queue chip (data-testid below) for
+					    discoverability when a follow-up survives STREAM_COMPLETE
+					    and the placeholder reverts to the idle wording. */}
+					{queueCount > 0 && !streaming && !disabled && (
+						<div
+							className="px-4 pb-1 text-[11px] leading-tight"
+							style={{ color: "hsl(var(--muted-foreground) / 0.85)" }}
+							data-testid="composer-queue-summary"
+						>
+							<span>{queueCount} queued</span>
+							<span className="opacity-50"> · </span>
+							<span>Ctrl+↑ to edit</span>
+						</div>
+					)}
 
 					{/* Pasted image chips */}
 					{pastedImages.length > 0 && (
@@ -430,7 +525,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						<button
 							type="submit"
 							disabled={disabled || !hasContent}
-							aria-label="Send message"
+							aria-label={streaming ? "Send steering message" : "Send message"}
 							className="flex items-center justify-center w-8 h-8 rounded-full transition-all duration-150 disabled:cursor-not-allowed"
 							style={{
 								background: hasContent ? "#ffffff" : "hsl(var(--muted))",

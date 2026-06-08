@@ -8,7 +8,27 @@ import type {
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { useCallback, useReducer, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useReducer, useState } from "react";
+
+/**
+ * Snapshot of the agent session's pending message queue (#201 PR 3).
+ *
+ * Two independent FIFO queues live inside the pi SDK's `AgentSession`:
+ *  - `steering`: mid-turn course corrections; delivered after the current
+ *    assistant turn's tool calls finish but before the next LLM call.
+ *  - `followUp`: appended-to-the-task messages; delivered only when the
+ *    agent has nothing else to do.
+ *
+ * The reducer keeps this slice eventually-consistent via `queue_update`
+ * events from the sidecar. Optimistic dispatches (the moment the user
+ * presses Enter / Alt+Enter while streaming) make the UI feel
+ * instantaneous; the next `queue_update` reconciles.
+ */
+export interface QueueSnapshot {
+	steering: string[];
+	followUp: string[];
+}
 
 export interface StreamState {
 	messages: ChatMessage[];
@@ -16,6 +36,8 @@ export interface StreamState {
 	isRunning: boolean;
 	status: "idle" | "thinking" | "tool_call" | "responding" | "error";
 	error: string | null;
+	/** Pending steer + follow-up messages — see {@link QueueSnapshot}. */
+	queue: QueueSnapshot;
 }
 
 /** Granular tool execution phase for richer status display */
@@ -49,7 +71,21 @@ export type StreamAction =
 	| { type: "STREAM_COMPLETE" }
 	| { type: "STREAM_ERROR"; error: string }
 	| { type: "ABORT_STREAM" }
-	| { type: "RESET" };
+	| { type: "RESET" }
+	/**
+	 * Reconciling action — dispatched on every `queue_update` event from
+	 * the sidecar. Replaces the entire queue snapshot (no merge: the
+	 * SDK is the source of truth).
+	 */
+	| { type: "QUEUE_UPDATE"; steering: string[]; followUp: string[] }
+	/**
+	 * Optimistic action — dispatched at the call site the moment the
+	 * user presses Enter / Alt+Enter while the agent is streaming. Adds
+	 * the message to BOTH the queue slice AND `messages` so a bubble
+	 * shows up before the sidecar round-trip. Any divergence is healed
+	 * by the next `QUEUE_UPDATE`.
+	 */
+	| { type: "QUEUE_OPTIMISTIC"; kind: "steer" | "follow_up"; text: string };
 
 export const INITIAL_STATE: StreamState = {
 	messages: [],
@@ -57,6 +93,7 @@ export const INITIAL_STATE: StreamState = {
 	isRunning: false,
 	status: "idle",
 	error: null,
+	queue: { steering: [], followUp: [] },
 };
 
 /** Initial tool phase state */
@@ -297,6 +334,38 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 		case "RESET":
 			return INITIAL_STATE;
 
+		case "QUEUE_UPDATE":
+			return {
+				...state,
+				queue: {
+					steering: [...action.steering],
+					followUp: [...action.followUp],
+				},
+			};
+
+		case "QUEUE_OPTIMISTIC": {
+			// Issue #201 PR3 follow-up: optimistic queue bubbles live ONLY in
+			// state.queue, never in state.messages. ChatView renders queued
+			// items from state.queue AFTER the streaming AI message so they
+			// appear chronologically below "work currently in flight". Keeping
+			// them out of messages also means Ctrl+↑ → clearQueue() →
+			// QUEUE_UPDATE(empty) atomically removes every visible queued
+			// bubble — no orphan-duplicate bug (#201 follow-up screenshot).
+			return {
+				...state,
+				queue:
+					action.kind === "steer"
+						? {
+								...state.queue,
+								steering: [...state.queue.steering, action.text],
+						  }
+						: {
+								...state.queue,
+								followUp: [...state.queue.followUp, action.text],
+						  },
+			};
+		}
+
 		default:
 			return state;
 	}
@@ -439,6 +508,24 @@ export function usePiStream() {
 						});
 						break;
 					}
+
+					// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
+					// on every steer/follow-up enqueue, dequeue, and clear.
+					// The Rust layer also emits this globally (see
+					// `listen("queue_update")` below) so the queue stays in
+					// sync even when no prompt channel is active.
+					case "queue_update": {
+						const qe = event as unknown as {
+							steering?: string[];
+							followUp?: string[];
+						};
+						dispatch({
+							type: "QUEUE_UPDATE",
+							steering: qe.steering ?? [],
+							followUp: qe.followUp ?? [],
+						});
+						break;
+					}
 				}
 			} catch (err) {
 				console.error("[cowork] Error processing event:", err, event);
@@ -464,5 +551,99 @@ export function usePiStream() {
 		}
 	}, []);
 
-	return { state, startStream, abortStream, dispatch, toolPhase };
+	/**
+	 * Queue a steering message on the running session (issue #201, PR 1).
+	 * Mid-turn course correction — the agent picks it up after its current
+	 * tool batch finishes, before the next LLM call. Errors from the sidecar
+	 * (extension command, empty text, etc.) are logged but not re-thrown:
+	 * the composer’s textarea is already cleared on submit so we don’t want
+	 * to surface a stack trace mid-conversation. Future PR may surface them
+	 * as a transient toast.
+	 */
+	const steerStream = useCallback(async (text: string) => {
+		// Optimistic: surface the user bubble immediately so the UI doesn't
+		// feel like the message vanished. The next queue_update event will
+		// reconcile (no-op if it matches; visible if SDK rejected text).
+		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text });
+		try {
+			await invoke("steer_prompt", { text });
+		} catch (err) {
+			console.warn("[cowork] steer_prompt rejected:", err);
+		}
+	}, []);
+
+	/**
+	 * Queue a follow-up message on the running session (issue #201, PR 1).
+	 * Delivered after the agent finishes all current work. Same error
+	 * handling rationale as {@link steerStream}.
+	 */
+	const followUpStream = useCallback(async (text: string) => {
+		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
+		try {
+			await invoke("follow_up_prompt", { text });
+		} catch (err) {
+			console.warn("[cowork] follow_up_prompt rejected:", err);
+		}
+	}, []);
+
+	/**
+	 * Atomically drain the SDK queue and return its contents. Issue #201
+	 * PR 3 — the composer calls this when the user presses Ctrl+↑ to edit
+	 * pending queued messages. The queue is left empty on return; if the
+	 * user wants to re-send any pulled message they re-queue it via
+	 * steerStream/followUpStream. Returns empty arrays on failure (so the
+	 * caller can render "nothing to edit" rather than crash).
+	 */
+	const clearQueue = useCallback(async (): Promise<QueueSnapshot> => {
+		try {
+			const raw = (await invoke("clear_queue")) as {
+				steering?: string[];
+				followUp?: string[];
+			};
+			return {
+				steering: raw.steering ?? [],
+				followUp: raw.followUp ?? [],
+			};
+		} catch (err) {
+			console.warn("[cowork] clear_queue rejected:", err);
+			return { steering: [], followUp: [] };
+		}
+	}, []);
+
+	/**
+	 * Global queue_update listener. The Rust event router emits
+	 * `queue_update` globally (separate from the prompt channel) so we
+	 * get queue mutations even when no prompt is active — e.g. a
+	 * follow-up dequeues right after STREAM_COMPLETE.
+	 */
+	useEffect(() => {
+		let unlisten: (() => void) | undefined;
+		listen<{ steering?: string[]; followUp?: string[] }>(
+			"queue_update",
+			(evt) => {
+				const payload = evt.payload ?? {};
+				dispatch({
+					type: "QUEUE_UPDATE",
+					steering: payload.steering ?? [],
+					followUp: payload.followUp ?? [],
+				});
+			},
+		).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
+	}, []);
+
+	return {
+		state,
+		startStream,
+		abortStream,
+		steerStream,
+		followUpStream,
+		clearQueue,
+		dispatch,
+		toolPhase,
+	};
 }

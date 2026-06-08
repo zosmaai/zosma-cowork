@@ -44,7 +44,16 @@ interface SessionEntry {
 }
 
 function App() {
-	const { state: streamState, startStream, abortStream, toolPhase, dispatch } = usePiStream();
+	const {
+		state: streamState,
+		startStream,
+		abortStream,
+		steerStream,
+		followUpStream,
+		clearQueue,
+		toolPhase,
+		dispatch,
+	} = usePiStream();
 	const telemetry = useTelemetry();
 	const [showTelemetryConsent, setShowTelemetryConsent] = useState<boolean | null>(null);
 	const personaRef = useRef("");
@@ -443,6 +452,30 @@ function App() {
 		setComposerDraft((prev) => ({ text: prompt, nonce: (prev?.nonce ?? 0) + 1 }));
 	}, []);
 
+	/**
+	 * Issue #201 PR 3 — Ctrl+↑ in the composer fires this. We atomically
+	 * drain the SDK queue (so nothing fires while the user is editing) and
+	 * load the drained messages into the composer via the existing
+	 * `draft` channel.
+	 *
+	 * Format: steering items first, follow-up items second, separated by a
+	 * blank line. The user can rewrite, reorder, or delete freely. When
+	 * they press Enter / Alt+Enter, the whole edited blob re-queues as ONE
+	 * message (intentional: simpler than splitting + per-kind round-trip,
+	 * and the agent reads the result identically). If they want to drop
+	 * the queue entirely they just clear the textarea — nothing fires.
+	 */
+	const handleEditQueue = useCallback(async () => {
+		const drained = await clearQueue();
+		const all = [...drained.steering, ...drained.followUp];
+		if (all.length === 0) return;
+		const joined = all.join("\n\n");
+		setComposerDraft((prev) => ({
+			text: joined,
+			nonce: (prev?.nonce ?? 0) + 1,
+		}));
+	}, [clearQueue]);
+
 	const handleModelSelect = useCallback(async (provider: string, modelId: string) => {
 		setActiveModelId(modelKey(provider, modelId));
 		try {
@@ -659,7 +692,7 @@ function App() {
 	}));
 
 	return (
-		<div className="flex h-screen bg-background md:gap-2.5 md:p-2.5" style={{ zoom: fontScale }}>
+		<div className="flex h-screen md:gap-2.5 md:p-2.5" style={{ zoom: fontScale }}>
 			{/* Extension UI dialogs (pi-ask-user etc. via ctx.ui) */}
 			<ExtensionUiHost />
 
@@ -864,6 +897,12 @@ function App() {
 								error={streamState.error}
 								onSend={handleSend}
 								onAbort={() => abortStream()}
+								/* Issue #201, PR 2 — mid-turn message queuing. */
+								onSteer={steerStream}
+								onFollowUp={followUpStream}
+								/* Issue #201, PR 3 — queue visibility + editing. */
+								queue={streamState.queue}
+								onEditQueue={handleEditQueue}
 								sessionKey={activeSessionFile ?? "new"}
 								onRetry={() => {
 									const lastUser = [...displayMessages].reverse().find((m) => m.role === "user");

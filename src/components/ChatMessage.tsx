@@ -158,6 +158,10 @@ export function ChatMessageItem({ message, detailsExpanded, models }: ChatMessag
 							minute: "2-digit",
 						})}
 					</span>
+					{/* Queued steer/follow-up badges were removed in the #201 PR3
+					    follow-up: queued messages no longer live in state.messages,
+					    so this code path is unreachable. ChatView renders queued
+					    items inline (pi-style) from streamState.queue instead. */}
 					{message.model && (
 						<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
 							{modelLabel(message, models)}
