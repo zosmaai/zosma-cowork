@@ -143,4 +143,84 @@ describe("MessageInput slash-command palette", () => {
 		await user.type(screen.getByRole("textbox"), "/new");
 		expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
 	});
+
+	it("wraps selection with ArrowUp from the first item to the last", async () => {
+		const onRunCommand = vi.fn();
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />);
+		await user.type(screen.getByRole("textbox"), "/");
+		await user.keyboard("{ArrowUp}"); // index 0 -> wraps to last (settings)
+		await user.keyboard("{Enter}");
+		expect(onRunCommand.mock.calls[0][0].id).toBe("view.settings");
+	});
+
+	it("clamps the selection when the filtered list shrinks", async () => {
+		const onRunCommand = vi.fn();
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />);
+		const textarea = screen.getByRole("textbox");
+		await user.type(textarea, "/");
+		await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}"); // select last (settings, idx 3)
+		await user.type(textarea, "res"); // narrows to [resume], idx must clamp 3 -> 0
+		await user.keyboard("{Enter}");
+		expect(onRunCommand.mock.calls[0][0].id).toBe("session.resume");
+	});
+
+	it("shows an empty state when nothing matches but keeps the palette open", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />);
+		await user.type(screen.getByRole("textbox"), "/zzzz");
+		expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
+		expect(screen.getByText("No matching commands")).toBeInTheDocument();
+		expect(screen.queryByRole("option")).not.toBeInTheDocument();
+	});
+
+	it("groups results under category section headers", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />);
+		await user.type(screen.getByRole("textbox"), "/");
+		expect(screen.getByRole("group", { name: "Session" })).toBeInTheDocument();
+		expect(screen.getByRole("group", { name: "Model" })).toBeInTheDocument();
+		expect(screen.getByRole("group", { name: "View" })).toBeInTheDocument();
+		// Categories with no matching command are not rendered.
+		expect(screen.queryByRole("group", { name: "Skills" })).not.toBeInTheDocument();
+	});
+
+	it("shows the argHint pill on the selected command", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />);
+		await user.type(screen.getByRole("textbox"), "/model"); // only model matches, auto-selected
+		expect(screen.getByText("model-id")).toBeInTheDocument();
+	});
+
+	it("selects a row on hover, then runs it on Enter", async () => {
+		const onRunCommand = vi.fn();
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />);
+		await user.type(screen.getByRole("textbox"), "/");
+		await user.hover(screen.getByRole("option", { name: /settings/ }));
+		await user.keyboard("{Enter}");
+		expect(onRunCommand.mock.calls[0][0].id).toBe("view.settings");
+	});
+
+	it("closes the palette when backspacing past the leading /", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />);
+		const textarea = screen.getByRole("textbox");
+		await user.type(textarea, "/n");
+		expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
+		await user.type(textarea, "{Backspace}{Backspace}"); // delete "n" then "/"
+		expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
+	});
+
+	it("does not run or send on Shift+Enter while the palette is open", async () => {
+		const onSend = vi.fn();
+		const onRunCommand = vi.fn();
+		const user = userEvent.setup();
+		render(<MessageInput onSend={onSend} commands={COMMANDS} onRunCommand={onRunCommand} />);
+		await user.type(screen.getByRole("textbox"), "/new");
+		await user.keyboard("{Shift>}{Enter}{/Shift}");
+		expect(onRunCommand).not.toHaveBeenCalled();
+		expect(onSend).not.toHaveBeenCalled();
+	});
 });
