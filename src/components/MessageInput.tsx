@@ -1,10 +1,30 @@
 import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { trackEvent } from "@/lib/telemetry";
 import type { ModelInfo } from "@/types";
+import type { Command } from "@/types/commands";
 import { ArrowUp, Mic, Paperclip, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useImperativeHandle,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { CommandPalette, useFilteredCommands } from "./CommandPalette";
 import { ModelSelector } from "./ModelSelector";
+
+/** Split a raw composer value starting with `/` into command query + args. */
+export function parseSlashInput(value: string): { query: string; args: string } | null {
+	if (!value.startsWith("/")) return null;
+	// Only the first line is treated as a command line.
+	const firstLine = value.slice(1).split("\n", 1)[0];
+	const spaceIdx = firstLine.indexOf(" ");
+	if (spaceIdx === -1) return { query: firstLine, args: "" };
+	return { query: firstLine.slice(0, spaceIdx), args: firstLine.slice(spaceIdx + 1) };
+}
 
 interface MessageInputProps {
 	onSend: (message: string) => void;
@@ -19,6 +39,14 @@ interface MessageInputProps {
 	 * letting the user edit before sending — it does NOT auto-send.
 	 */
 	draft?: { text: string; nonce: number };
+	/**
+	 * Slash-command registry (#179). When the composer input starts with `/`,
+	 * an autocomplete palette of these commands opens. A1 ships against a stub
+	 * list; A2–A4 populate it. `onRunCommand` receives the chosen command and
+	 * any trailing argument text — implementations live outside this component.
+	 */
+	commands?: Command[];
+	onRunCommand?: (cmd: Command, args: string) => void;
 }
 
 export interface MessageInputHandle {
@@ -26,8 +54,22 @@ export interface MessageInputHandle {
 }
 
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
-	({ onSend, disabled, modelLabel, models, currentModelId, onModelSelect, draft }, ref) => {
+	(
+		{
+			onSend,
+			disabled,
+			modelLabel,
+			models,
+			currentModelId,
+			onModelSelect,
+			draft,
+			commands,
+			onRunCommand,
+		},
+		ref,
+	) => {
 		const [text, setText] = useState("");
+		const [commandIndex, setCommandIndex] = useState(0);
 		const [attachedFiles, setAttachedFiles] = useState<{ path: string; name: string }[]>([]);
 		const [isListening, setIsListening] = useState(false);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
@@ -165,7 +207,50 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			}
 		}
 
+		function runCommand(cmd: Command, args: string) {
+			onRunCommand?.(cmd, args);
+			// Clear the command line after running, like sending does.
+			setText("");
+			setCommandIndex(0);
+			if (textareaRef.current) textareaRef.current.style.height = "auto";
+		}
+
 		function handleKeyDown(e: React.KeyboardEvent) {
+			// Palette is open: its keys take precedence over send/newline.
+			if (paletteOpen) {
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					setCommandIndex((i) => (filteredCommands.length ? (i + 1) % filteredCommands.length : 0));
+					return;
+				}
+				if (e.key === "ArrowUp") {
+					e.preventDefault();
+					setCommandIndex((i) =>
+						filteredCommands.length
+							? (i - 1 + filteredCommands.length) % filteredCommands.length
+							: 0,
+					);
+					return;
+				}
+				if (e.key === "Escape") {
+					e.preventDefault();
+					setText("");
+					setCommandIndex(0);
+					return;
+				}
+				if (e.key === "Tab") {
+					e.preventDefault();
+					const cmd = filteredCommands[commandIndex];
+					if (cmd) setText(`/${cmd.name} `);
+					return;
+				}
+				if (e.key === "Enter" && !e.shiftKey) {
+					e.preventDefault();
+					const cmd = filteredCommands[commandIndex];
+					if (cmd) runCommand(cmd, slash?.args ?? "");
+					return;
+				}
+			}
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				handleSubmit();
@@ -177,6 +262,19 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			: "Message (Enter to send, Shift+Enter for newline)";
 
 		const hasContent = !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
+
+		// Slash-command palette state derived from the current input.
+		const slash = useMemo(() => parseSlashInput(text), [text]);
+		const registry = commands ?? [];
+		const filteredCommands = useFilteredCommands(registry, slash?.query ?? "");
+		const paletteOpen = !disabled && slash !== null && registry.length > 0;
+
+		// Clamp selection whenever the filtered list shrinks.
+		useEffect(() => {
+			setCommandIndex((i) =>
+				filteredCommands.length === 0 ? 0 : Math.min(i, filteredCommands.length - 1),
+			);
+		}, [filteredCommands.length]);
 
 		return (
 			<motion.form
@@ -198,6 +296,17 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						borderColor: "hsl(var(--border))",
 					}}
 				>
+					{paletteOpen && (
+						<CommandPalette
+							commands={registry}
+							query={slash?.query ?? ""}
+							args={slash?.args ?? ""}
+							selectedIndex={commandIndex}
+							onRun={runCommand}
+							onSelectIndex={setCommandIndex}
+						/>
+					)}
+
 					{/* Textarea */}
 					<textarea
 						ref={textareaRef}
