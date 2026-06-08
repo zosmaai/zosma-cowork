@@ -213,6 +213,26 @@ describe("MessageInput slash-command palette", () => {
 		expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
 	});
 
+	it("highlights the matched characters in the command name", async () => {
+		const user = userEvent.setup();
+		const { container } = render(
+			<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />,
+		);
+		await user.type(screen.getByRole("textbox"), "/set");
+		const marks = Array.from(container.querySelectorAll("mark")).map((m) => m.textContent);
+		expect(marks.join("")).toBe("set");
+		// Accessible name is unaffected by the highlight spans.
+		expect(screen.getByRole("option", { name: /settings/ })).toBeInTheDocument();
+	});
+
+	it("shows the keyboard-hint footer", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />);
+		await user.type(screen.getByRole("textbox"), "/");
+		expect(screen.getByText("navigate")).toBeInTheDocument();
+		expect(screen.getByText("dismiss")).toBeInTheDocument();
+	});
+
 	it("does not run or send on Shift+Enter while the palette is open", async () => {
 		const onSend = vi.fn();
 		const onRunCommand = vi.fn();
