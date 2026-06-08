@@ -30,10 +30,17 @@ import {
 	SlidersHorizontal,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ComponentType, Fragment, type ReactNode } from "react";
-import { useEffect, useMemo, useRef } from "react";
+import { type ComponentType, Fragment, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface CommandPaletteProps {
+	/**
+	 * Element the popover is anchored above. The palette renders in a portal on
+	 * document.body (to escape the composer's overflow-hidden / transformed
+	 * ancestors) and is positioned just above this element.
+	 */
+	anchorRef: RefObject<HTMLElement | null>;
 	/** Full command set; filtered internally by `query`. */
 	commands: Command[];
 	/** Text typed after the leading `/`, excluding arguments. */
@@ -112,7 +119,40 @@ function highlight(text: string, query: string): ReactNode {
 	return qi === q.length ? out : text;
 }
 
+/** Position of the popover, anchored above `anchor`, in viewport coords. */
+interface AnchorPos {
+	left: number;
+	width: number;
+	/** Distance from the viewport bottom to the anchor's top (for `bottom`). */
+	bottom: number;
+}
+
+function useAnchorPosition(
+	anchorRef: RefObject<HTMLElement | null>,
+	deps: unknown[],
+): AnchorPos | null {
+	const [pos, setPos] = useState<AnchorPos | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: remeasure on content change
+	useLayoutEffect(() => {
+		const measure = () => {
+			const el = anchorRef.current;
+			if (!el) return;
+			const r = el.getBoundingClientRect();
+			setPos({ left: r.left, width: r.width, bottom: window.innerHeight - r.top });
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		window.addEventListener("scroll", measure, true);
+		return () => {
+			window.removeEventListener("resize", measure);
+			window.removeEventListener("scroll", measure, true);
+		};
+	}, deps);
+	return pos;
+}
+
 export function CommandPalette({
+	anchorRef,
 	commands,
 	query,
 	args = "",
@@ -123,12 +163,15 @@ export function CommandPalette({
 	const filtered = useFilteredCommands(commands, query);
 	const listRef = useRef<HTMLDivElement>(null);
 	const prefersReducedMotion = useReducedMotion();
+	const pos = useAnchorPosition(anchorRef, [query, filtered.length]);
 
 	// Keep the highlighted row in view as the selection moves.
 	useEffect(() => {
 		const el = listRef.current?.querySelector<HTMLElement>(`[data-cmd-index="${selectedIndex}"]`);
 		el?.scrollIntoView({ block: "nearest" });
 	}, [selectedIndex]);
+
+	if (typeof document === "undefined") return null;
 
 	// Group the filtered (already ranked) list by category, preserving the
 	// category display order and, within a category, the ranked order.
@@ -140,7 +183,7 @@ export function CommandPalette({
 	});
 	const orderedCategories = COMMAND_CATEGORY_ORDER.filter((c) => grouped.has(c));
 
-	return (
+	return createPortal(
 		<motion.div
 			role="listbox"
 			aria-label="Commands"
@@ -148,8 +191,12 @@ export function CommandPalette({
 			initial={prefersReducedMotion ? false : { opacity: 0, y: 6, scale: 0.985 }}
 			animate={{ opacity: 1, y: 0, scale: 1 }}
 			transition={{ duration: 0.16, ease: [0.2, 0.7, 0.2, 1] }}
-			className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl"
+			className="fixed z-[60] overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl"
 			style={{
+				left: pos ? `${pos.left}px` : 0,
+				width: pos ? `${pos.width}px` : "100%",
+				bottom: pos ? `${pos.bottom + 8}px` : "5rem",
+				visibility: pos ? "visible" : "hidden",
 				background: "hsl(var(--popover) / 0.92)",
 				borderColor: "hsl(var(--border))",
 			}}
@@ -266,7 +313,8 @@ export function CommandPalette({
 				<Hint keys="tab" label="complete" />
 				<Hint keys="esc" label="dismiss" />
 			</div>
-		</motion.div>
+		</motion.div>,
+		document.body,
 	);
 }
 

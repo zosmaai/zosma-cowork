@@ -74,6 +74,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const [isListening, setIsListening] = useState(false);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
+		const shellRef = useRef<HTMLDivElement>(null);
 		const recognitionRef = useRef<SpeechRecognition | null>(null);
 		const prefersReducedMotion = useReducedMotion();
 
@@ -290,6 +291,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			>
 				{/* Outer shell */}
 				<div
+					ref={shellRef}
 					className="relative rounded-2xl border transition-colors focus-within:border-[hsl(var(--ring)/0.4)]"
 					style={{
 						background: "hsl(var(--card))",
@@ -298,6 +300,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				>
 					{paletteOpen && (
 						<CommandPalette
+							anchorRef={shellRef}
 							commands={registry}
 							query={slash?.query ?? ""}
 							args={slash?.args ?? ""}
