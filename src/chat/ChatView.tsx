@@ -5,6 +5,7 @@ import { StatusBar } from "@/components/StatusBar";
 import { SuggestedActions } from "@/components/SuggestedActions";
 import type { ToolPhase } from "@/hooks/usePiStream";
 import type { ChatMessage, ModelInfo } from "@/types";
+import type { Command } from "@/types/commands";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
@@ -26,6 +27,9 @@ interface ChatViewProps {
 	sessionKey?: string;
 	/** External draft (e.g. a prompt template) to load into the composer for editing. */
 	draft?: { text: string; nonce: number };
+	/** Slash-command registry + dispatch (epic #179). */
+	commands?: Command[];
+	onRunCommand?: (cmd: Command, args: string) => void;
 }
 
 export function ChatView({
@@ -43,6 +47,8 @@ export function ChatView({
 	toolPhase,
 	sessionKey,
 	draft,
+	commands,
+	onRunCommand,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -139,6 +145,8 @@ export function ChatView({
 					currentModelId={currentModelId}
 					onModelSelect={onModelSelect}
 					draft={draft}
+					commands={commands}
+					onRunCommand={onRunCommand}
 				/>
 			</div>
 		</div>

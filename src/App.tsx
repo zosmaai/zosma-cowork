@@ -15,9 +15,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
 import { useTelemetry } from "@/hooks/useTelemetry";
+import {
+	BUILTIN_COMMANDS,
+	type CommandContext,
+	findBuiltinCommand,
+	runBuiltinCommand,
+} from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage } from "@/types";
+import type { Command } from "@/types/commands";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -436,7 +443,7 @@ function App() {
 		setComposerDraft((prev) => ({ text: prompt, nonce: (prev?.nonce ?? 0) + 1 }));
 	}, []);
 
-	const handleModelSelect = async (provider: string, modelId: string) => {
+	const handleModelSelect = useCallback(async (provider: string, modelId: string) => {
 		setActiveModelId(modelKey(provider, modelId));
 		try {
 			console.log("[settings] saving model:", provider, modelId);
@@ -454,7 +461,7 @@ function App() {
 		} catch (err) {
 			console.warn("[settings] save failed:", err);
 		}
-	};
+	}, []);
 
 	// ── Connect-modal handlers (passed to <HomeView>) ──
 	const handleConnectComplete = useCallback(
@@ -524,6 +531,36 @@ function App() {
 		setSidebarView("chats");
 		await handleNewSession(selected);
 	}, [handleNewSession, workspaceCwd]);
+
+	// Slash-command dispatch (epic #179). Built-in commands close over these
+	// GUI actions; the registry itself is pure (src/lib/builtinCommands.ts).
+	// Interim: bare `/model` and `/help` open Settings until dedicated UI lands
+	// (see docs/plans/slash-commands-roadmap.md A2b).
+	const handleRunCommand = useCallback(
+		(cmd: Command, args: string) => {
+			const builtin = findBuiltinCommand(cmd.name);
+			if (!builtin) return;
+			const openSettings = () => {
+				setSidebarView("settings");
+				setShowSettings(true);
+			};
+			const ctx: CommandContext = {
+				newSession: () => handleNewSessionPrompt(),
+				openSessions: () => setSidebarView("chats"),
+				openModelSelector: openSettings,
+				setModel: (modelId) => {
+					const match = models.find(
+						(m) => m.id === modelId || modelKey(m.provider, m.id) === modelId,
+					);
+					if (match) handleModelSelect(match.provider, match.id);
+				},
+				openSettings,
+				showHelp: openSettings,
+			};
+			runBuiltinCommand(ctx, builtin, args);
+		},
+		[handleNewSessionPrompt, handleModelSelect, models],
+	);
 
 	// Load the sidecar's active workspace once it's ready, so the sidebar can
 	// show "where am I working" from the first paint.
@@ -837,6 +874,8 @@ function App() {
 								onModelSelect={handleModelSelect}
 								toolPhase={toolPhase}
 								draft={composerDraft}
+								commands={BUILTIN_COMMANDS}
+								onRunCommand={handleRunCommand}
 							/>
 						)}
 					</div>
