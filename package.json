@@ -11,11 +11,12 @@
 		"tauri": "tauri",
 		"format": "biome format --write .",
 		"lint": "biome lint .",
+		"lint:styles": "node scripts/inline-token-style-guardrail.mjs",
 		"check": "biome check --write .",
 		"test": "vitest run --passWithNoTests",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
-		"validate": "npm run lint && npm run typecheck && npm run test"
+		"validate": "npm run lint && npm run lint:styles && npm run typecheck && npm run test"
 	},
 	"dependencies": {
 		"@radix-ui/react-tooltip": "^1.2.8",

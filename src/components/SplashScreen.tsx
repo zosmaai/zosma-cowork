@@ -24,14 +24,10 @@ export function SplashScreen({ message = "Starting up…" }: SplashScreenProps) 
 			/>
 
 			<div className="flex flex-col items-center gap-3">
-				<h1 className="text-lg font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-					Zosma Cowork
-				</h1>
+				<h1 className="text-lg font-semibold text-foreground">Zosma Cowork</h1>
 				<div className="flex items-center gap-2.5">
 					<span className="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-					<span className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>
-						{message}
-					</span>
+					<span className="text-sm text-muted-foreground">{message}</span>
 				</div>
 			</div>
 		</div>

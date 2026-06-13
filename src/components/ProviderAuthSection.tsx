@@ -280,19 +280,13 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 						Sign in with {label}
 					</div>
 					{!compact && description && (
-						<p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
-							{description}
-						</p>
+						<p className="text-xs mt-1 text-muted-foreground">{description}</p>
 					)}
 				</div>
 				<StatusBadge connected={isConnected} expires={entry?.expires} />
 			</div>
 
-			{statusMessage && (
-				<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-					{statusMessage}
-				</p>
-			)}
+			{statusMessage && <p className="text-xs text-muted-foreground">{statusMessage}</p>}
 			{userCode && (
 				<div
 					className="rounded-lg p-3 space-y-2"
@@ -301,17 +295,9 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 						border: "1px dashed hsl(var(--border))",
 					}}
 				>
-					<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-						In the browser, enter this code:
-					</p>
+					<p className="text-xs text-muted-foreground">In the browser, enter this code:</p>
 					<div className="flex items-center gap-2">
-						<code
-							className="flex-1 text-sm font-mono font-semibold tracking-widest text-center px-2 py-1.5 rounded-md select-all"
-							style={{
-								background: "hsl(var(--background))",
-								color: "hsl(var(--foreground))",
-							}}
-						>
+						<code className="flex-1 text-sm font-mono font-semibold tracking-widest text-center px-2 py-1.5 rounded-md select-all bg-background text-foreground">
 							{userCode}
 						</code>
 						<button
@@ -319,17 +305,13 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 							onClick={() => {
 								void navigator.clipboard?.writeText(userCode);
 							}}
-							className="text-xs px-2 py-1.5 rounded-md transition-colors hover:opacity-90"
-							style={{
-								background: "hsl(var(--primary))",
-								color: "hsl(var(--primary-foreground))",
-							}}
+							className="text-xs px-2 py-1.5 rounded-md transition-colors hover:opacity-90 bg-primary text-primary-foreground"
 						>
 							Copy
 						</button>
 					</div>
 					{verificationUrl && (
-						<p className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>
+						<p className="text-[10px] text-muted-foreground">
 							at{" "}
 							<a
 								href={verificationUrl}
@@ -339,8 +321,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 										window.open(verificationUrl, "_blank");
 									});
 								}}
-								className="underline"
-								style={{ color: "hsl(var(--primary))" }}
+								className="underline text-primary"
 							>
 								{verificationUrl}
 							</a>
@@ -348,11 +329,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 					)}
 				</div>
 			)}
-			{error && (
-				<p className="text-xs" style={{ color: "hsl(var(--destructive))" }}>
-					{error}
-				</p>
-			)}
+			{error && <p className="text-xs text-destructive">{error}</p>}
 
 			<div className="flex gap-2">
 				{!isConnected && !inFlight && (
@@ -420,13 +397,7 @@ function StatusBadge({
 }) {
 	if (!connected) {
 		return (
-			<span
-				className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0"
-				style={{
-					background: "hsl(var(--muted))",
-					color: "hsl(var(--muted-foreground))",
-				}}
-			>
+			<span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0 bg-muted text-muted-foreground">
 				Not signed in
 			</span>
 		);

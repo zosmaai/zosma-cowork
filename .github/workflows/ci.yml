@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Lint styles (inline token-color guardrail)
+        run: npm run lint:styles
+
       - name: Type check
         run: npm run typecheck
 

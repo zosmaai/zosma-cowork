@@ -20,10 +20,7 @@ export function About() {
 				Zosma Cowork — built openly, runs locally.
 			</p>
 
-			<div
-				className="rounded-lg border border-border overflow-hidden"
-				style={{ background: "hsl(var(--card))" }}
-			>
+			<div className="rounded-lg border border-border overflow-hidden bg-card">
 				{/* App identity */}
 				<div className="px-4 py-4 flex items-center gap-3">
 					<img
@@ -58,8 +55,7 @@ export function About() {
 							href="https://github.com/earendil-works/pi-mono"
 							target="_blank"
 							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-							style={{ color: "hsl(var(--primary))" }}
+							className="inline-flex items-center gap-1 hover:text-foreground transition-colors text-primary"
 						>
 							pi-mono SDK
 							<ExternalLink className="w-3 h-3 opacity-60" />
@@ -74,8 +70,7 @@ export function About() {
 							href="https://github.com/zosmaai/zosma-cowork"
 							target="_blank"
 							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-							style={{ color: "hsl(var(--primary))" }}
+							className="inline-flex items-center gap-1 hover:text-foreground transition-colors text-primary"
 						>
 							github.com/zosmaai/zosma-cowork
 							<ExternalLink className="w-3 h-3 opacity-60" />

@@ -111,13 +111,7 @@ export function ChatMessageItem({
 	if (isSystem) {
 		return (
 			<div className="flex justify-center py-2">
-				<span
-					className="px-3 py-1 rounded-full text-xs"
-					style={{
-						background: "hsl(var(--chat-system-bg))",
-						color: "hsl(var(--chat-system-fg))",
-					}}
-				>
+				<span className="px-3 py-1 rounded-full text-xs bg-chat-system-bg text-chat-system-fg">
 					{message.content}
 				</span>
 			</div>
@@ -136,155 +130,147 @@ export function ChatMessageItem({
 				} flex gap-3.5 mx-auto w-full px-4 py-3`}
 				style={{ maxWidth: "var(--chat-max-width, 820px)" }}
 			>
-			{/* Avatar */}
-			<div className="flex-shrink-0">
-				{isUser ? (
-					<div
-						className="w-7 h-7 rounded-lg flex items-center justify-center"
-						style={{
-							background:
-								"linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary) / 0.6))",
-							color: "hsl(var(--primary-foreground))",
-						}}
-					>
-						<User className="w-4 h-4" strokeWidth={2.5} />
-					</div>
-				) : (
-					<img
-						src="/zosma-mark.png"
-						alt="Zosma"
-						className="w-7 h-7 rounded-lg object-cover"
-						draggable={false}
-					/>
-				)}
-			</div>
-
-			{/* Content */}
-			<div className="flex-1 min-w-0">
-				{/* Header row */}
-				<div className="flex items-center gap-2 mb-0.5">
-					<span className="text-xs font-medium" style={{ color: "hsl(var(--foreground))" }}>
-						{isUser ? "You" : "Zosma"}
-					</span>
-					<span className="text-[10px] text-muted-foreground tabular-nums">
-						{new Date(message.timestamp).toLocaleTimeString([], {
-							hour: "2-digit",
-							minute: "2-digit",
-						})}
-					</span>
-					{/* Queued steer/follow-up badges were removed in the #201 PR3
-					    follow-up: queued messages no longer live in state.messages,
-					    so this code path is unreachable. ChatView renders queued
-					    items inline (pi-style) from streamState.queue instead. */}
-					{message.model && (
-						<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
-							{modelLabel(message, models)}
-						</span>
-					)}
-					{message.isStreaming && (
-						<span
-							className="inline-flex items-center gap-1 text-[10px] font-medium"
-							style={{ color: "hsl(var(--status-active-fg))" }}
+				{/* Avatar */}
+				<div className="flex-shrink-0">
+					{isUser ? (
+						<div
+							className="w-7 h-7 rounded-lg flex items-center justify-center"
+							style={{
+								background:
+									"linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary) / 0.6))",
+								color: "hsl(var(--primary-foreground))",
+							}}
 						>
-							<span
-								className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-								style={{ background: "hsl(var(--primary))" }}
-							/>
-							streaming
-						</span>
-					)}
-					{!isUser && message.toolCalls && message.toolCalls.length > 0 && !message.isStreaming && (
-						<ToolCallSummary toolCalls={message.toolCalls} />
+							<User className="w-4 h-4" strokeWidth={2.5} />
+						</div>
+					) : (
+						<img
+							src="/zosma-mark.png"
+							alt="Zosma"
+							className="w-7 h-7 rounded-lg object-cover"
+							draggable={false}
+						/>
 					)}
 				</div>
 
-				{/* Thinking block — simple (Perplexity-style) by default, full when
-				    details are expanded via Ctrl+O. */}
-				{!isUser && message.thinking && (
-					<ThinkingBlock
-						thinking={message.thinking}
-						isThinking={message.isStreaming && message.thinking.length > 0}
-						expanded={detailsExpanded}
-						simple={!detailsExpanded}
-					/>
-				)}
+				{/* Content */}
+				<div className="flex-1 min-w-0">
+					{/* Header row */}
+					<div className="flex items-center gap-2 mb-0.5">
+						<span className="text-xs font-medium text-foreground">{isUser ? "You" : "Zosma"}</span>
+						<span className="text-[10px] text-muted-foreground tabular-nums">
+							{new Date(message.timestamp).toLocaleTimeString([], {
+								hour: "2-digit",
+								minute: "2-digit",
+							})}
+						</span>
+						{/* Queued steer/follow-up badges were removed in the #201 PR3
+					    follow-up: queued messages no longer live in state.messages,
+					    so this code path is unreachable. ChatView renders queued
+					    items inline (pi-style) from streamState.queue instead. */}
+						{message.model && (
+							<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
+								{modelLabel(message, models)}
+							</span>
+						)}
+						{message.isStreaming && (
+							<span className="inline-flex items-center gap-1 text-[10px] font-medium text-status-active-fg">
+								<span className="w-1.5 h-1.5 rounded-full animate-pulse-dot bg-primary" />
+								streaming
+							</span>
+						)}
+						{!isUser &&
+							message.toolCalls &&
+							message.toolCalls.length > 0 &&
+							!message.isStreaming && <ToolCallSummary toolCalls={message.toolCalls} />}
+					</div>
 
-				{/* Activity / tool calls.
+					{/* Thinking block — simple (Perplexity-style) by default, full when
+				    details are expanded via Ctrl+O. */}
+					{!isUser && message.thinking && (
+						<ThinkingBlock
+							thinking={message.thinking}
+							isThinking={message.isStreaming && message.thinking.length > 0}
+							expanded={detailsExpanded}
+							simple={!detailsExpanded}
+						/>
+					)}
+
+					{/* Activity / tool calls.
 				    - details view (Ctrl+O): full technical ToolCallTimeline
 				    - simple + streaming: single friendly ActivityBlock
 				    - simple + finished: compact one-line recap */}
-				{!isUser &&
-					message.toolCalls &&
-					message.toolCalls.length > 0 &&
-					(detailsExpanded ? (
-						<ToolCallTimeline toolCalls={message.toolCalls} detailsExpanded={detailsExpanded} />
-					) : message.isStreaming ? (
-						<ActivityBlock toolCalls={message.toolCalls} active />
-					) : (
-						<ActivityRecap toolCalls={message.toolCalls} />
-					))}
+					{!isUser &&
+						message.toolCalls &&
+						message.toolCalls.length > 0 &&
+						(detailsExpanded ? (
+							<ToolCallTimeline toolCalls={message.toolCalls} detailsExpanded={detailsExpanded} />
+						) : message.isStreaming ? (
+							<ActivityBlock toolCalls={message.toolCalls} active />
+						) : (
+							<ActivityRecap toolCalls={message.toolCalls} />
+						))}
 
-				{/* Content */}
-				{(message.content || message.isStreaming) && (
-					<div
-						className="chat-markdown"
-						style={{ color: isUser ? "hsl(var(--chat-user-fg))" : "hsl(var(--chat-assistant-fg))" }}
-					>
-						<ReactMarkdown
-							remarkPlugins={[remarkGfm]}
-							rehypePlugins={rehypePlugins}
-							components={markdownComponents}
+					{/* Content */}
+					{(message.content || message.isStreaming) && (
+						<div
+							className="chat-markdown"
+							style={{
+								color: isUser ? "hsl(var(--chat-user-fg))" : "hsl(var(--chat-assistant-fg))",
+							}}
 						>
-							{message.content || ""}
-						</ReactMarkdown>
-						{message.isStreaming && (
-							<span
-								className="inline-block w-2 h-4 ml-0.5 align-middle animate-pulse"
-								style={{ background: "hsl(var(--primary))" }}
-							/>
-						)}
-					</div>
-				)}
-
-				{/* Feedback & Export Actions */}
-				{!isUser && message.content && !message.isStreaming && (
-					<div className="flex items-center justify-between mt-1.5">
-						<FeedbackButtons />
-						<div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-							<button
-								type="button"
-								onClick={() => copyToClipboard(message.content)}
-								aria-label="Copy content"
-								className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+							<ReactMarkdown
+								remarkPlugins={[remarkGfm]}
+								rehypePlugins={rehypePlugins}
+								components={markdownComponents}
 							>
-								<Clipboard size={12} />
-								{copied ? "Copied!" : "Copy"}
-							</button>
-							<button
-								type="button"
-								onClick={() => saveToFile(message.content)}
-								disabled={saving}
-								aria-label="Save to file"
-								className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
-							>
-								<Download size={12} />
-								{saving ? "Saving..." : "Save"}
-							</button>
-							{filePath && (
-								<button
-									type="button"
-									onClick={() => openFolder(filePath)}
-									aria-label="Open folder"
-									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-								>
-									<FolderOpen size={12} />
-									Open Folder
-								</button>
+								{message.content || ""}
+							</ReactMarkdown>
+							{message.isStreaming && (
+								<span className="inline-block w-2 h-4 ml-0.5 align-middle animate-pulse bg-primary" />
 							)}
 						</div>
-					</div>
-				)}
-			</div>
+					)}
+
+					{/* Feedback & Export Actions */}
+					{!isUser && message.content && !message.isStreaming && (
+						<div className="flex items-center justify-between mt-1.5">
+							<FeedbackButtons />
+							<div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+								<button
+									type="button"
+									onClick={() => copyToClipboard(message.content)}
+									aria-label="Copy content"
+									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+								>
+									<Clipboard size={12} />
+									{copied ? "Copied!" : "Copy"}
+								</button>
+								<button
+									type="button"
+									onClick={() => saveToFile(message.content)}
+									disabled={saving}
+									aria-label="Save to file"
+									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+								>
+									<Download size={12} />
+									{saving ? "Saving..." : "Save"}
+								</button>
+								{filePath && (
+									<button
+										type="button"
+										onClick={() => openFolder(filePath)}
+										aria-label="Open folder"
+										className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+									>
+										<FolderOpen size={12} />
+										Open Folder
+									</button>
+								)}
+							</div>
+						</div>
+					)}
+				</div>
 			</div>
 		</div>
 	);

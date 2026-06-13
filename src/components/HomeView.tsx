@@ -143,16 +143,8 @@ export function HomeView({
 					draggable={false}
 				/>
 
-				<h1
-					className="text-xl font-bold text-center mb-1"
-					style={{ color: "hsl(var(--foreground))" }}
-				>
-					Zosma Cowork
-				</h1>
-				<p
-					className="text-sm text-center mb-8 leading-relaxed"
-					style={{ color: "hsl(var(--muted-foreground))" }}
-				>
+				<h1 className="text-xl font-bold text-center mb-1 text-foreground">Zosma Cowork</h1>
+				<p className="text-sm text-center mb-8 leading-relaxed text-muted-foreground">
 					Connect your AI accounts and start working — your credentials stay on your machine.
 				</p>
 
@@ -166,11 +158,7 @@ export function HomeView({
 				<button
 					type="button"
 					onClick={() => setStep("connect")}
-					className="w-full px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring"
-					style={{
-						background: "hsl(var(--primary))",
-						color: "hsl(var(--primary-foreground))",
-					}}
+					className="w-full px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring bg-primary text-primary-foreground"
 				>
 					Connect your AI
 				</button>
@@ -195,8 +183,7 @@ export function HomeView({
 						setStep("splash");
 						setExpandedProvider(null);
 					}}
-					className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors hover:bg-muted/50 cursor-pointer"
-					style={{ color: "hsl(var(--muted-foreground))" }}
+					className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors hover:bg-muted/50 cursor-pointer text-muted-foreground"
 				>
 					<ArrowLeft className="w-3.5 h-3.5" /> Back
 				</button>
@@ -219,26 +206,15 @@ export function HomeView({
 
 			{/* Content */}
 			<div className="flex-1 px-6 pb-8 max-w-md mx-auto w-full">
-				<h1 className="text-lg font-semibold mb-1" style={{ color: "hsl(var(--foreground))" }}>
-					Connect your AI
-				</h1>
-				<p className="text-xs mb-5" style={{ color: "hsl(var(--muted-foreground))" }}>
-					Pick one option below.
-				</p>
+				<h1 className="text-lg font-semibold mb-1 text-foreground">Connect your AI</h1>
+				<p className="text-xs mb-5 text-muted-foreground">Pick one option below.</p>
 
 				<div className="space-y-4">
 					{/* ═══ API Key quick-start ═══ */}
-					<div
-						className="rounded-xl border p-4 space-y-3"
-						style={{
-							borderColor: "hsl(var(--border))",
-						}}
-					>
+					<div className="rounded-xl border p-4 space-y-3 border-border">
 						<div className="flex items-center gap-2">
-							<Zap className="w-4 h-4" style={{ color: "hsl(var(--primary))" }} />
-							<span className="text-sm font-medium" style={{ color: "hsl(var(--foreground))" }}>
-								API Key
-							</span>
+							<Zap className="w-4 h-4 text-primary" />
+							<span className="text-sm font-medium text-foreground">API Key</span>
 							<span
 								className="text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto"
 								style={{
@@ -249,7 +225,7 @@ export function HomeView({
 								fastest
 							</span>
 						</div>
-						<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+						<p className="text-xs text-muted-foreground">
 							Pick the provider this key belongs to, paste the key, and you’re in.
 						</p>
 
@@ -267,11 +243,7 @@ export function HomeView({
 								value={provider}
 								onChange={(e) => setProvider(e.target.value)}
 								disabled={apiKeyProviders.length === 0}
-								className="w-full px-3 py-2 rounded-md border bg-transparent text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-								style={{
-									borderColor: "hsl(var(--border))",
-									color: "hsl(var(--foreground))",
-								}}
+								className="w-full px-3 py-2 rounded-md border bg-transparent text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring border-border text-foreground"
 							>
 								{apiKeyProviders.length === 0 ? (
 									<option value="">Loading providers…</option>
@@ -312,24 +284,13 @@ export function HomeView({
 							</button>
 						</div>
 
-						{error && (
-							<p
-								className="text-xs flex items-center gap-1"
-								style={{ color: "hsl(var(--destructive))" }}
-							>
-								{error}
-							</p>
-						)}
+						{error && <p className="text-xs flex items-center gap-1 text-destructive">{error}</p>}
 
 						<button
 							type="button"
 							disabled={!apiKey.trim() || saving}
 							onClick={handleSave}
-							className="w-full px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring"
-							style={{
-								background: "hsl(var(--primary))",
-								color: "hsl(var(--primary-foreground))",
-							}}
+							className="w-full px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring bg-primary text-primary-foreground"
 						>
 							{saving ? (
 								<span className="flex items-center justify-center gap-2">
@@ -349,14 +310,14 @@ export function HomeView({
 
 					{/* ═══ Divider ═══ */}
 					<div className="flex items-center gap-3">
-						<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
+						<div className="flex-1 h-px bg-border" />
 						<span
 							className="text-[10px] uppercase tracking-wider shrink-0"
 							style={{ color: "hsl(var(--muted-foreground) / 0.7)" }}
 						>
 							or use a subscription
 						</span>
-						<div className="flex-1 h-px" style={{ background: "hsl(var(--border))" }} />
+						<div className="flex-1 h-px bg-border" />
 					</div>
 
 					{/* ═══ OAuth Provider cards ═══ */}
@@ -383,12 +344,7 @@ export function HomeView({
 											<p.icon className="w-5 h-5" />
 										</span>
 										<div className="flex-1 min-w-0">
-											<div
-												className="text-sm font-medium"
-												style={{ color: "hsl(var(--foreground))" }}
-											>
-												{p.label}
-											</div>
+											<div className="text-sm font-medium text-foreground">{p.label}</div>
 										</div>
 										{isExpanded ? (
 											<ChevronUp
@@ -419,8 +375,7 @@ export function HomeView({
 							<button
 								type="button"
 								onClick={onSkipToSettings}
-								className="text-xs font-medium underline-offset-4 hover:underline cursor-pointer"
-								style={{ color: "hsl(var(--muted-foreground))" }}
+								className="text-xs font-medium underline-offset-4 hover:underline cursor-pointer text-muted-foreground"
 							>
 								Use a different provider (local models, Gemini, etc.)
 							</button>
@@ -439,7 +394,7 @@ function BenefitRow({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
 			className="flex items-center gap-3 px-3.5 py-2 rounded-lg"
 			style={{ background: "hsl(var(--muted) / 0.3)" }}
 		>
-			<Icon className="w-3.5 h-3.5 shrink-0" style={{ color: "hsl(var(--muted-foreground))" }} />
+			<Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
 			<span className="text-xs" style={{ color: "hsl(var(--foreground) / 0.8)" }}>
 				{text}
 			</span>

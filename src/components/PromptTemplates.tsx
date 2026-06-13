@@ -102,8 +102,7 @@ function TemplateCard({
 		<button
 			type="button"
 			onClick={() => onUseTemplate(template.prompt)}
-			className="w-full text-left px-2.5 py-2 rounded-md transition-colors hover:bg-sidebar-accent/50 group"
-			style={{ color: "hsl(var(--sidebar-foreground))" }}
+			className="w-full text-left px-2.5 py-2 rounded-md transition-colors hover:bg-sidebar-accent/50 group text-sidebar-foreground"
 		>
 			<div className="flex items-start gap-2">
 				<div

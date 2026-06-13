@@ -237,8 +237,7 @@ export function ConversationSearch({
 						onChange={(e) => setQuery(e.target.value)}
 						onFocus={() => setFocused(true)}
 						onBlur={() => setFocused(false)}
-						className="flex-1 bg-transparent text-xs focus:outline-none"
-						style={{ color: "hsl(var(--foreground))" }}
+						className="flex-1 bg-transparent text-xs text-foreground focus:outline-none"
 					/>
 					{/* Deep-search spinner — subtle, only while greping bodies */}
 					<AnimatePresence>
@@ -430,8 +429,7 @@ function SessionRow({
 				{isActive && (
 					<motion.div
 						layoutId="active-bar"
-						className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
-						style={{ background: "hsl(var(--primary))" }}
+						className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary"
 						initial={{ scaleY: 0, opacity: 0 }}
 						animate={{ scaleY: 1, opacity: 1 }}
 						exit={{ scaleY: 0, opacity: 0 }}
@@ -485,8 +483,7 @@ function SessionRow({
 							aria-label="Cancel rename"
 							onMouseDown={(e) => e.preventDefault()}
 							onClick={cancelRename}
-							className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md"
-							style={{ color: "hsl(var(--muted-foreground))", background: "hsl(var(--muted))" }}
+							className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-muted-foreground bg-muted"
 						>
 							<X className="w-3 h-3" />
 						</button>
@@ -591,8 +588,7 @@ function SessionRow({
 									e.stopPropagation();
 									startRename();
 								}}
-								className="flex items-center justify-center w-6 h-6 rounded-md"
-								style={{ color: "hsl(var(--muted-foreground))" }}
+								className="flex items-center justify-center w-6 h-6 rounded-md text-muted-foreground"
 								tabIndex={showActions ? 0 : -1}
 								whileHover={{ background: "hsl(var(--muted))" }}
 								whileTap={reduced ? {} : { scale: 0.9 }}
@@ -612,7 +608,7 @@ function SessionRow({
 							whileHover={{ background: "hsl(var(--destructive) / 0.12)" }}
 							whileTap={reduced ? {} : { scale: 0.9 }}
 						>
-							<Trash2 className="w-3 h-3" style={{ color: "hsl(var(--destructive))" }} />
+							<Trash2 className="w-3 h-3 text-destructive" />
 						</motion.button>
 					</motion.div>
 				</>

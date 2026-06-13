@@ -261,16 +261,37 @@ chore: update dependencies
 ### Code style
 
 ```bash
-npm run lint       # Biome lint
-npm run format     # Biome auto-format
-npm run typecheck  # TypeScript check
-npm run test       # Vitest
-npm run validate   # All of the above
+npm run lint        # Biome lint
+npm run lint:styles # Inline token-color style guardrail (issue #272)
+npm run format      # Biome auto-format
+npm run typecheck   # TypeScript check
+npm run test        # Vitest
+npm run validate    # All of the above
 
 cd src-tauri
 cargo fmt          # Rust formatting
 cargo clippy       # Rust lints
 ```
+
+#### Styling: prefer Tailwind utilities over inline token colors
+
+Design tokens are mapped to Tailwind utilities in `src/App.css` via `@theme`
+(`bg-card`, `text-foreground`, `border-border`, `bg-sidebar-accent`, …). Use
+those utilities instead of inline `style={{ background: "hsl(var(--card))" }}`
+strings — inline styles can't be deduped by Tailwind, bypass `cn()` /
+`tailwind-merge`, and lose hover/focus/dark variants.
+
+`npm run lint:styles` enforces a **ratcheting baseline**
+(`scripts/inline-token-style-baseline.json`): the count of inline
+`hsl(var(--token))` references may only ever go *down*. If you migrate some to
+utilities, regenerate the baseline:
+
+```bash
+npm run lint:styles -- --update
+```
+
+Reserve inline `style` for genuinely dynamic values (computed gradients, motion
+values, runtime dimensions, alpha-modulated states).
 
 ---
 

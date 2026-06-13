@@ -58,9 +58,9 @@ export function Theme({ fontScale: controlledScale, onFontScaleChange }: ThemePr
 						style={{ background: "hsl(var(--muted) / 0.6)" }}
 					>
 						{isDark ? (
-							<Moon className="w-4 h-4" style={{ color: "hsl(var(--primary))" }} />
+							<Moon className="w-4 h-4 text-primary" />
 						) : (
-							<Sun className="w-4 h-4" style={{ color: "hsl(var(--primary))" }} />
+							<Sun className="w-4 h-4 text-primary" />
 						)}
 					</div>
 					<div className="text-left">

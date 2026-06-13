@@ -234,10 +234,7 @@ function AuthRow({
 	if (!supported) return null;
 
 	return (
-		<div
-			className="rounded-lg border border-border overflow-hidden"
-			style={{ background: "hsl(var(--card))" }}
-		>
+		<div className="rounded-lg border border-border overflow-hidden bg-card">
 			<div className="px-3.5 py-3">
 				<div className="flex items-center gap-3">
 					<Icon className="w-5 h-5 shrink-0 text-foreground/60" />
@@ -248,10 +245,7 @@ function AuthRow({
 							className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
 							style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}
 						>
-							<span
-								className="w-1.5 h-1.5 rounded-full"
-								style={{ background: "hsl(var(--primary))" }}
-							/>
+							<span className="w-1.5 h-1.5 rounded-full bg-primary" />
 							Connected
 						</span>
 					)}
@@ -293,17 +287,13 @@ function AuthRow({
 							border: "1px dashed hsl(var(--border))",
 						}}
 					>
-						<code
-							className="text-xs font-mono font-semibold tracking-wider select-all"
-							style={{ color: "hsl(var(--foreground))" }}
-						>
+						<code className="text-xs font-mono font-semibold tracking-wider select-all text-foreground">
 							{userCode}
 						</code>
 						<button
 							type="button"
 							onClick={() => navigator.clipboard?.writeText(userCode)}
-							className="text-xs px-2 py-0.5 rounded font-medium text-white"
-							style={{ background: "hsl(var(--primary))" }}
+							className="text-xs px-2 py-0.5 rounded font-medium text-white bg-primary"
 						>
 							Copy
 						</button>
@@ -315,8 +305,7 @@ function AuthRow({
 										window.open(verificationUrl, "_blank"),
 									)
 								}
-								className="text-xs underline ml-auto"
-								style={{ color: "hsl(var(--primary))" }}
+								className="text-xs underline ml-auto text-primary"
 							>
 								Open
 							</button>
@@ -324,11 +313,7 @@ function AuthRow({
 					</div>
 				)}
 
-				{error && (
-					<p className="text-xs mt-1.5" style={{ color: "hsl(var(--destructive))" }}>
-						{error}
-					</p>
-				)}
+				{error && <p className="text-xs mt-1.5 text-destructive">{error}</p>}
 			</div>
 		</div>
 	);
@@ -399,10 +384,7 @@ function ApiKeyRow({
 	}, [key, provider, onSaved]);
 
 	return (
-		<div
-			className="rounded-lg border border-border overflow-hidden"
-			style={{ background: "hsl(var(--card))" }}
-		>
+		<div className="rounded-lg border border-border overflow-hidden bg-card">
 			{/* Header row — always visible */}
 			<button
 				type="button"
@@ -455,12 +437,7 @@ function ApiKeyRow({
 									value={provider}
 									onChange={(e) => setProvider(e.target.value)}
 									disabled={apiKeyProviders.length === 0}
-									className="w-full text-[12px] px-3 py-2 rounded-md border focus:outline-none transition-colors"
-									style={{
-										background: "hsl(var(--background))",
-										borderColor: "hsl(var(--border))",
-										color: "hsl(var(--foreground))",
-									}}
+									className="w-full text-[12px] px-3 py-2 rounded-md border focus:outline-none transition-colors bg-background border-border text-foreground"
 								>
 									{apiKeyProviders.length === 0 ? (
 										<option value="">Loading providers…</option>
@@ -541,11 +518,7 @@ function ApiKeyRow({
 								</motion.button>
 							</div>
 
-							{error && (
-								<p className="text-[11px] mt-2" style={{ color: "hsl(var(--destructive))" }}>
-									{error}
-								</p>
-							)}
+							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
 						</div>
 					</motion.div>
 				)}

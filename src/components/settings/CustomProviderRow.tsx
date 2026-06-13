@@ -38,7 +38,14 @@ const NO_MODELS_PREFIX = "NO_MODELS_DISCOVERED";
 
 /** Split a free-text model-id list (commas / whitespace / newlines) into ids. */
 function parseModelIds(raw: string): string[] {
-	return [...new Set(raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean))];
+	return [
+		...new Set(
+			raw
+				.split(/[\s,]+/)
+				.map((s) => s.trim())
+				.filter(Boolean),
+		),
+	];
 }
 
 interface Props {
@@ -98,9 +105,7 @@ export function CustomProviderRow({ onChange }: Props) {
 	}, []);
 
 	const canSave =
-		baseUrl.trim().length > 0 &&
-		!saving &&
-		(!manualMode || parseModelIds(manualModels).length > 0);
+		baseUrl.trim().length > 0 && !saving && (!manualMode || parseModelIds(manualModels).length > 0);
 
 	const handleSave = useCallback(async () => {
 		if (!canSave) return;
@@ -161,10 +166,7 @@ export function CustomProviderRow({ onChange }: Props) {
 	);
 
 	return (
-		<div
-			className="rounded-lg border border-border overflow-hidden"
-			style={{ background: "hsl(var(--card))" }}
-		>
+		<div className="rounded-lg border border-border overflow-hidden bg-card">
 			{/* Header — always visible */}
 			<button
 				type="button"
@@ -208,8 +210,7 @@ export function CustomProviderRow({ onChange }: Props) {
 					{existing.map((p) => (
 						<li
 							key={p.id}
-							className="flex items-center gap-2 text-[11px] rounded-md border border-border px-2 py-1.5 mt-3"
-							style={{ background: "hsl(var(--background))" }}
+							className="flex items-center gap-2 text-[11px] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
 						>
 							<span className="font-mono truncate flex-1" title={p.baseUrl}>
 								{p.baseUrl}
@@ -282,26 +283,27 @@ export function CustomProviderRow({ onChange }: Props) {
 								<>
 									<label
 										htmlFor={manualModelsId}
-									className="block text-[11px] mb-1 text-muted-foreground"
-								>
-									Model IDs
-								</label>
-								<input
-									id={manualModelsId}
-									type="text"
-									value={manualModels}
-									onChange={(e) => setManualModels(e.target.value)}
-									placeholder="llama3.1:8b, mistral:7b"
-									className="w-full text-[12px] font-mono px-3 py-2 mb-1 rounded-md border focus:outline-none transition-colors"
-									style={{
-										background: "hsl(var(--background))",
-									borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
-									color: "hsl(var(--foreground))",
-								}}
-								/>
-								<p className="text-[10px] text-muted-foreground/70 mb-2">
-									Comma- or space-separated. Used because this endpoint didn't expose a model list.
-								</p>
+										className="block text-[11px] mb-1 text-muted-foreground"
+									>
+										Model IDs
+									</label>
+									<input
+										id={manualModelsId}
+										type="text"
+										value={manualModels}
+										onChange={(e) => setManualModels(e.target.value)}
+										placeholder="llama3.1:8b, mistral:7b"
+										className="w-full text-[12px] font-mono px-3 py-2 mb-1 rounded-md border focus:outline-none transition-colors"
+										style={{
+											background: "hsl(var(--background))",
+											borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
+											color: "hsl(var(--foreground))",
+										}}
+									/>
+									<p className="text-[10px] text-muted-foreground/70 mb-2">
+										Comma- or space-separated. Used because this endpoint didn't expose a model
+										list.
+									</p>
 								</>
 							)}
 
@@ -363,11 +365,7 @@ export function CustomProviderRow({ onChange }: Props) {
 								</motion.button>
 							</div>
 
-							{error && (
-								<p className="text-[11px] mt-2" style={{ color: "hsl(var(--destructive))" }}>
-									{error}
-								</p>
-							)}
+							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
 						</div>
 					</motion.div>
 				)}
