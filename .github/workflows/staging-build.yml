@@ -172,6 +172,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `createUpdaterArtifacts` is enabled in tauri.conf.json (issue #271),
+          # so EVERY bundle build must sign the updater artifacts or the macOS /
+          # Windows bundlers fail. The updater key is separate from Apple/Windows
+          # code-signing (staging stays unsigned for those). `includeUpdaterJson:
+          # false` below means staging still never publishes a latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # IMPORTANT: no `tagName` / `releaseName` / `releaseDraft` keys.
           # When those are absent, tauri-action only builds — it does not
