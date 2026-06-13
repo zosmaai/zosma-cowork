@@ -715,19 +715,16 @@ fn build_steer_payload(id: &str, text: &str) -> Value {
 ///
 /// Pure so it can be unit-tested without touching real env/OS state.
 fn build_install_context(target_os: &str, is_appimage: bool, channel: &str) -> Value {
-    let platform = match target_os {
-        "macos" => "macos",
-        "windows" => "windows",
-        "linux" => "linux",
-        other => other,
-    };
+    // `std::env::consts::OS` already yields "macos"/"windows"/"linux"/…, which
+    // matches the platform strings the frontend's resolveUpdatePolicy expects,
+    // so we forward it as-is.
     let channel = if channel.is_empty() {
         "direct"
     } else {
         channel
     };
     serde_json::json!({
-        "platform": platform,
+        "platform": target_os,
         "isAppImage": is_appimage,
         "channel": channel,
     })
