@@ -180,8 +180,7 @@ export function SettingsPage({
 							type="button"
 							aria-label="Close settings"
 							onClick={onClose}
-							className="flex items-center justify-center w-7 h-7 rounded-lg"
-							style={{ color: "hsl(var(--muted-foreground))" }}
+							className="flex items-center justify-center w-7 h-7 rounded-lg text-muted-foreground"
 							whileHover={
 								reduced
 									? {}
@@ -207,8 +206,7 @@ export function SettingsPage({
 									{isActive && (
 										<motion.div
 											layoutId="settings-nav-pill"
-											className="absolute inset-0 rounded-lg"
-											style={{ background: "hsl(var(--accent))" }}
+											className="absolute inset-0 rounded-lg bg-accent"
 											transition={{ duration: reduced ? 0 : 0.2, ease: easeOutExpo }}
 										/>
 									)}
@@ -237,8 +235,7 @@ export function SettingsPage({
 						<motion.button
 							type="button"
 							onClick={() => setShowFeedback(true)}
-							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px]"
-							style={{ color: "hsl(var(--muted-foreground))" }}
+							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-muted-foreground"
 							whileHover={
 								reduced
 									? {}

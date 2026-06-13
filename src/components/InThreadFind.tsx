@@ -83,8 +83,7 @@ export function InThreadFind({
 									onClose();
 								}
 							}}
-							className="w-52 bg-transparent text-[13px] focus:outline-none"
-							style={{ color: "hsl(var(--foreground))" }}
+							className="w-52 bg-transparent text-[13px] focus:outline-none text-foreground"
 						/>
 
 						{/* Match counter */}
@@ -107,8 +106,7 @@ export function InThreadFind({
 								aria-label="Previous match"
 								disabled={total === 0}
 								onClick={onPrev}
-								className="flex items-center justify-center w-6 h-6 rounded-md transition-colors disabled:opacity-30 hover:bg-muted"
-								style={{ color: "hsl(var(--foreground))" }}
+								className="flex items-center justify-center w-6 h-6 rounded-md transition-colors disabled:opacity-30 hover:bg-muted text-foreground"
 							>
 								<ChevronUp className="w-3.5 h-3.5" />
 							</button>
@@ -117,25 +115,19 @@ export function InThreadFind({
 								aria-label="Next match"
 								disabled={total === 0}
 								onClick={onNext}
-								className="flex items-center justify-center w-6 h-6 rounded-md transition-colors disabled:opacity-30 hover:bg-muted"
-								style={{ color: "hsl(var(--foreground))" }}
+								className="flex items-center justify-center w-6 h-6 rounded-md transition-colors disabled:opacity-30 hover:bg-muted text-foreground"
 							>
 								<ChevronDown className="w-3.5 h-3.5" />
 							</button>
 						</div>
 
-						<div
-							className="w-px h-4 mx-0.5"
-							style={{ background: "hsl(var(--border))" }}
-							aria-hidden="true"
-						/>
+						<div className="w-px h-4 mx-0.5 bg-border" aria-hidden="true" />
 
 						<button
 							type="button"
 							aria-label="Close find"
 							onClick={onClose}
-							className="flex items-center justify-center w-6 h-6 rounded-md transition-colors hover:bg-muted"
-							style={{ color: "hsl(var(--muted-foreground))" }}
+							className="flex items-center justify-center w-6 h-6 rounded-md transition-colors hover:bg-muted text-muted-foreground"
 						>
 							<X className="w-3.5 h-3.5" />
 						</button>

@@ -83,15 +83,12 @@ export function DocumentsPanel({ onOpenDocument }: DocumentsPanelProps) {
 		<div className="flex flex-col gap-3">
 			{/* Header */}
 			<div className="flex items-center justify-between">
-				<h3 className="text-sm font-semibold" style={{ color: "hsl(var(--card-foreground))" }}>
-					Documents
-				</h3>
+				<h3 className="text-sm font-semibold text-card-foreground">Documents</h3>
 				<button
 					type="button"
 					onClick={refresh}
 					disabled={loading}
-					className="p-1 rounded transition-colors hover:bg-accent disabled:opacity-50"
-					style={{ color: "hsl(var(--muted-foreground))" }}
+					className="p-1 rounded transition-colors hover:bg-accent disabled:opacity-50 text-muted-foreground"
 					aria-label="Refresh documents"
 				>
 					<RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -100,18 +97,9 @@ export function DocumentsPanel({ onOpenDocument }: DocumentsPanelProps) {
 
 			{/* Empty state */}
 			{documents.length === 0 && !loading && (
-				<div
-					className="rounded-xl border p-4 text-center"
-					style={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
-				>
-					<FileText
-						className="w-8 h-8 mx-auto mb-2 opacity-40"
-						style={{ color: "hsl(var(--muted-foreground))" }}
-					/>
-					<p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+				<div className="rounded-xl border p-4 text-center bg-card border-border">
+					<FileText className="w-8 h-8 mx-auto mb-2 opacity-40 text-muted-foreground" />
+					<p className="text-xs text-muted-foreground">
 						No documents yet. Ask the agent to create one!
 					</p>
 				</div>
@@ -119,17 +107,8 @@ export function DocumentsPanel({ onOpenDocument }: DocumentsPanelProps) {
 
 			{/* Loading state */}
 			{loading && documents.length === 0 && (
-				<div
-					className="rounded-xl border p-6 flex justify-center"
-					style={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
-				>
-					<Loader2
-						className="w-5 h-5 animate-spin"
-						style={{ color: "hsl(var(--muted-foreground))" }}
-					/>
+				<div className="rounded-xl border p-6 flex justify-center bg-card border-border">
+					<Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
 				</div>
 			)}
 
@@ -141,22 +120,15 @@ export function DocumentsPanel({ onOpenDocument }: DocumentsPanelProps) {
 							type="button"
 							key={doc.path}
 							onClick={() => onOpenDocument?.(doc.path)}
-							className="rounded-xl border p-3 text-left transition-colors hover:bg-accent/50 w-full"
-							style={{
-								background: "hsl(var(--card))",
-								borderColor: "hsl(var(--border))",
-							}}
+							className="rounded-xl border p-3 text-left transition-colors hover:bg-accent/50 w-full bg-card border-border"
 						>
 							<div className="flex items-start gap-2">
 								<span className="text-base mt-0.5">{getDocumentIcon(doc.type)}</span>
 								<div className="flex-1 min-w-0">
-									<p
-										className="text-sm font-medium truncate"
-										style={{ color: "hsl(var(--card-foreground))" }}
-									>
+									<p className="text-sm font-medium truncate text-card-foreground">
 										{doc.path.split("/").pop() || doc.path}
 									</p>
-									<p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
+									<p className="text-xs mt-1 text-muted-foreground">
 										{formatFileSize(doc.sizeBytes)}
 										{getDocumentCountLabel(doc) && <> &middot; {getDocumentCountLabel(doc)}</>}
 									</p>
@@ -167,8 +139,7 @@ export function DocumentsPanel({ onOpenDocument }: DocumentsPanelProps) {
 										e.stopPropagation();
 										// Remove from local state
 									}}
-									className="p-1 rounded transition-colors hover:bg-destructive/10 opacity-0 group-hover:opacity-100"
-									style={{ color: "hsl(var(--destructive))" }}
+									className="p-1 rounded transition-colors hover:bg-destructive/10 opacity-0 group-hover:opacity-100 text-destructive"
 									aria-label="Remove document"
 								>
 									<Trash2 className="w-3.5 h-3.5" />

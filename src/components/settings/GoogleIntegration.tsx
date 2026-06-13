@@ -39,7 +39,11 @@ interface GoogleStatus {
 	};
 }
 
-const PRODUCT_CONFIG: { id: GoogleProduct; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+const PRODUCT_CONFIG: {
+	id: GoogleProduct;
+	label: string;
+	Icon: React.ComponentType<{ className?: string }>;
+}[] = [
 	{ id: "gmail", label: "Gmail", Icon: Mail },
 	{ id: "calendar", label: "Calendar", Icon: Calendar },
 	{ id: "drive", label: "Drive", Icon: Table },
@@ -154,14 +158,11 @@ export function GoogleIntegration() {
 
 	// ── Derived state ───────────────────────────────────────────────
 	const connected = status?.connected ?? false;
-	const products = status?.products ?? {} as Record<GoogleProduct, boolean>;
+	const products = status?.products ?? ({} as Record<GoogleProduct, boolean>);
 	const inFlight = phase !== "idle" && phase !== "done";
 
 	return (
-		<div
-			className="rounded-lg border border-border overflow-hidden"
-			style={{ background: "hsl(var(--card))" }}
-		>
+		<div className="rounded-lg border border-border overflow-hidden bg-card">
 			{/* Header row */}
 			<div className="px-3.5 py-3">
 				<div className="flex items-center gap-3">
@@ -206,10 +207,7 @@ export function GoogleIntegration() {
 
 			{/* Connected — show per-product scope badges */}
 			{connected && (
-				<div
-					className="px-3.5 pb-3 pt-0"
-					style={{ borderTop: "1px solid hsl(var(--border))" }}
-				>
+				<div className="px-3.5 pb-3 pt-0" style={{ borderTop: "1px solid hsl(var(--border))" }}>
 					<div className="pt-2.5 flex flex-wrap gap-1.5">
 						{PRODUCT_CONFIG.map(({ id, label, Icon }) => {
 							const granted = products[id] ?? false;
@@ -218,12 +216,8 @@ export function GoogleIntegration() {
 									key={id}
 									className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors"
 									style={{
-										background: granted
-											? "hsl(var(--primary) / 0.1)"
-											: "hsl(var(--muted) / 0.3)",
-										color: granted
-											? "hsl(var(--primary))"
-											: "hsl(var(--muted-foreground) / 0.6)",
+										background: granted ? "hsl(var(--primary) / 0.1)" : "hsl(var(--muted) / 0.3)",
+										color: granted ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.6)",
 										border: granted
 											? "1px solid hsl(var(--primary) / 0.15)"
 											: "1px solid hsl(var(--border))",
@@ -248,9 +242,7 @@ export function GoogleIntegration() {
 					className="px-3.5 pb-3"
 					style={{ borderTop: connected || error ? "1px solid hsl(var(--border))" : undefined }}
 				>
-					<p className="pt-2.5 text-xs" style={{ color: "hsl(var(--destructive))" }}>
-						{error}
-					</p>
+					<p className="pt-2.5 text-xs text-destructive">{error}</p>
 				</div>
 			)}
 		</div>

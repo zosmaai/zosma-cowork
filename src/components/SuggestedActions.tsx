@@ -54,12 +54,8 @@ export function SuggestedActions({ onSend }: SuggestedActionsProps) {
 	return (
 		<div className="flex flex-col items-center justify-center h-full gap-6 px-6">
 			<div className="text-center max-w-sm">
-				<h1 className="text-lg font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-					What are you working on?
-				</h1>
-				<p className="text-sm mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
-					Choose a starting point or type below
-				</p>
+				<h1 className="text-lg font-semibold text-foreground">What are you working on?</h1>
+				<p className="text-sm mt-1 text-muted-foreground">Choose a starting point or type below</p>
 			</div>
 
 			<div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-w-lg w-full">
@@ -71,20 +67,11 @@ export function SuggestedActions({ onSend }: SuggestedActionsProps) {
 							trackEvent("suggested_action", { action: suggestion.title });
 							onSend(suggestion.prompt);
 						}}
-						className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all hover:shadow-sm hover:-translate-y-0.5"
-						style={{
-							background: "hsl(var(--card))",
-							borderColor: "hsl(var(--border))",
-						}}
+						className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all hover:shadow-sm hover:-translate-y-0.5 bg-card border-border"
 					>
 						<div style={{ color: "hsl(var(--primary))" }}>{suggestion.icon}</div>
-						<span className="text-sm font-medium" style={{ color: "hsl(var(--foreground))" }}>
-							{suggestion.title}
-						</span>
-						<span
-							className="text-xs leading-tight"
-							style={{ color: "hsl(var(--muted-foreground))" }}
-						>
+						<span className="text-sm font-medium text-foreground">{suggestion.title}</span>
+						<span className="text-xs leading-tight text-muted-foreground">
 							{suggestion.description}
 						</span>
 					</button>

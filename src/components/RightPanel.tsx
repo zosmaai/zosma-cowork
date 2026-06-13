@@ -12,22 +12,13 @@ export function RightPanel({ streamState, onClose }: RightPanelProps) {
 	const hasTools = toolCalls.length > 0;
 
 	return (
-		<div
-			className="w-[280px] flex flex-col gap-4 p-4 border-l overflow-y-auto shrink-0"
-			style={{
-				background: "hsl(var(--sidebar-background))",
-				borderColor: "hsl(var(--sidebar-border))",
-			}}
-		>
+		<div className="w-[280px] flex flex-col gap-4 p-4 border-l overflow-y-auto shrink-0 bg-sidebar-background border-sidebar-border">
 			<div className="flex items-center justify-between">
-				<h3 className="text-sm font-semibold" style={{ color: "hsl(var(--sidebar-foreground))" }}>
-					Context
-				</h3>
+				<h3 className="text-sm font-semibold text-sidebar-foreground">Context</h3>
 				<button
 					type="button"
 					onClick={onClose}
-					className="p-1 rounded transition-colors hover:bg-accent"
-					style={{ color: "hsl(var(--muted-foreground))" }}
+					className="p-1 rounded transition-colors hover:bg-accent text-muted-foreground"
 					aria-label="Close panel"
 				>
 					<X className="w-4 h-4" />
@@ -35,36 +26,20 @@ export function RightPanel({ streamState, onClose }: RightPanelProps) {
 			</div>
 
 			{/* Status */}
-			<div
-				className="rounded-xl border p-4"
-				style={{
-					background: "hsl(var(--card))",
-					borderColor: "hsl(var(--border))",
-				}}
-			>
-				<h3 className="text-sm font-semibold mb-3" style={{ color: "hsl(var(--card-foreground))" }}>
-					Status
-				</h3>
+			<div className="rounded-xl border p-4 bg-card border-border">
+				<h3 className="text-sm font-semibold mb-3 text-card-foreground">Status</h3>
 				<div className="flex items-center gap-2">
 					{streamState.isRunning ? (
 						<>
-							<Loader2
-								className="w-4 h-4 animate-spin"
-								style={{ color: "hsl(var(--status-active-fg))" }}
-							/>
-							<span
-								className="text-xs capitalize"
-								style={{ color: "hsl(var(--muted-foreground))" }}
-							>
+							<Loader2 className="w-4 h-4 animate-spin text-status-active-fg" />
+							<span className="text-xs capitalize text-muted-foreground">
 								{streamState.status.replace("_", " ")}
 							</span>
 						</>
 					) : (
 						<>
-							<Check className="w-4 h-4" style={{ color: "hsl(var(--success))" }} />
-							<span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-								Idle
-							</span>
+							<Check className="w-4 h-4 text-success" />
+							<span className="text-xs text-muted-foreground">Idle</span>
 						</>
 					)}
 				</div>
@@ -80,17 +55,8 @@ export function RightPanel({ streamState, onClose }: RightPanelProps) {
 
 			{/* Tool calls */}
 			{hasTools && (
-				<div
-					className="rounded-xl border p-4"
-					style={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
-				>
-					<h3
-						className="text-sm font-semibold mb-3"
-						style={{ color: "hsl(var(--card-foreground))" }}
-					>
+				<div className="rounded-xl border p-4 bg-card border-border">
+					<h3 className="text-sm font-semibold mb-3 text-card-foreground">
 						Tool Calls ({toolCalls.length})
 					</h3>
 					<div className="space-y-2">
@@ -103,20 +69,9 @@ export function RightPanel({ streamState, onClose }: RightPanelProps) {
 
 			{/* Usage */}
 			{streamState.messages.length > 0 && (
-				<div
-					className="rounded-xl border p-4"
-					style={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
-				>
-					<h3
-						className="text-sm font-semibold mb-3"
-						style={{ color: "hsl(var(--card-foreground))" }}
-					>
-						Session
-					</h3>
-					<div className="space-y-1 text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+				<div className="rounded-xl border p-4 bg-card border-border">
+					<h3 className="text-sm font-semibold mb-3 text-card-foreground">Session</h3>
+					<div className="space-y-1 text-xs text-muted-foreground">
 						<div className="flex justify-between">
 							<span>Messages</span>
 							<span style={{ color: "hsl(var(--foreground))" }}>{streamState.messages.length}</span>
@@ -149,19 +104,14 @@ function ToolCard({ toolCall }: { toolCall: ToolCallInfo }) {
 		>
 			<div className="flex items-center gap-2">
 				{toolCall.status === "running" ? (
-					<Loader2
-						className="w-3.5 h-3.5 animate-spin"
-						style={{ color: "hsl(var(--tool-running-fg))" }}
-					/>
+					<Loader2 className="w-3.5 h-3.5 animate-spin text-tool-running-fg" />
 				) : toolCall.status === "error" ? (
-					<AlertCircle className="w-3.5 h-3.5" style={{ color: "hsl(var(--tool-error-fg))" }} />
+					<AlertCircle className="w-3.5 h-3.5 text-tool-error-fg" />
 				) : (
-					<Check className="w-3.5 h-3.5" style={{ color: "hsl(var(--tool-complete-fg))" }} />
+					<Check className="w-3.5 h-3.5 text-tool-complete-fg" />
 				)}
-				<Terminal className="w-3.5 h-3.5" style={{ color: "hsl(var(--muted-foreground))" }} />
-				<span className="text-xs font-medium flex-1" style={{ color: "hsl(var(--foreground))" }}>
-					{toolCall.name}
-				</span>
+				<Terminal className="w-3.5 h-3.5 text-muted-foreground" />
+				<span className="text-xs font-medium flex-1 text-foreground">{toolCall.name}</span>
 			</div>
 			{toolCall.result && (
 				<pre

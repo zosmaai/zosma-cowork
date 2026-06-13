@@ -426,11 +426,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							{pastedImages.map((img) => (
 								<span
 									key={img.name}
-									className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs max-w-60"
-									style={{
-										background: "hsl(var(--muted))",
-										color: "hsl(var(--foreground))",
-									}}
+									className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs max-w-60 bg-muted text-foreground"
 									title={img.name}
 								>
 									<img src={img.dataUrl} alt={img.name} className="w-5 h-5 rounded object-cover" />
@@ -456,11 +452,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							{attachedFiles.map((file) => (
 								<span
 									key={file.path}
-									className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs max-w-40"
-									style={{
-										background: "hsl(var(--muted))",
-										color: "hsl(var(--foreground))",
-									}}
+									className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs max-w-40 bg-muted text-foreground"
 									title={file.path}
 								>
 									<span className="truncate">

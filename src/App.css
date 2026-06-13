@@ -368,6 +368,62 @@
 	--color-sidebar-accent: hsl(var(--sidebar-accent));
 	--color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
 	--color-sidebar-border: hsl(var(--sidebar-border));
+
+	/* ── Semantic token utilities (issue #272) ──
+	   Map the remaining design tokens so bg-, text- and border- utilities exist
+	   and components can stop using inline hsl(var(--token)) style strings.
+	   Additive only — Tailwind emits a utility solely when it's actually used. */
+
+	/* Elevation / glass */
+	--color-elev-bg: hsl(var(--elev-bg));
+	--color-elev-border: hsl(var(--elev-border));
+	--color-elev-highlight: hsl(var(--elev-highlight));
+	--color-elev-shadow: hsl(var(--elev-shadow));
+
+	/* Aurora backdrop accents */
+	--color-aurora-1: hsl(var(--aurora-1));
+	--color-aurora-2: hsl(var(--aurora-2));
+
+	/* Chat surfaces */
+	--color-chat-user-bg: hsl(var(--chat-user-bg));
+	--color-chat-user-fg: hsl(var(--chat-user-fg));
+	--color-chat-assistant-bg: hsl(var(--chat-assistant-bg));
+	--color-chat-assistant-fg: hsl(var(--chat-assistant-fg));
+	--color-chat-system-bg: hsl(var(--chat-system-bg));
+	--color-chat-system-fg: hsl(var(--chat-system-fg));
+	--color-chat-avatar-user-bg: hsl(var(--chat-avatar-user-bg));
+	--color-chat-avatar-user-fg: hsl(var(--chat-avatar-user-fg));
+	--color-chat-avatar-assistant-bg: hsl(var(--chat-avatar-assistant-bg));
+	--color-chat-avatar-assistant-fg: hsl(var(--chat-avatar-assistant-fg));
+
+	/* Status bar */
+	--color-status-bg: hsl(var(--status-bg));
+	--color-status-divider: hsl(var(--status-divider));
+	--color-status-active-fg: hsl(var(--status-active-fg));
+
+	/* Tool execution blocks (alpha baked into the token values) */
+	--color-tool-running-bg: hsl(var(--tool-running-bg));
+	--color-tool-running-fg: hsl(var(--tool-running-fg));
+	--color-tool-running-border: hsl(var(--tool-running-border));
+	--color-tool-complete-bg: hsl(var(--tool-complete-bg));
+	--color-tool-complete-fg: hsl(var(--tool-complete-fg));
+	--color-tool-complete-border: hsl(var(--tool-complete-border));
+	--color-tool-error-bg: hsl(var(--tool-error-bg));
+	--color-tool-error-fg: hsl(var(--tool-error-fg));
+	--color-tool-error-border: hsl(var(--tool-error-border));
+	--color-tool-timeline-line: hsl(var(--tool-timeline-line));
+
+	/* Diff colors */
+	--color-diff-added-bg: hsl(var(--diff-added-bg));
+	--color-diff-added-fg: hsl(var(--diff-added-fg));
+	--color-diff-removed-bg: hsl(var(--diff-removed-bg));
+	--color-diff-removed-fg: hsl(var(--diff-removed-fg));
+	--color-diff-context-fg: hsl(var(--diff-context-fg));
+	--color-diff-hunk-fg: hsl(var(--diff-hunk-fg));
+
+	/* Subtle status backgrounds */
+	--color-success-subtle: hsl(var(--success-subtle));
+	--color-error-subtle: hsl(var(--error-subtle));
 }
 
 /* ── Base layout ── */

@@ -282,8 +282,7 @@ export function ChatView({
 							<div data-testid="queued-section" className="mx-auto max-w-3xl px-6 mt-1 mb-3">
 								<div
 									data-testid="queued-thread"
-									className="ml-11 border-l-2 pl-4 py-1 space-y-1.5 text-sm"
-									style={{ borderColor: "hsl(var(--border))" }}
+									className="ml-11 border-l-2 pl-4 py-1 space-y-1.5 text-sm border-border"
 								>
 									{queuedItems.map((item) => (
 										<div
@@ -292,8 +291,7 @@ export function ChatView({
 										>
 											{/* Tiny node-dot connecting each item to the thread line. */}
 											<span
-												className="absolute -left-[1.30rem] top-2 h-1.5 w-1.5 rounded-full"
-												style={{ background: "hsl(var(--border))" }}
+												className="absolute -left-[1.30rem] top-2 h-1.5 w-1.5 rounded-full bg-border"
 												aria-hidden="true"
 											/>
 											<span className="font-medium text-muted-foreground">

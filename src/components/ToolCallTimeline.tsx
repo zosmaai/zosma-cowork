@@ -231,10 +231,7 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 		const runningLabel = getRunningLabel(toolCall.name);
 		return (
 			<div className="flex items-center gap-1.5 text-[11px] opacity-70">
-				<span
-					className="inline-block w-1.5 h-1.5 rounded-full animate-pulse-dot"
-					style={{ background: "hsl(var(--tool-running-fg))" }}
-				/>
+				<span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse-dot bg-tool-running-fg" />
 				<span>{runningLabel}</span>
 			</div>
 		);
@@ -265,7 +262,7 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 	// Bash error
 	if (toolCall.name === "bash" && toolCall.status === "error") {
 		return (
-			<pre className="text-[11px] whitespace-pre-wrap" style={{ color: "hsl(var(--destructive))" }}>
+			<pre className="text-[11px] whitespace-pre-wrap text-destructive">
 				{truncate(toolCall.result, 3000)}
 			</pre>
 		);

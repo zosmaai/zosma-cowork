@@ -26,20 +26,8 @@ export function ArtifactPreview({
 	}, [artifactType, fileContent]);
 
 	return (
-		<div
-			className="mt-2 rounded-lg border overflow-hidden"
-			style={{
-				borderColor: "hsl(var(--border))",
-				background: "hsl(var(--card))",
-			}}
-		>
-			<div
-				className="flex items-center justify-between px-3 py-1.5 border-b text-[11px]"
-				style={{
-					borderColor: "hsl(var(--border))",
-					background: "hsl(var(--muted))",
-				}}
-			>
+		<div className="mt-2 rounded-lg border overflow-hidden border-border bg-card">
+			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[11px] border-border bg-muted">
 				<span className="font-mono truncate" data-testid="artifact-filename">
 					{fileName}
 				</span>
@@ -91,10 +79,7 @@ export function ArtifactPreview({
 					</div>
 				)}
 				{artifactType === "code" && (
-					<pre
-						className="text-[11px] p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap"
-						style={{ color: "hsl(var(--muted-foreground))" }}
-					>
+					<pre className="text-[11px] p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
 						{fileContent}
 					</pre>
 				)}
