@@ -214,6 +214,11 @@ jobs:
           APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
           APPLE_ID: ${{ env.APPLE_ID }}
           APPLE_PASSWORD: ${{ env.APPLE_PASSWORD }}
+          # Tauri v2 updater signing (issue #271). Separate from Apple/Windows
+          # code-signing. The matching PUBLIC key lives in tauri.conf.json.
+          # When unset, tauri-action skips updater artifacts + latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "${{ github.ref_name }}"
@@ -268,6 +273,14 @@ jobs:
           done
           if [ "$MISSING" -gt 0 ]; then
             echo "::error::$MISSING expected asset patterns missing — refusing to publish"
+            exit 1
+          fi
+          # In-app updater (issue #271): a valid latest.json manifest must be
+          # attached so installed clients can discover updates. tauri-action
+          # generates it only when TAURI_SIGNING_PRIVATE_KEY is configured —
+          # if this fails, the updater secrets are missing from the build job.
+          if ! grep -qE '^latest\.json$' <<<"$ASSETS_JSON"; then
+            echo "::error::latest.json manifest missing — updater signing key not configured (see #271)"
             exit 1
           fi
           gh release edit "$TAG" --repo "${GITHUB_REPOSITORY}" --draft=false

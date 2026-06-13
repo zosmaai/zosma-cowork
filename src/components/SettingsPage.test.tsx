@@ -33,6 +33,20 @@ vi.mock("./FeedbackDialog", () => ({
 	},
 }));
 
+// About uses the update context (Tauri IPC); stub it to a no-op idle state.
+vi.mock("@/contexts/UpdateProvider", () => ({
+	useUpdate: () => ({
+		status: "idle",
+		info: null,
+		progress: 0,
+		policy: null,
+		error: null,
+		checkNow: vi.fn(),
+		installAndRestart: vi.fn(),
+		dismiss: vi.fn(),
+	}),
+}));
+
 // Polyfill window.matchMedia for jsdom (needed by getSavedTheme)
 beforeAll(() => {
 	if (typeof window.matchMedia !== "function") {

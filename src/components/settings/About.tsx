@@ -1,8 +1,11 @@
+import { useUpdate } from "@/contexts/UpdateProvider";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
+import { UpdateSettingsRow } from "./UpdateSettingsRow";
 
 export function About() {
 	const [appVersion, setAppVersion] = useState<string | null>(null);
+	const appUpdate = useUpdate();
 
 	useEffect(() => {
 		import("@tauri-apps/api/app")
@@ -65,6 +68,7 @@ export function About() {
 					<MetaRow label="License">
 						<span className="text-foreground/70">MIT</span>
 					</MetaRow>
+					<UpdateSettingsRow update={appUpdate} />
 					<MetaRow label="Source">
 						<a
 							href="https://github.com/zosmaai/zosma-cowork"

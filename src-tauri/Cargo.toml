@@ -26,6 +26,8 @@ tauri-plugin-fs = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-log = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 reqwest = { version = "0.12", features = ["json"] }
 git2 = { version = "0.19", features = ["vendored-openssl"] }
 walkdir = "2"

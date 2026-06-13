@@ -10,7 +10,9 @@ import { ShareExport } from "@/components/ShareExport";
 import { Sidebar } from "@/components/Sidebar";
 import { SplashScreen } from "@/components/SplashScreen";
 import { TelemetryConsentDialog } from "@/components/TelemetryConsentDialog";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useUpdate } from "@/contexts/UpdateProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
@@ -50,6 +52,7 @@ interface SessionEntry {
 }
 
 function App() {
+	const appUpdate = useUpdate();
 	const {
 		state: streamState,
 		startStream,
@@ -898,6 +901,9 @@ function App() {
 
 			{/* Main content — raised glass panel */}
 			<div className="relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
+				{/* In-app update banner (issue #271) */}
+				<UpdateBanner update={appUpdate} />
+
 				{/* Remote connection status (browser mode only) */}
 				<RemoteConnectionBar />
 

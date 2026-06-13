@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./App.css";
 import App from "./App";
+import { UpdateProvider } from "./contexts/UpdateProvider";
 import { initChatWidth } from "./lib/chat-width";
 import { installExternalLinkHandler } from "./lib/external-links";
 import { initTheme } from "./lib/themes";
@@ -25,6 +26,8 @@ createRoot(rootElement, {
 	onRecoverableError: reactErrorHandler(),
 }).render(
 	<StrictMode>
-		<App />
+		<UpdateProvider>
+			<App />
+		</UpdateProvider>
 	</StrictMode>,
 );

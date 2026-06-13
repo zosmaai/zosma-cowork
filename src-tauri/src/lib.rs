@@ -710,6 +710,43 @@ fn build_steer_payload(id: &str, text: &str) -> Value {
     })
 }
 
+/// Build the install context the frontend uses to decide whether the in-app
+/// updater may self-update or should defer to a package manager (issue #271).
+///
+/// Pure so it can be unit-tested without touching real env/OS state.
+fn build_install_context(target_os: &str, is_appimage: bool, channel: &str) -> Value {
+    let platform = match target_os {
+        "macos" => "macos",
+        "windows" => "windows",
+        "linux" => "linux",
+        other => other,
+    };
+    let channel = if channel.is_empty() {
+        "direct"
+    } else {
+        channel
+    };
+    serde_json::json!({
+        "platform": platform,
+        "isAppImage": is_appimage,
+        "channel": channel,
+    })
+}
+
+/// Tauri command: report the running install context to the frontend.
+///
+/// - `isAppImage` is true when launched from an AppImage (`APPIMAGE` env set);
+///   only then can the Tauri updater self-replace on Linux.
+/// - `channel` is a compile-time marker baked by CI: package-manager builds
+///   (Homebrew/AUR/Winget) are built with `ZOSMA_UPDATE_CHANNEL=managed` so the
+///   app never tries to self-update binaries the package manager owns.
+#[tauri::command]
+fn get_install_context() -> Value {
+    let is_appimage = std::env::var_os("APPIMAGE").is_some();
+    let channel = option_env!("ZOSMA_UPDATE_CHANNEL").unwrap_or("direct");
+    build_install_context(std::env::consts::OS, is_appimage, channel)
+}
+
 /// Build the JSONL payload sent to the sidecar for a `clear_queue` command.
 /// Issue #201 PR 3 — atomically drains the SDK queue. No `text` field: this
 /// command takes no input. The sidecar replies with the drained
@@ -1997,6 +2034,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(TelemetryState {
             enabled: Arc::new(AtomicBool::new(false)),
         });
@@ -2128,6 +2167,7 @@ pub fn run() {
             crate::analytics::track_analytics_event,
             crate::analytics::set_analytics_enabled,
             set_telemetry_enabled,
+            get_install_context,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");
@@ -2135,7 +2175,39 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_clear_queue_payload, build_follow_up_payload, build_steer_payload};
+    use super::{
+        build_clear_queue_payload, build_follow_up_payload, build_install_context,
+        build_steer_payload,
+    };
+
+    // ── In-app updater install context (#271) ───────────────────────────
+
+    #[test]
+    fn install_context_maps_known_platforms_and_flags() {
+        let ctx = build_install_context("macos", false, "direct");
+        assert_eq!(ctx["platform"], "macos");
+        assert_eq!(ctx["isAppImage"], false);
+        assert_eq!(ctx["channel"], "direct");
+    }
+
+    #[test]
+    fn install_context_reports_appimage_on_linux() {
+        let ctx = build_install_context("linux", true, "direct");
+        assert_eq!(ctx["platform"], "linux");
+        assert_eq!(ctx["isAppImage"], true);
+    }
+
+    #[test]
+    fn install_context_defaults_empty_channel_to_direct() {
+        let ctx = build_install_context("windows", false, "");
+        assert_eq!(ctx["channel"], "direct");
+    }
+
+    #[test]
+    fn install_context_preserves_managed_channel_marker() {
+        let ctx = build_install_context("macos", false, "managed");
+        assert_eq!(ctx["channel"], "managed");
+    }
 
     // Wire-format guards: the sidecar's `case "steer"` / `case "follow_up"` /
     // `case "clear_queue"` handlers (agent-sidecar/src/index.ts) read these

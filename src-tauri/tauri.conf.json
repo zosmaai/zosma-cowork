@@ -31,10 +31,18 @@
   "plugins": {
     "shell": {
       "open": "^https?://"
+    },
+    "updater": {
+      "active": true,
+      "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/zosmaai/zosma-cowork/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": ["agent-sidecar/index.cjs", "binaries/node", "binaries/node-arm64", "binaries/node-x64"],
     "icon": [
