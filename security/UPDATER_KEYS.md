@@ -11,6 +11,14 @@ The release pipeline (`.github/workflows/release.yml`) now requires the updater
 signing key. Until it is configured, the `publish` job fails on the missing
 `latest.json` assertion (by design).
 
+> **Status:** Steps 1–3 are **DONE** for `zosmaai/zosma-cowork`. The keypair
+> exists, the GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` /
+> `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are configured, and the public key is
+> embedded in `tauri.conf.json`. The private key + password live **only** in
+> `~/.zosma-updater/` on the maintainer machine and in the GitHub secrets store
+> — never in the repo. The steps below are kept for rotation / disaster
+> recovery. **Updater pubkey fingerprint: `1E89676C186615C6`.**
+
 1. **Generate the keypair** (locally, once):
 
    ```sh
