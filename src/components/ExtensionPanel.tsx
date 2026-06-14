@@ -39,7 +39,39 @@ import {
 } from "./store/StoreUI";
 
 type View = "discover" | "installed";
+type AppTab = "install" | "setup";
 const PER_PAGE = 9;
+
+/**
+ * Normalized "app" view over either an installed ZemExtension or a discover
+ * (npm) result, so the listing card and the detail page are identical in both
+ * tabs. Clicking any card opens this app detail; the gear opens its Setup tab.
+ */
+interface StoreApp {
+	id: string;
+	pkg: string;
+	name: string;
+	subtitle?: string;
+	version?: string;
+	description?: string;
+	category?: string;
+	installed: boolean;
+	ext?: ZemExtension;
+}
+
+function appFromExt(ext: ZemExtension): StoreApp {
+	return {
+		id: ext.id,
+		pkg: ext.source?.value || ext.id.replace(/^npm:/, ""),
+		name: ext.name,
+		subtitle: ext.author ? `by ${ext.author}` : ext.source?.value,
+		version: ext.version,
+		description: ext.description,
+		category: ext.category,
+		installed: true,
+		ext,
+	};
+}
 
 interface ExtensionPanelProps {
 	onReload: () => void;
@@ -62,7 +94,8 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 	const [view, setView] = useState<View>("discover");
 	const [category, setCategory] = useState("All");
 	const [page, setPage] = useState(0);
-	const [selectedExt, setSelectedExt] = useState<string | null>(null);
+	const [openApp, setOpenApp] = useState<StoreApp | null>(null);
+	const [openTab, setOpenTab] = useState<AppTab>("install");
 
 	const [searchResults, setSearchResults] = useState<
 		Array<{ name: string; description: string; version: string; score: number }>
@@ -113,8 +146,34 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 
 	const isInstalled = useCallback((pkg: string) => installedKeys.has(pkg), [installedKeys]);
 
-	const openNpm = useCallback((pkg: string) => {
-		openExternalUrl(`https://www.npmjs.com/package/${pkg}`).catch(() => {});
+	// Normalize an npm/discover package into an app, enriching with the live
+	// installed record when present so the detail is rich and status is honest.
+	const appFromPkg = useCallback(
+		(
+			pkg: string,
+			meta?: { version?: string; description?: string; category?: string; name?: string },
+		): StoreApp => {
+			const ext = extensions.find(
+				(e) => e.source?.value === pkg || e.id === pkg || e.id === `npm:${pkg}`,
+			);
+			if (ext) return appFromExt(ext);
+			return {
+				id: `npm:${pkg}`,
+				pkg,
+				name: meta?.name || extensionDisplayName(pkg),
+				subtitle: pkg,
+				version: meta?.version,
+				description: meta?.description,
+				category: meta?.category,
+				installed: false,
+			};
+		},
+		[extensions],
+	);
+
+	const showApp = useCallback((app: StoreApp, tab: AppTab = "install") => {
+		setOpenApp(app);
+		setOpenTab(tab);
 	}, []);
 
 	const handleInstall = useCallback(
@@ -133,10 +192,10 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 		async (ext: ZemExtension) => {
 			if (!confirm(`Uninstall "${ext.name}"?`)) return;
 			await uninstall(ext.id);
-			if (selectedExt === ext.id) setSelectedExt(null);
+			setOpenApp(null);
 			onReload();
 		},
-		[uninstall, selectedExt, onReload],
+		[uninstall, onReload],
 	);
 
 	const handleToggle = useCallback(
@@ -147,7 +206,16 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 		[setEnabled, onReload],
 	);
 
-	const selected = extensions.find((e) => e.id === selectedExt) || null;
+	// Recompute install state live so toggling/installing from the detail
+	// reflects pi's source of truth immediately.
+	const liveApp = useMemo(() => {
+		if (!openApp) return null;
+		const ext = extensions.find(
+			(e) =>
+				e.id === openApp.id || e.source?.value === openApp.pkg || e.id === `npm:${openApp.pkg}`,
+		);
+		return ext ? appFromExt(ext) : openApp;
+	}, [openApp, extensions]);
 
 	// ── Featured (filtered + paged) ───────────────────────────────────
 	const featured = useMemo(
@@ -165,15 +233,22 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 	const totalPages = pageCount(activeLen, PER_PAGE);
 	const safePage = Math.min(page, totalPages - 1);
 
-	// Detail view short-circuits the grid
-	if (selected) {
+	// Detail view short-circuits the grid — same app page for discover + installed.
+	if (liveApp) {
+		const setup = getExtensionSetup(liveApp);
+		const tab: AppTab = openTab === "setup" && !setup ? "install" : openTab;
 		return (
 			<div className="flex flex-col">
-				<ExtensionDetail
-					ext={selected}
-					onBack={() => setSelectedExt(null)}
-					onToggle={() => handleToggle(selected)}
-					onUninstall={() => handleUninstall(selected)}
+				<AppDetail
+					app={liveApp}
+					tab={tab}
+					hasSetup={!!setup}
+					onTab={setOpenTab}
+					onBack={() => setOpenApp(null)}
+					onInstall={() => handleInstall(liveApp.pkg)}
+					onToggle={() => liveApp.ext && handleToggle(liveApp.ext)}
+					onUninstall={() => liveApp.ext && handleUninstall(liveApp.ext)}
+					installing={installing === liveApp.pkg}
 				/>
 			</div>
 		);
@@ -258,7 +333,12 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										subtitle={pkg.name}
 										version={pkg.version}
 										description={pkg.description}
-										onOpen={() => openNpm(pkg.name)}
+										onOpen={() => showApp(appFromPkg(pkg.name, pkg))}
+										onSettings={
+											getExtensionSetup({ name: pkg.name, source: { value: pkg.name } })
+												? () => showApp(appFromPkg(pkg.name, pkg), "setup")
+												: undefined
+										}
 										action={
 											isInstalled(pkg.name) ? (
 												<span className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-primary/10 text-primary">
@@ -296,7 +376,28 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										installed={isInstalled(f.pkg)}
 										installing={installing === f.pkg}
 										onInstall={handleInstall}
-										onOpenExternal={openNpm}
+										onOpen={(p) =>
+											showApp(
+												appFromPkg(p, {
+													name: f.label,
+													description: f.blurb,
+													category: f.category,
+												}),
+											)
+										}
+										onSettings={
+											getExtensionSetup({ name: f.label, source: { value: f.pkg } })
+												? (p) =>
+														showApp(
+															appFromPkg(p, {
+																name: f.label,
+																description: f.blurb,
+																category: f.category,
+															}),
+															"setup",
+														)
+												: undefined
+										}
 									/>
 								))}
 							</div>
@@ -326,7 +427,10 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										subtitle={ext.author ? `by ${ext.author}` : ext.source?.value}
 										version={ext.version}
 										description={ext.description}
-										onOpen={() => setSelectedExt(ext.id)}
+										onOpen={() => showApp(appFromExt(ext))}
+										onSettings={
+											getExtensionSetup(ext) ? () => showApp(appFromExt(ext), "setup") : undefined
+										}
 										action={
 											<ToggleSwitch
 												enabled={ext.enabled}
@@ -380,19 +484,63 @@ function ToggleSwitch({
 	);
 }
 
-// ─── Extension Detail (installed) ───────────────────────────────────
+// ─── App Detail (unified discover + installed, tabbed) ──────────────
 
-function ExtensionDetail({
-	ext,
+function scopeLabel(scope?: ZemExtension["scope"]): string | null {
+	if (scope === "project") return "This project (.pi)";
+	if (scope === "user") return "Global (~/.pi)";
+	if (scope === "temporary") return "Temporary";
+	return null;
+}
+
+function TabButton({
+	active,
+	onClick,
+	children,
+}: {
+	active: boolean;
+	onClick: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+				active
+					? "border-primary text-foreground"
+					: "border-transparent text-muted-foreground hover:text-foreground"
+			}`}
+		>
+			{children}
+		</button>
+	);
+}
+
+function AppDetail({
+	app,
+	tab,
+	hasSetup,
+	onTab,
 	onBack,
+	onInstall,
 	onToggle,
 	onUninstall,
+	installing,
 }: {
-	ext: ZemExtension;
+	app: StoreApp;
+	tab: AppTab;
+	hasSetup: boolean;
+	onTab: (t: AppTab) => void;
 	onBack: () => void;
+	onInstall: () => void;
 	onToggle: () => void;
 	onUninstall: () => void;
+	installing: boolean;
 }) {
+	const ext = app.ext;
+	const setup = getExtensionSetup(app);
+
 	return (
 		<div className="space-y-4 max-w-2xl">
 			<button
@@ -401,7 +549,7 @@ function ExtensionDetail({
 				className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
 			>
 				<ChevronLeft className="w-3.5 h-3.5" />
-				Back to Extensions
+				Back to Apps
 			</button>
 
 			{/* Header */}
@@ -410,85 +558,157 @@ function ExtensionDetail({
 					className="w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold shrink-0"
 					style={{ background: "hsl(var(--primary) / 0.15)", color: "hsl(var(--primary))" }}
 				>
-					{ext.icon || ext.name.charAt(0).toUpperCase()}
+					{app.name.charAt(0).toUpperCase()}
 				</div>
 				<div className="flex-1 min-w-0">
-					<h3 className="text-base font-semibold text-foreground truncate">{ext.name}</h3>
+					<div className="flex items-center gap-2">
+						<h3 className="text-base font-semibold text-foreground truncate">{app.name}</h3>
+						{app.installed ? (
+							<span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-primary/10 text-primary shrink-0">
+								Installed
+							</span>
+						) : (
+							<span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-muted text-muted-foreground shrink-0">
+								Not installed
+							</span>
+						)}
+					</div>
 					<p className="text-xs text-muted-foreground">
-						v{ext.version}
-						{ext.author && <> · by {ext.author}</>}
+						{app.version && <>v{app.version}</>}
+						{app.subtitle && <> · {app.subtitle}</>}
 					</p>
-					{ext.description && (
-						<p className="text-xs text-muted-foreground mt-1.5">{ext.description}</p>
+					{app.description && (
+						<p className="text-xs text-muted-foreground mt-1.5">{app.description}</p>
 					)}
 				</div>
-				<ToggleSwitch
-					enabled={ext.enabled}
-					onToggle={onToggle}
-					label={`${ext.enabled ? "Disable" : "Enable"} ${ext.name}`}
-				/>
+				{app.installed && ext && (
+					<ToggleSwitch
+						enabled={ext.enabled}
+						onToggle={onToggle}
+						label={`${ext.enabled ? "Disable" : "Enable"} ${app.name}`}
+					/>
+				)}
 			</div>
 
-			{/* Source */}
+			{/* Tabs */}
+			<div className="flex items-center gap-1 border-b border-border">
+				<TabButton active={tab === "install"} onClick={() => onTab("install")}>
+					Install
+				</TabButton>
+				{hasSetup && (
+					<TabButton active={tab === "setup"} onClick={() => onTab("setup")}>
+						Setup
+					</TabButton>
+				)}
+			</div>
+
+			{tab === "setup" && hasSetup ? (
+				<SetupTab app={app} setup={setup} onInstall={onInstall} installing={installing} />
+			) : (
+				<InstallTab
+					app={app}
+					onInstall={onInstall}
+					onToggle={onToggle}
+					onUninstall={onUninstall}
+					installing={installing}
+				/>
+			)}
+		</div>
+	);
+}
+
+// ─── Install tab ────────────────────────────────────────────────────
+
+function InstallTab({
+	app,
+	onInstall,
+	onToggle,
+	onUninstall,
+	installing,
+}: {
+	app: StoreApp;
+	onInstall: () => void;
+	onToggle: () => void;
+	onUninstall: () => void;
+	installing: boolean;
+}) {
+	const ext = app.ext;
+	return (
+		<div className="space-y-4">
+			{/* Primary action */}
+			<div className="flex items-center justify-between gap-2">
+				<div className="text-xs text-muted-foreground">
+					{app.installed && ext?.scope ? scopeLabel(ext.scope) : "From the pi ecosystem"}
+				</div>
+				{app.installed && ext ? (
+					<div className="flex gap-2">
+						<button
+							type="button"
+							onClick={onToggle}
+							className="text-xs px-3 py-1.5 rounded-lg border border-border text-foreground hover:bg-muted transition-colors"
+						>
+							{ext.enabled ? "Disable" : "Enable"}
+						</button>
+						<button
+							type="button"
+							onClick={onUninstall}
+							className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors"
+						>
+							<Trash2 className="w-3.5 h-3.5" />
+							Uninstall
+						</button>
+					</div>
+				) : (
+					<button
+						type="button"
+						disabled={installing}
+						onClick={onInstall}
+						className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:brightness-110 disabled:opacity-50 transition-all"
+					>
+						{installing ? "Installing…" : "Install"}
+					</button>
+				)}
+			</div>
+
+			{/* Source / metadata */}
 			<div className="glass p-3 text-[11px] text-muted-foreground space-y-1">
 				<div className="flex items-center gap-1.5">
 					<Package className="w-3 h-3" />
-					<span className="font-medium">Source:</span>
-					<span className="font-mono truncate">{ext.source.value}</span>
+					<span className="font-medium">Package:</span>
+					<span className="font-mono truncate">{app.pkg}</span>
 				</div>
-				{ext.installPath && (
+				{ext?.installPath && (
 					<div className="flex items-center gap-1.5">
 						<span className="font-medium">Path:</span>
 						<span className="font-mono truncate">{ext.installPath}</span>
 					</div>
 				)}
-				<div className="flex items-center gap-1.5">
-					<span className="font-medium">Runtime:</span>
-					<span className="uppercase">{ext.runtime}</span>
-				</div>
-				{ext.scope && (
+				{ext && (
+					<div className="flex items-center gap-1.5">
+						<span className="font-medium">Runtime:</span>
+						<span className="uppercase">{ext.runtime}</span>
+					</div>
+				)}
+				{ext?.scope && (
 					<div className="flex items-center gap-1.5">
 						<span className="font-medium">Scope:</span>
-						<span>
-							{ext.scope === "project"
-								? "This project (.pi)"
-								: ext.scope === "user"
-									? "Global (~/.pi)"
-									: "Temporary"}
-						</span>
+						<span>{scopeLabel(ext.scope)}</span>
 					</div>
 				)}
-				{ext.source?.value && (
-					<button
-						type="button"
-						onClick={() =>
-							openExternalUrl(`https://www.npmjs.com/package/${ext.source.value}`).catch(() => {})
-						}
-						className="text-primary hover:underline flex items-center gap-1.5 pt-1"
-					>
-						<ExternalLink className="w-3 h-3" />
-						View on npm
-					</button>
-				)}
+				<button
+					type="button"
+					onClick={() =>
+						openExternalUrl(`https://www.npmjs.com/package/${app.pkg}`).catch(() => {})
+					}
+					className="text-primary hover:underline flex items-center gap-1.5 pt-1"
+				>
+					<ExternalLink className="w-3 h-3" />
+					View on npm
+				</button>
 			</div>
 
-			{/* Configuration (whitelisted extensions) */}
-			{(() => {
-				const setup = getExtensionSetup(ext);
-				if (!setup) return null;
-				const SetupComponent = setup.Component;
-				return (
-					<div>
-						<h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
-							Configuration
-						</h4>
-						<SetupComponent ext={ext} configKey={setup.key} />
-					</div>
-				);
-			})()}
-
 			{/* Capabilities */}
-			{ext.capabilities.tools && ext.capabilities.tools.length > 0 && (
+			{ext?.capabilities.tools && ext.capabilities.tools.length > 0 && (
 				<div>
 					<h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
 						Tools
@@ -506,7 +726,7 @@ function ExtensionDetail({
 				</div>
 			)}
 
-			{ext.capabilities.skills && ext.capabilities.skills.length > 0 && (
+			{ext?.capabilities.skills && ext.capabilities.skills.length > 0 && (
 				<div>
 					<h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
 						Skills
@@ -523,25 +743,43 @@ function ExtensionDetail({
 					</div>
 				</div>
 			)}
-
-			{/* Actions */}
-			<div className="flex gap-2 pt-1">
-				<button
-					type="button"
-					onClick={onToggle}
-					className="flex-1 text-xs px-3 py-2 rounded-lg border border-border text-foreground hover:bg-muted transition-colors"
-				>
-					{ext.enabled ? "Disable" : "Enable"}
-				</button>
-				<button
-					type="button"
-					onClick={onUninstall}
-					className="flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors"
-				>
-					<Trash2 className="w-3.5 h-3.5" />
-					Uninstall
-				</button>
-			</div>
 		</div>
 	);
+}
+
+// ─── Setup tab ──────────────────────────────────────────────────────
+
+function SetupTab({
+	app,
+	setup,
+	onInstall,
+	installing,
+}: {
+	app: StoreApp;
+	setup: ReturnType<typeof getExtensionSetup>;
+	onInstall: () => void;
+	installing: boolean;
+}) {
+	if (!setup) return null;
+	const SetupComponent = setup.Component;
+
+	if (!app.installed || !app.ext) {
+		return (
+			<div className="glass p-5 text-center space-y-3">
+				<p className="text-xs text-muted-foreground">
+					Install <span className="font-medium text-foreground">{app.name}</span> to set it up.
+				</p>
+				<button
+					type="button"
+					disabled={installing}
+					onClick={onInstall}
+					className="text-xs font-semibold px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:brightness-110 disabled:opacity-50 transition-all"
+				>
+					{installing ? "Installing…" : "Install"}
+				</button>
+			</div>
+		);
+	}
+
+	return <SetupComponent ext={app.ext} configKey={setup.key} />;
 }

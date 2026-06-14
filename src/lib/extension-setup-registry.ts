@@ -33,7 +33,11 @@ const REGISTRY: Record<string, FC<ExtensionSetupProps>> = {
  * or name against the registry (lenient so `npm:pi-messenger-bridge` matches
  * `pi-messenger-bridge`). Returns the entry plus the canonical whitelist key.
  */
-export function getExtensionSetup(ext: ZemExtension): ExtensionSetupEntry | undefined {
+export function getExtensionSetup(ext: {
+	id?: string;
+	name?: string;
+	source?: { value?: string };
+}): ExtensionSetupEntry | undefined {
 	const candidates = [ext.id, ext.source?.value, ext.name].filter(Boolean) as string[];
 	for (const key of Object.keys(REGISTRY)) {
 		if (candidates.some((c) => c === key || c.includes(key))) {

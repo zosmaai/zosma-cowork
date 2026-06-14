@@ -5,6 +5,7 @@
  */
 
 import { cn } from "@/lib/utils";
+import { Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { extensionDisplayName } from "../../lib/extensionBrowse";
@@ -19,6 +20,7 @@ export function ExtensionTile({
 	description,
 	category,
 	onOpen,
+	onSettings,
 	action,
 }: {
 	seed: string;
@@ -28,6 +30,7 @@ export function ExtensionTile({
 	description?: string;
 	category?: string;
 	onOpen?: () => void;
+	onSettings?: () => void;
 	action: ReactNode;
 }) {
 	const clickable = !!onOpen;
@@ -53,6 +56,20 @@ export function ExtensionTile({
 					"cursor-pointer hover:bg-card hover:border-border hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
 			)}
 		>
+			{onSettings && (
+				<button
+					type="button"
+					onClick={(e) => {
+						e.stopPropagation();
+						onSettings();
+					}}
+					aria-label={`Set up ${name}`}
+					title={`Set up ${name}`}
+					className="absolute top-2.5 right-2.5 z-10 p-1.5 rounded-lg text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:opacity-100"
+				>
+					<Settings className="w-3.5 h-3.5" />
+				</button>
+			)}
 			<div className="flex items-start gap-3">
 				<TileAvatar seed={seed} label={name} className="w-11 h-11 text-base" />
 				<div className="min-w-0 flex-1">
@@ -97,7 +114,8 @@ export function FeaturedExtensionTile({
 	installed,
 	installing,
 	onInstall,
-	onOpenExternal,
+	onOpen,
+	onSettings,
 }: {
 	pkg: string;
 	label: string;
@@ -106,7 +124,8 @@ export function FeaturedExtensionTile({
 	installed: boolean;
 	installing: boolean;
 	onInstall: (pkg: string) => void;
-	onOpenExternal: (pkg: string) => void;
+	onOpen: (pkg: string) => void;
+	onSettings?: (pkg: string) => void;
 }) {
 	const [npm, setNpm] = useState<NpmData | null>(null);
 
@@ -128,7 +147,8 @@ export function FeaturedExtensionTile({
 			version={npm?.version}
 			description={npm?.description || blurb}
 			category={category}
-			onOpen={() => onOpenExternal(pkg)}
+			onOpen={() => onOpen(pkg)}
+			onSettings={onSettings ? () => onSettings(pkg) : undefined}
 			action={
 				installed ? (
 					<span className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-primary/10 text-primary">
