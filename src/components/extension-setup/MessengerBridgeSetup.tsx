@@ -47,10 +47,9 @@ function SettingToggle({
 				aria-checked={checked}
 				aria-label={label}
 				onClick={() => onChange(!checked)}
-				className="relative inline-flex items-center w-8 h-[18px] rounded-full transition-colors shrink-0"
-				style={{
-					background: checked ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.3)",
-				}}
+				className={`relative inline-flex items-center w-8 h-[18px] rounded-full transition-colors shrink-0 ${
+					checked ? "bg-primary" : "bg-muted-foreground/30"
+				}`}
 			>
 				<span
 					className="absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white shadow transition-all"

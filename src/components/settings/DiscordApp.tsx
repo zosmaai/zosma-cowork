@@ -260,10 +260,7 @@ function Step({
 }) {
 	return (
 		<li className="flex gap-3">
-			<span
-				className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
-				style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}
-			>
+			<span className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 bg-primary/10 text-primary">
 				{n}
 			</span>
 			<div className="min-w-0 flex-1 pb-1">
