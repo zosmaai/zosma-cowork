@@ -446,6 +446,18 @@ function ExtensionDetail({
 					<span className="font-medium">Runtime:</span>
 					<span className="uppercase">{ext.runtime}</span>
 				</div>
+				{ext.scope && (
+					<div className="flex items-center gap-1.5">
+						<span className="font-medium">Scope:</span>
+						<span>
+							{ext.scope === "project"
+								? "This project (.pi)"
+								: ext.scope === "user"
+									? "Global (~/.pi)"
+									: "Temporary"}
+						</span>
+					</div>
+				)}
 				{ext.source?.value && (
 					<button
 						type="button"

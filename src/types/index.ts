@@ -97,6 +97,8 @@ export interface ZemExtension {
 	runtime: "pi" | "dhara" | "native";
 	installed: boolean;
 	enabled: boolean;
+	/** pi install scope this resource was resolved from (status display). */
+	scope?: "user" | "project" | "temporary";
 	installPath?: string;
 	config?: Record<string, unknown>;
 	configSchema?: Record<string, unknown>;
