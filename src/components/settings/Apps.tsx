@@ -9,6 +9,7 @@
  */
 import { BRAND_LINKS } from "@/lib/brand-links";
 import { Puzzle, Zap } from "lucide-react";
+import { DiscordIntegration } from "./DiscordIntegration";
 import { GoogleIntegration } from "./GoogleIntegration";
 
 export function Apps() {
@@ -23,6 +24,7 @@ export function Apps() {
 			{/* ── Available apps ── */}
 			<div className="space-y-2.5">
 				<GoogleIntegration />
+				<DiscordIntegration />
 			</div>
 
 			{/* ── Pointer to the building blocks ── */}

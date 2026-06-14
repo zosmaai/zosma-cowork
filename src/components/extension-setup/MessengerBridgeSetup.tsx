@@ -21,7 +21,10 @@ interface MsgBridgeConfig {
 
 const DISCORD_PREFIX = "discord:";
 
-export function MessengerBridgeSetup({ configKey }: ExtensionSetupProps) {
+export function MessengerBridgeSetup({
+	configKey,
+	onSaved,
+}: ExtensionSetupProps & { onSaved?: () => void }) {
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
@@ -69,13 +72,14 @@ export function MessengerBridgeSetup({ configKey }: ExtensionSetupProps) {
 			if (did) patch.auth = { trustedUsers: [did], adminUserId: did };
 			await invoke("save_extension_config_file", { extensionId: configKey, patch });
 			setSaved(true);
+			onSaved?.();
 			setTimeout(() => setSaved(false), 2500);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
 			setSaving(false);
 		}
-	}, [configKey, token, userId, autoConnect]);
+	}, [configKey, token, userId, autoConnect, onSaved]);
 
 	if (loading) {
 		return (
