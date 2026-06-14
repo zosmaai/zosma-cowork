@@ -164,11 +164,16 @@ export function MessengerBridgeSetup({
 					type="button"
 					role="switch"
 					aria-checked={autoConnect}
+					aria-label="Auto-connect on startup"
 					onClick={() => setAutoConnect((v) => !v)}
-					className={`relative w-8 h-4.5 rounded-full transition-colors ${autoConnect ? "bg-primary" : "bg-muted"}`}
+					className="relative inline-flex items-center w-8 h-[18px] rounded-full transition-colors shrink-0"
+					style={{
+						background: autoConnect ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.3)",
+					}}
 				>
 					<span
-						className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${autoConnect ? "translate-x-[15px]" : "translate-x-0.5"}`}
+						className="absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white shadow transition-all"
+						style={{ left: autoConnect ? "calc(100% - 16px)" : "2px" }}
 					/>
 				</button>
 			</div>
