@@ -25,6 +25,49 @@ import { type EmbeddedClient, type OAuthTokenResponse, UNION_SCOPES } from "./br
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+
+export interface ConsentTargets {
+	/** redirect_uri sent to Google + used at exchange. */
+	redirectUri: string;
+	/**
+	 * true  → Zosma brokered flow: Google redirects to the broker /callback which
+	 *          bounces to the loopback; the broker adds the secret at /token.
+	 * false → bring-your-own direct flow: Google redirects straight to the
+	 *          loopback redirect; we exchange directly with Google (device has
+	 *          the user's own client_secret).
+	 */
+	useBroker: boolean;
+}
+
+/** Pick the redirect target + exchange mode from the resolved client. */
+export function consentTargets(client: EmbeddedClient, port: number): ConsentTargets {
+	if (client.brokerUrl) return { redirectUri: `${client.brokerUrl}/callback`, useBroker: true };
+	return { redirectUri: `http://127.0.0.1:${port}/oauth2callback`, useBroker: false };
+}
+
+/** Build the Google consent URL for an explicit scope list (pure/testable). */
+export function buildAuthUrl(opts: {
+	clientId: string;
+	redirectUri: string;
+	scopes: string[];
+	challenge: string;
+	state: string;
+}): string {
+	const params = new URLSearchParams({
+		client_id: opts.clientId,
+		redirect_uri: opts.redirectUri,
+		response_type: "code",
+		scope: opts.scopes.join(" "),
+		access_type: "offline",
+		prompt: "consent",
+		include_granted_scopes: "true",
+		code_challenge: opts.challenge,
+		code_challenge_method: "S256",
+		state: opts.state,
+	});
+	return `${AUTH_URL}?${params.toString()}`;
+}
 
 export interface ConsentResult {
 	tokens: OAuthTokenResponse;
@@ -39,6 +82,8 @@ export interface ConsentOptions {
 	signal?: AbortSignal;
 	/** Fixed loopback port (0 = OS-assigned ephemeral). Default 0. */
 	port?: number;
+	/** Exact scope list to request (identity + selected). Default UNION_SCOPES. */
+	scopes?: string[];
 }
 
 function base64Url(buf: Buffer): string {
@@ -70,9 +115,11 @@ function abortError(): Error {
 
 /** Run the full consent flow and return tokens + email. */
 export async function runConsent(opts: ConsentOptions): Promise<ConsentResult> {
-	if (!opts.client.clientId || !opts.client.brokerUrl) {
+	// Need a client id, plus EITHER a broker (Zosma flow) OR a client secret
+	// (bring-your-own direct flow).
+	if (!opts.client.clientId || (!opts.client.brokerUrl && !opts.client.clientSecret)) {
 		throw new Error(
-			"Zosma Google OAuth client not configured (set ZOSMA_GOOGLE_CLIENT_ID; broker via ZOSMA_OAUTH_BROKER_URL).",
+			"Google OAuth client not configured (set ZOSMA_GOOGLE_CLIENT_ID + broker, or supply your own client id + secret).",
 		);
 	}
 	if (opts.signal?.aborted) throw abortError();
@@ -82,10 +129,10 @@ export async function runConsent(opts: ConsentOptions): Promise<ConsentResult> {
 
 	const server = createServer();
 	const port = await listen(server, opts.port ?? 0);
-	// Google redirects to the broker's HTTPS callback (a registered redirect),
-	// which bounces back to this loopback listener. `state` carries the port so
-	// the broker knows where to bounce, plus a nonce we verify on return.
-	const redirectUri = `${opts.client.brokerUrl}/callback`;
+	// Brokered: Google → broker /callback → bounce to loopback (state carries the
+	// port). Direct (BYO): Google → loopback redirect straight away.
+	const { redirectUri, useBroker } = consentTargets(opts.client, port);
+	const scopes = opts.scopes ?? UNION_SCOPES;
 	const state = base64Url(Buffer.from(JSON.stringify({ port, nonce }), "utf8"));
 
 	// Wait for the loopback callback (or abort).
@@ -140,23 +187,19 @@ export async function runConsent(opts: ConsentOptions): Promise<ConsentResult> {
 		});
 
 		// Build + open the consent URL.
-		const authParams = new URLSearchParams({
-			client_id: opts.client.clientId,
-			redirect_uri: redirectUri,
-			response_type: "code",
-			scope: UNION_SCOPES.join(" "),
-			access_type: "offline",
-			prompt: "consent",
-			include_granted_scopes: "true",
-			code_challenge: challenge,
-			code_challenge_method: "S256",
-			state,
-		});
-		opts.onAuthUrl(`${AUTH_URL}?${authParams.toString()}`);
+		opts.onAuthUrl(
+			buildAuthUrl({
+				clientId: opts.client.clientId,
+				redirectUri,
+				scopes,
+				challenge,
+				state,
+			}),
+		);
 	});
 
-	// Exchange the code for tokens via the BROKER (no secret on the device).
-	const tokens = await exchangeCode(opts.client, code, redirectUri, verifier, opts.signal);
+	// Exchange the code: brokered (broker adds the secret) or direct (BYO secret).
+	const tokens = await exchangeCode(opts.client, useBroker, code, redirectUri, verifier, opts.signal);
 	const email = await fetchEmail(tokens.access_token, opts.signal);
 	return { tokens, email, redirectUri };
 }
@@ -177,15 +220,38 @@ function decodeState(raw: string | null): { port?: number; nonce?: string } {
 
 async function exchangeCode(
 	client: EmbeddedClient,
+	useBroker: boolean,
 	code: string,
 	redirectUri: string,
 	verifier: string,
 	signal?: AbortSignal,
 ): Promise<OAuthTokenResponse> {
-	const res = await fetch(`${client.brokerUrl}/token`, {
+	// Direct (bring-your-own): exchange with Google using the user's secret.
+	const req = useBroker
+		? {
+				url: `${client.brokerUrl}/token`,
+				headers: { "Content-Type": "application/json", Accept: "application/json" },
+				body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirectUri }),
+			}
+		: {
+				url: GOOGLE_TOKEN_URL,
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+					Accept: "application/json",
+				},
+				body: new URLSearchParams({
+					client_id: client.clientId,
+					client_secret: client.clientSecret,
+					code,
+					code_verifier: verifier,
+					redirect_uri: redirectUri,
+					grant_type: "authorization_code",
+				}).toString(),
+			};
+	const res = await fetch(req.url, {
 		method: "POST",
-		headers: { "Content-Type": "application/json", Accept: "application/json" },
-		body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirectUri }),
+		headers: req.headers,
+		body: req.body,
 		signal,
 	});
 	const text = await res.text();
@@ -196,10 +262,11 @@ async function exchangeCode(
 		// fall through to the error path below
 	}
 	if (!res.ok || typeof data.access_token !== "string") {
+		const via = useBroker ? "broker" : "Google";
 		const msg =
 			typeof data.error_description === "string"
 				? data.error_description
-				: `Token exchange failed via broker (HTTP ${res.status})`;
+				: `Token exchange failed via ${via} (HTTP ${res.status})`;
 		throw new Error(msg);
 	}
 	return data as unknown as OAuthTokenResponse;

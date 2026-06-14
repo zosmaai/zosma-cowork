@@ -1010,18 +1010,87 @@ async fn has_credentials(s: State<'_, AppState>) -> Result<bool, String> {
         .unwrap_or(false))
 }
 
-/// Google broker: run the single consent flow (loopback+PKCE) and fan out
-/// credentials to the real package config files.
+/// Google broker: run the consent flow (loopback+PKCE) for the selected scopes
+/// and fan out credentials to the real package config files. `prefs` is the
+/// per-product capability selection; `byo` an optional bring-your-own client.
 #[tauri::command]
-async fn google_connect(s: State<'_, AppState>) -> Result<Value, String> {
+async fn google_connect(
+    s: State<'_, AppState>,
+    prefs: Option<Value>,
+    byo: Option<Value>,
+) -> Result<Value, String> {
     let id = format!("cg-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"connect_google","id":id});
+    if let Some(p) = prefs {
+        payload["prefs"] = p;
+    }
+    // `byo` may be JSON null to explicitly clear; preserve that distinction.
+    if let Some(b) = byo {
+        payload["byo"] = b;
+    }
     scmd_r(
         &s,
-        &serde_json::json!({"type":"connect_google","id":id}),
+        &payload,
         // Consent involves browser + user interaction — generous timeout.
         std::time::Duration::from_secs(300),
     )
     .await
+}
+
+/// Google broker: read the capability matrix + saved scope prefs / BYO state.
+#[tauri::command]
+async fn google_get_prefs(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("ggp-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"get_google_prefs","id":id}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+/// Google broker: persist scope prefs / BYO client without (re)running consent.
+#[tauri::command]
+async fn google_save_prefs(
+    s: State<'_, AppState>,
+    prefs: Option<Value>,
+    byo: Option<Value>,
+) -> Result<Value, String> {
+    let id = format!("gsp-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"save_google_prefs","id":id});
+    if let Some(p) = prefs {
+        payload["prefs"] = p;
+    }
+    if let Some(b) = byo {
+        payload["byo"] = b;
+    }
+    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
+}
+
+/// Google app: which extensions the selection needs + whether they're installed.
+#[tauri::command]
+async fn google_get_app_status(
+    s: State<'_, AppState>,
+    prefs: Option<Value>,
+) -> Result<Value, String> {
+    let id = format!("ggas-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"get_google_app_status","id":id});
+    if let Some(p) = prefs {
+        payload["prefs"] = p;
+    }
+    scmd_r(&s, &payload, std::time::Duration::from_secs(15)).await
+}
+
+/// Google app: install (via pi's package manager) any missing app extensions.
+#[tauri::command]
+async fn google_install_app(s: State<'_, AppState>, prefs: Option<Value>) -> Result<Value, String> {
+    let id = format!("gia-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"install_google_app","id":id});
+    if let Some(p) = prefs {
+        payload["prefs"] = p;
+    }
+    // npm install over the network — generous timeout.
+    scmd_r(&s, &payload, std::time::Duration::from_secs(300)).await
 }
 
 /// Google broker: probe both token destinations and report connected state.
@@ -2158,6 +2227,10 @@ pub fn run() {
             google_connect,
             google_get_status,
             google_disconnect,
+            google_get_prefs,
+            google_save_prefs,
+            google_get_app_status,
+            google_install_app,
             reload_sidecar,
             list_sessions,
             save_session,

@@ -77,6 +77,7 @@ Guidelines:
 
 import {
 	AuthStorage,
+	DefaultPackageManager,
 	DefaultResourceLoader,
 	type ExtensionFactory,
 	type ExtensionUIContext,
@@ -166,6 +167,22 @@ import {
 	migrateLegacyTokens,
 } from "./google-auth/broker.js";
 import { runConsent } from "./google-auth/consent.js";
+import {
+	clearByoOnly,
+	defaultCoworkGooglePaths,
+	readByoClient,
+	readScopePrefs,
+	writeByoClient,
+	writeScopePrefs,
+} from "./google-auth/prefs-store.js";
+import {
+	CAPABILITY_MATRIX,
+	DEFAULT_PREFS,
+	resolveScopes,
+	type ScopePrefs,
+	tierOf,
+} from "./google-auth/scopes.js";
+import { appExtensionStatus } from "./google-auth/app-requirements.js";
 // Loads pi's disk/npm/git extensions via virtualModules-backed jiti so they
 // work in the bundled sidecar (no node_modules beside it). See #147.
 import {
@@ -324,10 +341,14 @@ interface DeleteCustomProviderCommand {
 	providerId: string;
 }
 
-/** Broker the single Google OAuth consent (union scopes) and fan creds out. */
+/** Broker the Google OAuth consent for the selected scopes and fan creds out. */
 interface ConnectGoogleCommand {
 	type: "connect_google";
 	id: string;
+	/** per-product capability selection; omitted ⇒ saved prefs (or Full access). */
+	prefs?: ScopePrefs;
+	/** bring-your-own OAuth client; omitted ⇒ saved BYO (or Zosma client). */
+	byo?: { clientId: string; clientSecret: string } | null;
 }
 
 /** Read both Google config destinations and report connected state. */
@@ -340,6 +361,35 @@ interface GetGoogleStatusCommand {
 interface DisconnectGoogleCommand {
 	type: "disconnect_google";
 	id: string;
+}
+
+/** Return the capability matrix + saved scope prefs/BYO for the Advanced UI. */
+interface GetGooglePrefsCommand {
+	type: "get_google_prefs";
+	id: string;
+}
+
+/** Report which app extensions the selection needs + whether they're installed. */
+interface GetGoogleAppStatusCommand {
+	type: "get_google_app_status";
+	id: string;
+	prefs?: ScopePrefs;
+}
+
+/** Install (via pi's package manager) any app extensions the selection is missing. */
+interface InstallGoogleAppCommand {
+	type: "install_google_app";
+	id: string;
+	prefs?: ScopePrefs;
+}
+
+/** Persist scope prefs and/or BYO client without (re)running consent. */
+interface SaveGooglePrefsCommand {
+	type: "save_google_prefs";
+	id: string;
+	prefs?: ScopePrefs;
+	/** null clears BYO (revert to Zosma client). */
+	byo?: { clientId: string; clientSecret: string } | null;
 }
 
 
@@ -573,6 +623,10 @@ type Command =
 	| ConnectGoogleCommand
 	| GetGoogleStatusCommand
 	| DisconnectGoogleCommand
+	| GetGooglePrefsCommand
+	| SaveGooglePrefsCommand
+	| GetGoogleAppStatusCommand
+	| InstallGoogleAppCommand
 	| ReloadCommand
 	| SaveSessionCommand
 	| LoadSessionCommand
@@ -2381,12 +2435,16 @@ async function main() {
 
 				// ── connect_google (B2 #186) ────────────────────────────────
 				case "connect_google": {
-					if (!hasEmbeddedClient()) {
+					// Connectable with EITHER the Zosma embedded client OR a BYO client.
+					const hasByo = Boolean(
+						cmd.byo?.clientId || readByoClient(defaultCoworkGooglePaths()),
+					);
+					if (!hasEmbeddedClient() && !hasByo) {
 						send({
 							type: "error",
 							id: cmd.id,
 							message:
-								"Zosma Google OAuth client not configured. Set ZOSMA_GOOGLE_CLIENT_ID (public; broker holds the secret).",
+								"No Google OAuth client configured. Set ZOSMA_GOOGLE_CLIENT_ID, or supply your own client id + secret in Advanced.",
 						});
 						break;
 					}
@@ -2397,8 +2455,31 @@ async function main() {
 					const ac = new AbortController();
 					googleConsentAbort = ac;
 					const cmdId = cmd.id;
-					const client = embeddedClient();
 					const paths = defaultGooglePaths();
+					const coworkPaths = defaultCoworkGooglePaths();
+
+					// Resolve the selection + client: explicit command values win, else
+					// the saved Cowork prefs/BYO, else the Full-access / Zosma defaults.
+					const prefs = cmd.prefs ?? readScopePrefs(coworkPaths);
+					const byo =
+						cmd.byo === null
+							? null
+							: (cmd.byo ?? readByoClient(coworkPaths));
+					// Persist the selection so refresh/reconnect/status reuse it.
+					writeScopePrefs(coworkPaths, prefs);
+					if (cmd.byo) writeByoClient(coworkPaths, cmd.byo);
+					else if (cmd.byo === null) clearByoOnly(coworkPaths); // explicit revert to Zosma
+					const client = embeddedClient(byo);
+					const scopes = resolveScopes(prefs);
+					// Audit trail: the EXACT scopes we will ask Google for, derived from
+					// the selection — verifies “captured == requested” (#281).
+					log(
+						"Google connect: byo=%s prefs=%o requesting %d scopes: %s",
+						Boolean(byo),
+						prefs,
+						scopes.length,
+						scopes.join(" "),
+					);
 
 					// Fire the async consent flow (non-blocking from the handler's
 					// perspective — the send() for result/error comes from within).
@@ -2414,6 +2495,7 @@ async function main() {
 							});
 							const result = await runConsent({
 								client,
+								scopes,
 								onAuthUrl: (url) => {
 									send({
 										type: "event",
@@ -2443,6 +2525,7 @@ async function main() {
 								tokens: result.tokens,
 								email: result.email,
 								redirectUri: result.redirectUri,
+								prefs,
 							});
 
 							log("Google: credentials fanned out to %s and %s + %s", paths.workspaceOAuth, paths.piSettings, paths.gmailTokens);
@@ -2487,7 +2570,7 @@ async function main() {
 				case "get_google_status": {
 					try {
 						const paths = defaultGooglePaths();
-						const status = googleStatus(paths);
+						const status = googleStatus(paths, defaultCoworkGooglePaths());
 						log("Google status: connected=%s email=%s", status.connected, status.email ?? "-");
 						send({ type: "result", id: cmd.id, data: status });
 					} catch (err: unknown) {
@@ -2506,7 +2589,7 @@ async function main() {
 				case "disconnect_google": {
 					try {
 						const paths = defaultGooglePaths();
-						const result = await disconnectGoogle(paths);
+						const result = await disconnectGoogle(paths, undefined, defaultCoworkGooglePaths());
 						log("Google disconnected: revoked=%s removed=%s", result.revoked, result.removed.join(", "));
 						send({ type: "result", id: cmd.id, data: result });
 					} catch (err: unknown) {
@@ -2516,6 +2599,116 @@ async function main() {
 							type: "error",
 							id: cmd.id,
 							message: `Failed to disconnect Google: ${errMsg}`,
+						});
+					}
+					break;
+				}
+
+				// ── get_google_prefs (#281) ──────────────────────────
+				case "get_google_prefs": {
+					try {
+						const coworkPaths = defaultCoworkGooglePaths();
+						const prefs = readScopePrefs(coworkPaths);
+						const byo = readByoClient(coworkPaths);
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								matrix: CAPABILITY_MATRIX,
+								defaults: DEFAULT_PREFS,
+								prefs,
+								requestedScopes: resolveScopes(prefs),
+								requestedTier: tierOf(prefs),
+								// never leak the secret — only whether a BYO client is set + its id
+								byo: byo ? { clientId: byo.clientId, configured: true } : null,
+							},
+						});
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						send({ type: "error", id: cmd.id, message: `Failed to read Google prefs: ${errMsg}` });
+					}
+					break;
+				}
+
+				// ── save_google_prefs (#281) ────────────────────────
+				case "save_google_prefs": {
+					try {
+						const coworkPaths = defaultCoworkGooglePaths();
+						if (cmd.prefs) writeScopePrefs(coworkPaths, cmd.prefs);
+						if (cmd.byo === null) {
+							clearByoOnly(coworkPaths); // revert to the Zosma client
+						} else if (cmd.byo) {
+							writeByoClient(coworkPaths, cmd.byo);
+						}
+						const prefs = readScopePrefs(coworkPaths);
+						send({
+							type: "result",
+							id: cmd.id,
+							data: { success: true, prefs, requestedScopes: resolveScopes(prefs) },
+						});
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						send({ type: "error", id: cmd.id, message: `Failed to save Google prefs: ${errMsg}` });
+					}
+					break;
+				}
+
+				// ── get_google_app_status (#281) ──────────────────────
+				// Which app extensions does the (selected) products need, and are they
+				// installed at pi's path? Gates the Connect/auth step in the UI.
+				case "get_google_app_status": {
+					try {
+						const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
+						const status = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+						send({ type: "result", id: cmd.id, data: status });
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						send({
+							type: "error",
+							id: cmd.id,
+							message: `Failed to read Google app status: ${errMsg}`,
+						});
+					}
+					break;
+				}
+
+				// ── install_google_app (#281) ─────────────────────
+				// Install (via pi's OWN package manager — no parallel registry, no
+				// `pi` binary dependency) every extension the selection needs but is
+				// missing, then reload so the new extensions are live this session.
+				case "install_google_app": {
+					try {
+						const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
+						const before = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+						if (before.missing.length > 0) {
+							const home = homedir();
+							const agentDir = piAgentDir();
+							const sm = SettingsManager.create(home, agentDir);
+							const pm = new DefaultPackageManager({ cwd: home, agentDir, settingsManager: sm });
+							for (const pkg of before.missing) {
+								send({
+									type: "event",
+									event: {
+										kind: "oauth_progress",
+										provider: "google",
+										message: `Installing ${pkg}…`,
+									},
+								});
+								log("Google app: installing %s via pi package manager", pkg);
+								await pm.installAndPersist(`npm:${pkg}`);
+							}
+							// Reload the agent so newly installed extensions load now.
+							await initAgent(zosmaDir);
+						}
+						const after = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+						send({ type: "result", id: cmd.id, data: after });
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log("install_google_app error: %s", errMsg);
+						send({
+							type: "error",
+							id: cmd.id,
+							message: `Failed to install Google app extensions: ${errMsg}`,
 						});
 					}
 					break;

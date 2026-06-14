@@ -1,5 +1,5 @@
 {
-	"total": 238,
+	"total": 236,
 	"files": {
 		"src/components/ActivityBlock.tsx": 9,
 		"src/components/ArtifactPreview.tsx": 1,
@@ -20,7 +20,7 @@
 		"src/components/settings/Authentication.tsx": 17,
 		"src/components/settings/Background.tsx": 9,
 		"src/components/settings/CustomProviderRow.tsx": 18,
-		"src/components/settings/GoogleIntegration.tsx": 8,
+		"src/components/settings/GoogleIntegration.tsx": 6,
 		"src/components/settings/Telemetry.tsx": 2,
 		"src/components/settings/Theme.tsx": 6,
 		"src/components/SettingsPage.tsx": 8,
