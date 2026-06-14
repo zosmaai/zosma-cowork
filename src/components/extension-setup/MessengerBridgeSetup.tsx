@@ -16,10 +16,50 @@ import { useCallback, useEffect, useState } from "react";
 interface MsgBridgeConfig {
 	discord?: { token?: string };
 	autoConnect?: boolean;
+	showWidget?: boolean;
+	debug?: boolean;
 	auth?: { trustedUsers?: string[]; adminUserId?: string };
 }
 
 const DISCORD_PREFIX = "discord:";
+
+/** Compact on/off row used for the bridge's boolean options. */
+function SettingToggle({
+	label,
+	hint,
+	checked,
+	onChange,
+}: {
+	label: string;
+	hint?: string;
+	checked: boolean;
+	onChange: (v: boolean) => void;
+}) {
+	return (
+		<div className="flex items-center justify-between gap-3">
+			<div className="min-w-0">
+				<span className="text-xs text-foreground">{label}</span>
+				{hint && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{hint}</p>}
+			</div>
+			<button
+				type="button"
+				role="switch"
+				aria-checked={checked}
+				aria-label={label}
+				onClick={() => onChange(!checked)}
+				className="relative inline-flex items-center w-8 h-[18px] rounded-full transition-colors shrink-0"
+				style={{
+					background: checked ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.3)",
+				}}
+			>
+				<span
+					className="absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white shadow transition-all"
+					style={{ left: checked ? "calc(100% - 16px)" : "2px" }}
+				/>
+			</button>
+		</div>
+	);
+}
 
 export function MessengerBridgeSetup({
 	configKey,
@@ -34,6 +74,8 @@ export function MessengerBridgeSetup({
 	const [token, setToken] = useState("");
 	const [userId, setUserId] = useState("");
 	const [autoConnect, setAutoConnect] = useState(true);
+	const [showWidget, setShowWidget] = useState(true);
+	const [debug, setDebug] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -48,6 +90,8 @@ export function MessengerBridgeSetup({
 				const trusted = cfg.auth?.trustedUsers?.find((u) => u.startsWith(DISCORD_PREFIX));
 				setUserId(trusted ? trusted.slice(DISCORD_PREFIX.length) : "");
 				setAutoConnect(cfg.autoConnect !== false);
+				setShowWidget(cfg.showWidget !== false);
+				setDebug(cfg.debug === true);
 			} catch (e) {
 				if (!cancelled) setError(e instanceof Error ? e.message : String(e));
 			} finally {
@@ -68,6 +112,8 @@ export function MessengerBridgeSetup({
 			const patch: MsgBridgeConfig = {
 				discord: { token: token.trim() },
 				autoConnect,
+				showWidget,
+				debug,
 			};
 			if (did) patch.auth = { trustedUsers: [did], adminUserId: did };
 			await invoke("save_extension_config_file", { extensionId: configKey, patch });
@@ -79,7 +125,7 @@ export function MessengerBridgeSetup({
 		} finally {
 			setSaving(false);
 		}
-	}, [configKey, token, userId, autoConnect, onSaved]);
+	}, [configKey, token, userId, autoConnect, showWidget, debug, onSaved]);
 
 	if (loading) {
 		return (
@@ -128,7 +174,7 @@ export function MessengerBridgeSetup({
 					className="mt-1 inline-flex items-center gap-1 text-[10px] text-primary hover:underline bg-transparent border-none p-0"
 				>
 					<ExternalLink className="w-2.5 h-2.5" />
-					Create a bot & copy its token (enable Message Content Intent)
+					Open the Discord Developer Portal
 				</button>
 			</div>
 
@@ -157,25 +203,26 @@ export function MessengerBridgeSetup({
 				</p>
 			</div>
 
-			{/* Auto-connect */}
-			<div className="flex items-center justify-between gap-2">
-				<span className="text-xs text-foreground">Auto-connect on startup</span>
-				<button
-					type="button"
-					role="switch"
-					aria-checked={autoConnect}
-					aria-label="Auto-connect on startup"
-					onClick={() => setAutoConnect((v) => !v)}
-					className="relative inline-flex items-center w-8 h-[18px] rounded-full transition-colors shrink-0"
-					style={{
-						background: autoConnect ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.3)",
-					}}
-				>
-					<span
-						className="absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white shadow transition-all"
-						style={{ left: autoConnect ? "calc(100% - 16px)" : "2px" }}
-					/>
-				</button>
+			{/* Options */}
+			<div className="space-y-2.5 pt-0.5">
+				<SettingToggle
+					label="Auto-connect on startup"
+					hint="Reconnects the bridge when a new pi session starts."
+					checked={autoConnect}
+					onChange={setAutoConnect}
+				/>
+				<SettingToggle
+					label="Show status widget"
+					hint="Display a live connection widget inside the agent."
+					checked={showWidget}
+					onChange={setShowWidget}
+				/>
+				<SettingToggle
+					label="Debug logging"
+					hint="Verbose bridge logs for troubleshooting."
+					checked={debug}
+					onChange={setDebug}
+				/>
 			</div>
 
 			{error && <p className="text-[10px] text-destructive">{error}</p>}

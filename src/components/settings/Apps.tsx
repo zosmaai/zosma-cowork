@@ -9,10 +9,20 @@
  */
 import { BRAND_LINKS } from "@/lib/brand-links";
 import { Puzzle, Zap } from "lucide-react";
+import { useState } from "react";
+import { DiscordApp } from "./DiscordApp";
 import { DiscordIntegration } from "./DiscordIntegration";
 import { GoogleIntegration } from "./GoogleIntegration";
 
+type AppView = "list" | "discord";
+
 export function Apps() {
+	const [view, setView] = useState<AppView>("list");
+
+	if (view === "discord") {
+		return <DiscordApp onBack={() => setView("list")} />;
+	}
+
 	return (
 		<section>
 			<h2 className="text-sm font-semibold text-foreground mb-1">Apps</h2>
@@ -24,7 +34,7 @@ export function Apps() {
 			{/* ── Available apps ── */}
 			<div className="space-y-2.5">
 				<GoogleIntegration />
-				<DiscordIntegration />
+				<DiscordIntegration onOpen={() => setView("discord")} />
 			</div>
 
 			{/* ── Pointer to the building blocks ── */}
