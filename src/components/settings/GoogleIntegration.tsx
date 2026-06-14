@@ -266,6 +266,25 @@ export function GoogleIntegration() {
 	// ── Connect ─────────────────────────────────────────────────────
 	const handleConnect = useCallback(async () => {
 		setError(null);
+		// Auto-install any missing app extensions BEFORE consent (#281). An app
+		// is its extensions + auth — so connecting installs what the selection
+		// needs first (no separate Install step), mirroring Discord's flow.
+		if (appStatus && !appStatus.allInstalled) {
+			setInstalling(true);
+			try {
+				const data = await invoke<AppExtStatus>("google_install_app", { prefs });
+				setAppStatus(data);
+				if (!data.allInstalled) {
+					setError("Could not install the required extensions. Please try again.");
+					return;
+				}
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+				return;
+			} finally {
+				setInstalling(false);
+			}
+		}
 		setPhase("connecting");
 		urlOpenedRef.current = false;
 		try {
@@ -282,7 +301,7 @@ export function GoogleIntegration() {
 			setError(err instanceof Error ? err.message : String(err));
 			setPhase("idle");
 		}
-	}, [prefs, useByo, byoId, byoSecret, byoConfigured]);
+	}, [prefs, useByo, byoId, byoSecret, byoConfigured, appStatus]);
 
 	const handleDisconnect = useCallback(async () => {
 		setError(null);
@@ -296,21 +315,6 @@ export function GoogleIntegration() {
 			setError(err instanceof Error ? err.message : String(err));
 		}
 	}, [refreshStatus, loadPrefs]);
-
-	// Install the app's missing pi extensions, then re-check.
-	const handleInstall = useCallback(async () => {
-		setError(null);
-		setInstalling(true);
-		try {
-			const data = await invoke<AppExtStatus>("google_install_app", { prefs });
-			setAppStatus(data);
-			refreshStatus();
-		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setInstalling(false);
-		}
-	}, [prefs, refreshStatus]);
 
 	// ── Derived ─────────────────────────────────────────────────────
 	const connected = status?.connected ?? false;
@@ -375,23 +379,23 @@ export function GoogleIntegration() {
 							<Loader2 className="w-3 h-3 animate-spin" />
 							Installing extensions…
 						</div>
-					) : needsInstall ? (
-						<button
-							type="button"
-							onClick={handleInstall}
-							className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md bg-primary/15 border border-primary/30 text-primary hover:bg-primary/20 transition-colors"
-							title="Install the pi extensions this app needs, then connect"
-						>
-							<Download className="w-3 h-3" />
-							Install
-						</button>
 					) : (
 						<button
 							type="button"
 							onClick={handleConnect}
 							disabled={byoNeedsCreds}
-							className="text-[11px] px-2.5 py-1.5 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+							className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-50 ${
+								needsInstall
+									? "bg-primary/15 border-primary/30 text-primary hover:bg-primary/20"
+									: "border-border text-foreground hover:bg-muted/50"
+							}`}
+							title={
+								needsInstall
+									? "Installs the required extensions, then connects"
+									: "Run Google consent"
+							}
 						>
+							{needsInstall && <Download className="w-3 h-3" />}
 							Connect
 						</button>
 					)}
@@ -403,7 +407,7 @@ export function GoogleIntegration() {
 				<div className="px-3.5 pb-3 pt-0 border-t border-elev-border/60">
 					<p className="pt-2.5 text-[10px] text-muted-foreground mb-1.5">
 						{needsInstall
-							? "Install these extensions to enable this app:"
+							? "Connecting installs these extensions automatically:"
 							: "Powered by these installed extensions:"}
 					</p>
 					<div className="flex flex-wrap gap-1.5">

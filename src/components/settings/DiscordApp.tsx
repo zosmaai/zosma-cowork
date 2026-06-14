@@ -18,7 +18,7 @@ import { useExtensions } from "@/hooks/useExtensions";
 import { openExternalUrl } from "@/lib/utils";
 import type { ZemExtension } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronLeft, Download, ExternalLink, Loader2, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ExternalLink, Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 export const BRIDGE_PKG = "pi-messenger-bridge";
@@ -74,6 +74,15 @@ export function DiscordApp({ onBack }: { onBack: () => void }) {
 			setError(e instanceof Error ? e.message : String(e));
 		}
 	}, [install, refresh]);
+
+	// Auto-install the bridge the moment configuration is needed (#281): an app
+	// is its extension + config, so opening Configuration installs what's missing
+	// automatically instead of asking the user to click Install first.
+	useEffect(() => {
+		if (tab === "config" && !installed && !isInstalling) {
+			handleInstall();
+		}
+	}, [tab, installed, isInstalling, handleInstall]);
 
 	const handleDisconnect = useCallback(async () => {
 		if (!confirm("Disconnect Discord? This clears the saved bot token.")) return;
@@ -167,22 +176,14 @@ export function DiscordApp({ onBack }: { onBack: () => void }) {
 					<DiscordGuide onGoToConfig={() => setTab("config")} />
 				) : !installed ? (
 					<div className="glass p-5 text-center space-y-3">
-						<p className="text-xs text-muted-foreground">
-							Install the Discord bridge extension to configure it.
+						<p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+							<Loader2 className="w-3.5 h-3.5 animate-spin" />
+							Installing <span className="font-medium text-foreground/80">pi-messenger-bridge</span>
+							…
 						</p>
-						<button
-							type="button"
-							onClick={handleInstall}
-							disabled={isInstalling}
-							className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:brightness-110 disabled:opacity-50 transition-all"
-						>
-							{isInstalling ? (
-								<Loader2 className="w-3 h-3 animate-spin" />
-							) : (
-								<Download className="w-3 h-3" />
-							)}
-							{isInstalling ? "Installing…" : "Install pi-messenger-bridge"}
-						</button>
+						<p className="text-[11px] text-muted-foreground">
+							Setting up the Discord bridge so you can configure it.
+						</p>
 					</div>
 				) : (
 					bridge && (

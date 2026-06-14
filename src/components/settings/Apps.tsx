@@ -12,15 +12,19 @@ import { Puzzle, Zap } from "lucide-react";
 import { useState } from "react";
 import { DiscordApp } from "./DiscordApp";
 import { DiscordIntegration } from "./DiscordIntegration";
-import { GoogleIntegration } from "./GoogleIntegration";
+import { GoogleApp } from "./GoogleApp";
+import { GoogleLauncher } from "./GoogleLauncher";
 
-type AppView = "list" | "discord";
+type AppView = "list" | "discord" | "google";
 
 export function Apps() {
 	const [view, setView] = useState<AppView>("list");
 
 	if (view === "discord") {
 		return <DiscordApp onBack={() => setView("list")} />;
+	}
+	if (view === "google") {
+		return <GoogleApp onBack={() => setView("list")} />;
 	}
 
 	return (
@@ -33,7 +37,7 @@ export function Apps() {
 
 			{/* ── Available apps ── */}
 			<div className="space-y-2.5">
-				<GoogleIntegration />
+				<GoogleLauncher onOpen={() => setView("google")} />
 				<DiscordIntegration onOpen={() => setView("discord")} />
 			</div>
 
