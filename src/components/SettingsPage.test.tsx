@@ -15,6 +15,13 @@ vi.mock("./SkillsPanel", () => ({
 	},
 }));
 
+// GoogleIntegration (rendered inside the Apps section) makes Tauri IPC calls.
+vi.mock("./settings/GoogleIntegration", () => ({
+	GoogleIntegration: function MockGoogle() {
+		return "GOOGLE_INTEGRATION_MOCK";
+	},
+}));
+
 vi.mock("./settings/Authentication", () => ({
 	Authentication: function MockAuth() {
 		return "AUTH_SECTION_MOCK";
@@ -103,9 +110,25 @@ describe("SettingsPage", () => {
 		expect(
 			screen.getAllByRole("button", { name: /Custom Instructions/ }).length,
 		).toBeGreaterThanOrEqual(1);
-		expect(screen.getAllByRole("button", { name: "Theme" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Apps" }).length).toBeGreaterThanOrEqual(1);
+		expect(
+			screen.getAllByRole("button", { name: "Appearance" }).length,
+		).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "Telemetry" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "About" }).length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("replaces the standalone Integrations / Theme / Background nav entries", () => {
+		render(<SettingsPage onClose={vi.fn()} />);
+		expect(screen.queryAllByRole("button", { name: "Integrations" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Theme" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Background" }).length).toBe(0);
+	});
+
+	it("navigates to the Apps section on click", () => {
+		render(<SettingsPage onClose={vi.fn()} />);
+		clickNavButton("Apps");
+		expect(screen.getByRole("heading", { name: "Apps" })).toBeDefined();
 	});
 
 	it("shows Authentication content by default", () => {
@@ -120,10 +143,12 @@ describe("SettingsPage", () => {
 		expect(screen.getByRole("heading", { name: "Extensions" })).toBeDefined();
 	});
 
-	it("navigates to Theme section on click", () => {
+	it("navigates to the merged Appearance section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		clickNavButton("Theme");
+		clickNavButton("Appearance");
+		// Appearance now folds the old Theme + Background pages into one.
 		expect(screen.getByRole("heading", { name: "Appearance" })).toBeDefined();
+		expect(screen.getByRole("heading", { name: "Background" })).toBeDefined();
 	});
 
 	it("navigates to Custom Instructions section on click", () => {

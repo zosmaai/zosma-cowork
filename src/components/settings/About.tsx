@@ -1,11 +1,16 @@
 import { useUpdate } from "@/contexts/UpdateProvider";
-import { ExternalLink } from "lucide-react";
+import { BRAND_LINKS } from "@/lib/brand-links";
+import { Bug, ExternalLink, Globe, Images, MessageCircle, Star } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { UpdateSettingsRow } from "./UpdateSettingsRow";
+
+const ease = [0.16, 1, 0.3, 1] as const;
 
 export function About() {
 	const [appVersion, setAppVersion] = useState<string | null>(null);
 	const appUpdate = useUpdate();
+	const reduced = useReducedMotion();
 
 	useEffect(() => {
 		import("@tauri-apps/api/app")
@@ -20,8 +25,8 @@ export function About() {
 				Zosma Cowork — built openly, runs locally.
 			</p>
 
+			{/* ── App identity ── */}
 			<div className="glass overflow-hidden">
-				{/* App identity */}
 				<div className="px-4 py-4 flex items-center gap-3">
 					<img
 						src="/zosma-mark.png"
@@ -52,9 +57,7 @@ export function About() {
 				<div className="px-4 py-3 space-y-2.5">
 					<MetaRow label="Built on">
 						<a
-							href="https://github.com/earendil-works/pi-mono"
-							target="_blank"
-							rel="noopener noreferrer"
+							href={BRAND_LINKS.pi}
 							className="inline-flex items-center gap-1 hover:text-foreground transition-colors text-primary"
 						>
 							pi-mono SDK
@@ -67,9 +70,7 @@ export function About() {
 					<UpdateSettingsRow update={appUpdate} />
 					<MetaRow label="Source">
 						<a
-							href="https://github.com/zosmaai/zosma-cowork"
-							target="_blank"
-							rel="noopener noreferrer"
+							href={BRAND_LINKS.repo}
 							className="inline-flex items-center gap-1 hover:text-foreground transition-colors text-primary"
 						>
 							github.com/zosmaai/zosma-cowork
@@ -78,7 +79,95 @@ export function About() {
 					</MetaRow>
 				</div>
 			</div>
+
+			{/* ── Get help & connect ── */}
+			<h3 className="text-sm font-semibold text-foreground mt-7 mb-1">Get help & connect</h3>
+			<p className="text-xs text-muted-foreground mb-4">
+				Stuck, hit a bug, or have an idea? Reach the team and community.
+			</p>
+
+			<div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+				<HelpTile
+					href={BRAND_LINKS.discord}
+					Icon={MessageCircle}
+					title="Join our Discord"
+					subtitle="Ask questions & share builds"
+					reduced={!!reduced}
+				/>
+				<HelpTile
+					href={BRAND_LINKS.newIssue}
+					Icon={Bug}
+					title="Report an issue"
+					subtitle="File a bug or request a feature"
+					reduced={!!reduced}
+				/>
+				<HelpTile
+					href={BRAND_LINKS.gallery}
+					Icon={Images}
+					title="Browse the gallery"
+					subtitle="See what Cowork can build"
+					reduced={!!reduced}
+				/>
+				<HelpTile
+					href={BRAND_LINKS.website}
+					Icon={Globe}
+					title="Visit zosma.ai"
+					subtitle="Docs, downloads & updates"
+					reduced={!!reduced}
+				/>
+			</div>
+
+			{/* ── Support the project ── */}
+			<a href={BRAND_LINKS.repo} className="glass mt-2.5 px-4 py-3 flex items-center gap-3 group">
+				<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 shrink-0">
+					<Star className="w-4 h-4 text-primary" />
+				</div>
+				<div className="min-w-0">
+					<p className="text-[13px] font-medium text-foreground leading-tight">Star us on GitHub</p>
+					<p className="text-[11px] text-muted-foreground mt-0.5">
+						It genuinely helps an open project grow.
+					</p>
+				</div>
+				<ExternalLink className="w-3.5 h-3.5 ml-auto text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
+			</a>
+
+			<p className="mt-6 text-[11px] text-muted-foreground">
+				Made with care by the Zosma team and contributors. Released under the MIT license.
+			</p>
 		</section>
+	);
+}
+
+function HelpTile({
+	href,
+	Icon,
+	title,
+	subtitle,
+	reduced,
+}: {
+	href: string;
+	Icon: React.ComponentType<{ className?: string }>;
+	title: string;
+	subtitle: string;
+	reduced: boolean;
+}) {
+	return (
+		<motion.a
+			href={href}
+			className="glass px-3.5 py-3 flex items-center gap-3 group"
+			whileHover={reduced ? {} : { y: -1 }}
+			whileTap={reduced ? {} : { scale: 0.99 }}
+			transition={{ duration: 0.14, ease }}
+		>
+			<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 shrink-0">
+				<Icon className="w-4 h-4 text-primary" />
+			</div>
+			<div className="min-w-0">
+				<p className="text-[12.5px] font-medium text-foreground leading-tight">{title}</p>
+				<p className="text-[11px] text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+			</div>
+			<ExternalLink className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-foreground transition-colors shrink-0" />
+		</motion.a>
 	);
 }
 

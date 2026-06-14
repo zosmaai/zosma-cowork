@@ -1,12 +1,11 @@
 import {
 	BarChart2,
 	ChevronLeft,
-	Cloud,
 	FileText,
 	Globe,
-	Image as ImageIcon,
 	Info,
 	KeyRound,
+	LayoutGrid,
 	MessageSquare,
 	Palette,
 	Puzzle,
@@ -16,15 +15,14 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { About } from "./settings/About";
+import { Appearance } from "./settings/Appearance";
+import { Apps } from "./settings/Apps";
 import { Authentication } from "./settings/Authentication";
-import { Background } from "./settings/Background";
 import { Extensions } from "./settings/Extensions";
-import { GoogleIntegration } from "./settings/GoogleIntegration";
 import { Instructions } from "./settings/Instructions";
 import { RemoteAccess } from "./settings/RemoteAccess";
 import { Skills } from "./settings/Skills";
 import { Telemetry } from "./settings/Telemetry";
-import { Theme } from "./settings/Theme";
 
 interface SettingsPageProps {
 	onClose: () => void;
@@ -37,32 +35,54 @@ interface SettingsPageProps {
 
 type SectionId =
 	| "authentication"
+	| "remote-access"
+	| "apps"
 	| "extensions"
-	| "integrations"
 	| "skills"
 	| "custom-instructions"
-	| "theme"
-	| "background"
+	| "appearance"
 	| "telemetry"
-	| "remote-access"
 	| "about";
 
-const SECTIONS: {
+type Section = {
 	id: SectionId;
 	label: string;
 	Icon: React.ComponentType<{ className?: string }>;
-}[] = [
-	{ id: "authentication", label: "Authentication", Icon: KeyRound },
-	{ id: "extensions", label: "Extensions", Icon: Puzzle },
-	{ id: "integrations", label: "Integrations", Icon: Cloud },
-	{ id: "skills", label: "Skills", Icon: Zap },
-	{ id: "custom-instructions", label: "Custom Instructions", Icon: FileText },
-	{ id: "theme", label: "Theme", Icon: Palette },
-	{ id: "background", label: "Background", Icon: ImageIcon },
-	{ id: "telemetry", label: "Telemetry", Icon: BarChart2 },
-	{ id: "remote-access", label: "Remote Access", Icon: Globe },
-	{ id: "about", label: "About", Icon: Info },
+};
+
+// Grouped navigation — related settings sit under a labeled heading so the
+// rail reads as a map of the app rather than a flat dump of toggles.
+const GROUPS: { label: string; items: Section[] }[] = [
+	{
+		label: "Account",
+		items: [
+			{ id: "authentication", label: "Authentication", Icon: KeyRound },
+			{ id: "remote-access", label: "Remote Access", Icon: Globe },
+		],
+	},
+	{
+		label: "Capabilities",
+		items: [
+			{ id: "apps", label: "Apps", Icon: LayoutGrid },
+			{ id: "extensions", label: "Extensions", Icon: Puzzle },
+			{ id: "skills", label: "Skills", Icon: Zap },
+			{ id: "custom-instructions", label: "Custom Instructions", Icon: FileText },
+		],
+	},
+	{
+		label: "Preferences",
+		items: [
+			{ id: "appearance", label: "Appearance", Icon: Palette },
+			{ id: "telemetry", label: "Telemetry", Icon: BarChart2 },
+		],
+	},
+	{
+		label: "Help",
+		items: [{ id: "about", label: "About", Icon: Info }],
+	},
 ];
+
+const SECTIONS: Section[] = GROUPS.flatMap((g) => g.items);
 
 const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 
@@ -186,37 +206,46 @@ export function SettingsPage({
 						<span className="text-[13px] font-semibold text-foreground">Settings</span>
 					</div>
 
-					{/* Nav items */}
-					<nav className="flex-1 overflow-y-auto px-2 py-2 space-y-px">
-						{SECTIONS.map((s) => {
-							const isActive = activeSection === s.id;
-							return (
-								<div key={s.id} className="relative">
-									{isActive && (
-										<motion.div
-											layoutId="settings-nav-pill"
-											className="absolute inset-0 rounded-lg border border-primary/25 bg-primary/12"
-											transition={{ duration: reduced ? 0 : 0.2, ease: easeOutExpo }}
-										/>
-									)}
-									<button
-										type="button"
-										onClick={() => handleNavClick(s.id)}
-										className="relative z-10 w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left"
-										style={{
-											color: isActive ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-										}}
-									>
-										<s.Icon
-											className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground/60"}`}
-										/>
-										<span className={`text-[12px] truncate ${isActive ? "font-medium" : ""}`}>
-											{s.label}
-										</span>
-									</button>
-								</div>
-							);
-						})}
+					{/* Nav items — grouped */}
+					<nav className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
+						{GROUPS.map((group) => (
+							<div key={group.label} className="space-y-px">
+								<p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/55">
+									{group.label}
+								</p>
+								{group.items.map((s) => {
+									const isActive = activeSection === s.id;
+									return (
+										<div key={s.id} className="relative">
+											{isActive && (
+												<motion.div
+													layoutId="settings-nav-pill"
+													className="absolute inset-0 rounded-lg border border-primary/25 bg-primary/12"
+													transition={{ duration: reduced ? 0 : 0.2, ease: easeOutExpo }}
+												/>
+											)}
+											<button
+												type="button"
+												onClick={() => handleNavClick(s.id)}
+												className="relative z-10 w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left"
+												style={{
+													color: isActive
+														? "hsl(var(--foreground))"
+														: "hsl(var(--muted-foreground))",
+												}}
+											>
+												<s.Icon
+													className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground/60"}`}
+												/>
+												<span className={`text-[12px] truncate ${isActive ? "font-medium" : ""}`}>
+													{s.label}
+												</span>
+											</button>
+										</div>
+									);
+								})}
+							</div>
+						))}
 					</nav>
 
 					{/* Feedback */}
@@ -292,18 +321,17 @@ function SectionContent({
 	return (
 		<>
 			{activeSection === "authentication" && <Authentication onShowKeyEntry={onShowKeyEntry} />}
+			{activeSection === "remote-access" && <RemoteAccess />}
+			{activeSection === "apps" && <Apps />}
 			{activeSection === "extensions" && <Extensions />}
-			{activeSection === "integrations" && <GoogleIntegration />}
 			{activeSection === "skills" && <Skills />}
 			{activeSection === "custom-instructions" && <Instructions />}
-			{activeSection === "theme" && (
-				<Theme fontScale={fontScale} onFontScaleChange={onFontScaleChange} />
+			{activeSection === "appearance" && (
+				<Appearance fontScale={fontScale} onFontScaleChange={onFontScaleChange} />
 			)}
-			{activeSection === "background" && <Background />}
 			{activeSection === "telemetry" && (
 				<Telemetry enabled={telemetryEnabled} onToggle={onTelemetryToggle} />
 			)}
-			{activeSection === "remote-access" && <RemoteAccess />}
 			{activeSection === "about" && <About />}
 		</>
 	);
