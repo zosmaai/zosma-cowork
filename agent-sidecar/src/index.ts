@@ -2814,21 +2814,21 @@ async function main() {
 
 				// ── list_extensions ─────────────────────────────────────────
 				case "list_extensions": {
-					const extensions = discoverExtensions(zosmaDir);
+					const extensions = await discoverExtensions(zosmaDir, workspaceCwd);
 					send({ type: "result", id: cmd.id, data: { extensions } });
 					break;
 				}
 
 				// ── install_extension ───────────────────────────────────────
 				case "install_extension": {
-					const ext = installExtension(zosmaDir, cmd.source, cmd.ref);
+					const ext = await installExtension(zosmaDir, cmd.source, cmd.ref, workspaceCwd);
 					send({ type: "result", id: cmd.id, data: { extension: ext } });
 					break;
 				}
 
 				// ── uninstall_extension ─────────────────────────────────────
 				case "uninstall_extension": {
-					uninstallExtension(zosmaDir, cmd.extensionId);
+					await uninstallExtension(zosmaDir, cmd.extensionId, workspaceCwd);
 					send({ type: "result", id: cmd.id, data: { success: true } });
 					break;
 				}
