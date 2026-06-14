@@ -168,17 +168,51 @@ jobs:
         shell: bash
         run: echo "APPLE_SIGNING_IDENTITY=-" >> $GITHUB_ENV
 
+      # `createUpdaterArtifacts` is enabled in tauri.conf.json (issue #271), so
+      # EVERY bundle build must sign the updater artifacts or the macOS / Windows
+      # bundlers fail with "failed to decode secret key". That key lives in repo
+      # secrets, which GitHub withholds from FORK PRs — so fork staging builds
+      # would always fail at signing. Staging never publishes a latest.json
+      # (`includeUpdaterJson: false`), so the key only has to be VALID, not the
+      # production one: use the repo key when present (base-repo runs keep
+      # signing with it), otherwise mint a throwaway key so fork PR staging
+      # builds still produce installable, testable artifacts.
+      - name: Provision updater signing key
+        shell: bash
+        env:
+          REAL_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          REAL_PW: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REAL_KEY}" ]; then
+            echo "Using repository updater signing key."
+            KEY_VALUE="${REAL_KEY}"
+            KEY_PW="${REAL_PW}"
+          else
+            echo "No repo secret (fork PR) — generating an ephemeral staging key."
+            npx tauri signer generate --ci -w staging-signing.key
+            # Command substitution strips trailing newlines; printf below re-adds
+            # exactly one so the heredoc terminator stays on its own line.
+            KEY_VALUE="$(cat staging-signing.key)"
+            KEY_PW=""
+            rm -f staging-signing.key staging-signing.key.pub
+          fi
+          echo "::add-mask::${KEY_VALUE}"
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY<<__KEY_EOF__"
+            printf '%s\n' "${KEY_VALUE}"
+            echo "__KEY_EOF__"
+          } >> "${GITHUB_ENV}"
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${KEY_PW}" >> "${GITHUB_ENV}"
+
       - name: Build Tauri app (unsigned staging)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # `createUpdaterArtifacts` is enabled in tauri.conf.json (issue #271),
-          # so EVERY bundle build must sign the updater artifacts or the macOS /
-          # Windows bundlers fail. The updater key is separate from Apple/Windows
-          # code-signing (staging stays unsigned for those). `includeUpdaterJson:
-          # false` below means staging still never publishes a latest.json.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] are exported by the
+          # "Provision updater signing key" step above (repo key on base-repo
+          # runs, ephemeral key on fork PRs), so they are intentionally not
+          # re-declared here.
         with:
           # IMPORTANT: no `tagName` / `releaseName` / `releaseDraft` keys.
           # When those are absent, tauri-action only builds — it does not
