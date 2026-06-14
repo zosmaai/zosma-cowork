@@ -21,6 +21,38 @@ delete `cowork-extensions.json` and the bespoke `npm pack` installer.
 
 **Worktree:** `.worktrees/pi-native-resources` (branch `feat/pi-native-resources`).
 
+---
+
+## Execution status (2026-06-14)
+
+**DONE & verified** (commit `5b3fd6aab` sidecar, `1c02ea968` UI):
+- ✅ Phase 1 — `extension-manager.ts` rewritten as a pi-native adapter over
+  `DefaultPackageManager.resolve()` (user + project scope, real metadata,
+  `installed:true`, `scope`). Deletes the stale `cowork-extensions.json`
+  install registry. **Empirically confirmed** real `resolve()` now returns
+  `pi-messenger-bridge installed=true v0.4.0` with a clean `npm:` id → fixes
+  both "extensions not detected" AND the missing Discord setup screen
+  (`getExtensionSetup` now matches).
+- ✅ Phase 2 — install/uninstall via `pm.installAndPersist` / `removeAndPersist`
+  (no `npm pack`); handlers async + workspace-cwd scoped.
+- ✅ Install scope surfaced in the Extensions detail UI (Global ~/.pi vs project .pi).
+- ✅ Enable/disable kept as a thin Cowork preference overlay (pi has no simple
+  per-resource toggle); install truth always from pi.
+- ✅ Verification: 3 new tests + full sidecar suite (155) green; `tsc` clean
+  (sidecar + frontend); biome clean on changed frontend files.
+
+**REMAINING** (follow-ups):
+- Phase 3 Task 7 — `list_skills` already returns pi-native scope from
+  `~/.pi/agent/skills` + `~/.agents/skills` + project `.agents/skills`, but does
+  NOT yet walk project `.pi/skills` or ancestor dirs to the repo root.
+- `.zosmaai` resource-path sweep (Task 8) + dead-code/`pi config` enable-disable
+  hardening (Tasks 6/9).
+- Project-scope install toggle in the UI (currently installs global by default).
+- Optional: a Discord "app" tile in `settings/Apps.tsx` reading install status
+  from `list_extensions` (pi source of truth).
+
+The tasks below remain the reference for the unfinished items.
+
 **Before starting:** the worktree has no `node_modules`. Run the repo's install
 (`pnpm install` / `npm install` per root lockfile) so `agent-sidecar` can build
 and `vitest` can run.
