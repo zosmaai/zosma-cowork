@@ -513,51 +513,71 @@ Here's the focused view for the "PM takes use of Cowork" goal:
 
 ---
 
-## 🏗️ Repo Architecture
+## 🏗️ Strategy: Bundle CLIs, Don't Build Extensions
 
-### New repos to create under `github.com/zosmaai/`:
+For most integrations, we do **not** build pi extensions. Instead:
 
-```
-pi-jira                  # Jira Cloud + Data Center
-pi-github                # GitHub Issues, Projects, PRs, Actions, Releases
-pi-notion                # Notion pages, databases, search
-pi-confluence            # Confluence spaces, pages, search
-pi-azure-devops          # Azure Boards, Repos, Pipelines, Wikis
-pi-teams                 # Microsoft Teams messaging + meetings
-pi-hubspot               # CRM: Contacts, Deals, Tickets, Companies
-pi-salesforce            # Enterprise CRM via jsforce
-pi-sentry                # Error tracking, issue management
-pi-datadog               # Metrics, monitors, logs, dashboards
-pi-aws                   # EC2, S3, Lambda, CloudWatch, IAM
-pi-gcp                   # GKE, Cloud Storage, Cloud Run (builds on google-auth)
-pi-k8s                   # Kubernetes cluster operations
-pi-postgres              # SQL queries, schema, explain (uses `postgres` package)
-pi-mongodb               # MongoDB queries, collections, indexes
-pi-quickbooks            # QuickBooks Online accounting
-pi-figma                 # Design file access, export, comments
-pi-github-actions        # (or fold into pi-github)
-```
+1. **Bundle the CLI binary** with Cowork (same pattern as `fetch-node.mjs`)
+2. **Inject PATH** in the agent-sidecar so the pi session finds them
+3. **Build a Cowork App tile** (like Google and Discord already have) for auth + status
+4. **The model uses the CLI directly** via the shell tool — no wrapper needed
 
-### Monorepo option
+This eliminates ~80% of the work and zero ongoing maintenance. The CLI handles auth, rate limits, pagination, and API changes — we just ship the binary.
 
-Or group as `@zosmaai/pi-connectors` monorepo:
+### Where this applies
+
+| Integration | CLI to Bundle | App Tile Needed? | Why No Extension |
+|-------------|---------------|------------------|------------------|
+| **GitHub** | `gh` CLI | ✅ Show orgs + accounts | `gh` wraps entire GitHub API — issues, PRs, projects, actions, repos |
+| **Jira** | None (REST API) or `jira` CLI | ✅ Token-based auth | Model can call `curl` or `jira` CLI |
+| **PostgreSQL** | `psql` CLI | ❌ Just needs config | Model can call `psql -c "SELECT..."` |
+| **AWS** | `aws` CLI | ✅ Profile + status | `aws ec2 describe-instances` etc. |
+| **Kubernetes** | `kubectl` CLI | ✅ Context + cluster | `kubectl get pods` etc. |
+
+> **Note:** Some integrations like Notion, HubSpot, or Sentry don't have a CLI that wraps their full API. For those, a lightweight pi extension (or direct HTTP from the model) is the right call. But the default should always be: bundle a CLI first.
+
+### Binary bundling pattern
+
+Each binary gets a download script in `src-tauri/scripts/` following `fetch-node.mjs`:
 
 ```
-packages/
-  jira/           → @zosmaai/pi-jira
-  github/         → @zosmaai/pi-github
-  notion/         → @zosmaai/pi-notion
-  postgres/       → @zosmaai/pi-postgres
-  ...
+src-tauri/
+  scripts/
+    fetch-node.mjs   ✓ (existing)
+    fetch-git.mjs    → creates binaries/git/git
+    fetch-gh.mjs     → creates binaries/gh/gh
+    ...
+  binaries/
+    node
+    node-arm64
+    node-x64
+    git/
+    gh/
+  tauri.conf.json → bundle.resources includes each
 ```
 
-Each follows the same structure:
+### PATH injection (one-time, in agent-sidecar)
+
+```typescript
+// In agent-sidecar/src/index.ts initAgent():
+process.env.PATH = [
+    bundledBinDir + "/git",
+    bundledBinDir + "/gh",
+    process.env.PATH
+].join(path.delimiter);
 ```
-package.json        → pi: { extensions: ["./src/index.ts"] }
-src/index.ts        → registerTool(...)
-src/types.ts        → shared types
-README.md           → install + setup + tool listing
+
+### What new repos to create
+
+We still publish **some** pi extensions for SDK-based integrations (Notion, HubSpot, etc.):
+
 ```
+@zosmaai/pi-notion       # Notion SDK
+@zosmaai/pi-hubspot      # HubSpot REST API
+@zosmaai/pi-sentry       # Sentry REST API
+```
+
+But the bundling-approach tools live in the main Cowork repo — no separate pi package needed.
 
 ---
 
@@ -664,4 +684,4 @@ Each connector extension needs:
 
 ---
 
-> **Principle:** Each extension is standalone, independently installable, and follows the existing pi extension contract exactly. Cowork's store UI + status chips + config panels auto-discover and render them — zero additional integration work on the Cowork side.
+> **Principle:** Bundle CLI tools with the desktop app. The pi model already knows how to call CLI tools. Auth and status live in Cowork's Apps tab. No pi extensions needed for connectors — just ship the binary and let the model use it.

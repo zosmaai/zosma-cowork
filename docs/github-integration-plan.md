@@ -1,492 +1,428 @@
-# Immediate Integration Sprint: Git, GitHub & PM Toolkit
+# GitHub Integration: Bundle, Auth & Apps Tab
 
-> **Branch:** `docs/integrations-roadmap`
-> **Worktree:** `/home/arjun/code/zosmaai/zosma-cowork-integrations-docs`
-
----
-
-## What Must Ship Immediately
-
-These are the integrations that give project managers the most value **today** — zero competition, high impact, and (for some) almost trivial effort because deps are already present.
-
-| Priority | Integration | Why Now | Build Time | Deps Ready? |
-|----------|-------------|---------|------------|-------------|
-| 🔥 P0 | **GitHub Issues & Projects** | PMs + devs need issue/PR ops. `gh` + git bundling unlocks everything. | 1 week | Need git + gh bundled |
-| 🔥 P0 | **Git bundling** | Prerequisite for ALL git-based workflows. Windows users blocked without it. | 3 days | `git2` (libgit2) in Cargo.toml |
-| 🔥 P0 | **GitHub CLI bundling** | Prerequisite for GitHub extension. Auth + org listing. | 2 days | Same pattern as node fetch |
-| 🔥 P1 | **Jira** | The #1 PM tool in IT. No pi ext exists. | 1-2 weeks | Nothing needed |
-| 🔥 P1 | **Notion** | PMs use it for docs, roadmaps, wikis. | 1 week | `@notionhq/client` SDK |
-| 🔥 P1 | **PostgreSQL** | Engineering data queries. `postgres` dep already installed. | 2-3 days | ✅ Already in Cowork! |
-| 🔥 P1 | **Sentry** | PMs + eng see error trends. `@sentry/react` already in deps. | 2 days | ✅ Already in Cowork! |
+> **Simpler than it sounds.** No new pi extension. Just ship `git` + `gh`, make the user auth once, and show their orgs in the UI.
 
 ---
 
-## 1. Bundling Git with Zosma Cowork
+## The Whole Thing in One Diagram
 
-### Problem
+```
+┌─────────────────────────────────┐
+│       Zosma Cowork App          │
+│                                 │
+│  ┌───────────────────────────┐  │
+│  │  Settings → Apps          │  │
+│  │                           │  │
+│  │  ┌─ GitHub ────────────┐  │  │
+│  │  │  Status: ✅ Connected│  │  │
+│  │  │  ─────────────────   │  │  │
+│  │  │  @arjun              │  │  │
+│  │  │  @zosmaai   ★        │  │  │
+│  │  │  @my-corp   (3 orgs) │  │  │
+│  │  └──────────────────────┘  │  │
+│  └───────────────────────────┘  │
+│                                 │
+│  process.env.PATH includes:     │
+│    binaries/git/                │
+│    binaries/gh/                 │
+│    (system PATH appended)       │
+│                                 │
+│  pi child process inherits PATH │
+│  → `git clone`, `gh issue` etc  │
+│    work transparently            │
+└─────────────────────────────────┘
+```
 
-On a fresh Windows install, `git` is not on PATH. The pi session (and many tools like `simple-git`, `pi-web-access`, etc.) shell out to `git` and fail with `ENOENT`. The user had to manually install Git for Windows.
+---
 
-### Solution: Three-Layer Git Availability
+## Step 1: Bundle Git + GitHub CLI (binary download)
 
-#### Layer 1: Bundled Portable Git Binary (all platforms)
+Both use the exact same pattern as [`fetch-node.mjs`](../../../src-tauri/scripts/fetch-node.mjs) which already downloads Node.js per-platform.
 
-Following the exact pattern of [`fetch-node.mjs`](../../../src-tauri/scripts/fetch-node.mjs) which downloads Node.js v24 LTS per-platform:
+### `src-tauri/scripts/fetch-git.mjs`
 
-**New script: `src-tauri/scripts/fetch-git.mjs`**
+Downloads a portable Git binary per platform:
 
-Downloads portable Git for each target platform:
+| Platform | What to Download |
+|----------|-----------------|
+| **Windows x64** | [Git for Windows portable](https://github.com/git-for-windows/git/releases) — extract `mingw64/bin/git.exe` + required DLLs into `src-tauri/binaries/git/` |
+| **macOS (arm64 + x64)** | Check `/usr/bin/git` first. If missing, download a static build from [git-scm.com](https://git-scm.com/download/mac). |
+| **Linux x64** | Check system `git` first. If missing, download [static build](https://github.com/paulirish/git-archive) (~4MB). |
 
-| Triple | Source | Binary Path |
-|--------|--------|-------------|
-| `x86_64-pc-windows-msvc` | [Git for Windows portable](https://github.com/git-for-windows/git/releases) (~30MB) | `src-tauri/binaries/git/git.exe` + `usr/bin/*.dll` |
-| `x86_64-apple-darwin` | [Apple Git](https://git-scm.com/download/mac) or system check | `src-tauri/binaries/git` |
-| `aarch64-apple-darwin` | same | `src-tauri/binaries/git` |
-| `x86_64-unknown-linux-gnu` | System check or static binary | `src-tauri/binaries/git` |
+**Shipped size:** ~5-30 MB depending on platform (Windows is the largest).
 
-**On macOS/Linux**: First check if system git exists (`/usr/bin/git`). If yes, skip download. If not, download a static build.
+### `src-tauri/scripts/fetch-gh.mjs`
 
-**On Windows**: Always download Git for Windows portable. Include the essential `usr/bin/*.dll` and `mingw64/bin/*.dll` that git needs.
+Downloads the official GitHub CLI binary per platform:
 
-**Tauri bundle registration** (`tauri.conf.json`):
-```json
-"resources": [
+| Platform | GitHub CLI Asset |
+|----------|-----------------|
+| **Windows x64** | `gh_*_windows_amd64.zip` → `src-tauri/binaries/gh/gh.exe` |
+| **macOS arm64** | `gh_*_macOS_arm64.tar.gz` → `src-tauri/binaries/gh/gh` |
+| **macOS x64** | `gh_*_macOS_amd64.tar.gz` → `src-tauri/binaries/gh/gh` |
+| **Linux x64** | `gh_*_linux_amd64.tar.gz` → `src-tauri/binaries/gh/gh` |
+
+Source: https://github.com/cli/cli/releases (current: v2.92.0)
+
+**Shipped size:** ~10 MB per platform.
+
+### Register in Tauri bundle
+
+```jsonc
+// src-tauri/tauri.conf.json
+"bundle": {
+  "resources": [
     "agent-sidecar/index.cjs",
     "binaries/node",
     "binaries/node-arm64",
     "binaries/node-x64",
     "binaries/git/**",
     "binaries/gh/**"
-]
-```
-
-#### Layer 2: PATH Injection in Agent-Sidecar
-
-In `agent-sidecar/src/index.ts`, during `initAgent()`, construct a merged PATH that puts bundled binaries first:
-
-```typescript
-function buildBundledPath(): string {
-    const bundledDir = join(dirname(fileURLToPath(import.meta.url)), "..", "binaries");
-    const gitDir = join(bundledDir, "git");
-    const ghDir = join(bundledDir, "gh");
-    
-    const pathParts: string[] = [];
-    // Bundled binaries first
-    if (existsSync(gitDir)) pathParts.push(gitDir);
-    if (existsSync(ghDir)) pathParts.push(ghDir);
-    // System PATH appended
-    if (process.env.PATH) pathParts.push(process.env.PATH);
-    
-    return pathParts.join(path.delimiter);
+  ]
 }
-
-// Before any session starts:
-process.env.PATH = buildBundledPath();
 ```
-
-This is set once at process start before `createAgentSession()` is called, so the pi session inherits the enriched PATH transparently. Tools that shell out to `git` or `gh` find them without any code changes.
-
-#### Layer 3: libgit2 (Rust-side, already present)
-
-The `git2` crate with `vendored-openssl` is already in `Cargo.toml`. This means:
-- Rust-side git operations (clone, status, diff) can use libgit2 directly — no git binary needed
-- Candidate for future "clone a repo" features in the Tauri backend
-- Already works today for any Rust-level git operations
 
 ---
 
-## 2. Bundling GitHub CLI (`gh`)
+## Step 2: PATH Injection in Agent-Sidecar
 
-### Problem
-
-`pi-web-access` and the proposed GitHub extension use `gh` for API operations. The CLI handles auth (OAuth device flow), org listing, issue/PR management, and Actions. Without it, users need to get a PAT manually.
-
-### Solution: `fetch-gh.mjs`
-
-**New script: `src-tauri/scripts/fetch-gh.mjs`**
-
-Downloads the official GitHub CLI binary for each platform from `https://github.com/cli/cli/releases`:
-
-| Triple | GitHub CLI Asset | Size |
-|--------|-----------------|------|
-| `x86_64-pc-windows-msvc` | `gh_*_windows_amd64.zip` | ~10MB |
-| `x86_64-apple-darwin` | `gh_*_macOS_amd64.tar.gz` | ~10MB |
-| `aarch64-apple-darwin` | `gh_*_macOS_arm64.tar.gz` | ~10MB |
-| `x86_64-unknown-linux-gnu` | `gh_*_linux_amd64.tar.gz` | ~10MB |
-
-**Binary location**: `src-tauri/binaries/gh/gh` (or `gh.exe` on Windows)
-
-### Auth Flow
-
-GitHub CLI already has a robust device-flow auth:
-
-```bash
-gh auth login --web
-# OR non-interactive for automation:
-gh auth login --with-token < ~/.config/gh/token
-```
-
-**Cowork's GitHub Auth UX** (settings panel flow):
-
-```
-┌──────────────────────────────────────────┐
-│  GitHub Connection                        │
-│                                          │
-│  Status: ⚪ Not connected                │
-│                                          │
-│  [Connect with GitHub]                   │
-│                                          │
-│  ── or ──                                │
-│                                          │
-│  Personal Access Token: [______________] │
-│  [Verify & Save]                         │
-└──────────────────────────────────────────┘
-```
-
-**Option A: Device Flow (recommended)** — Cowork calls `gh auth login --web` in an interactive terminal/URL flow. User opens URL, enters code, browser auth completes. No token ever touches Cowork storage.
-
-**Option B: PAT Flow** — User enters a GitHub PAT in Cowork settings. Cowork runs `gh auth login --with-token` once, then deletes the token file. All subsequent operations use `gh`'s own credential store (`~/.config/gh/hosts.yml`).
-
-**Option C: OAuth App Flow** — Cowork acts as a GitHub OAuth app. User clicks "Connect", browser opens to authorize, Cowork receives callback token, writes it to `gh`'s credential store. This is the most seamless UX but requires registering Cowork as a GitHub OAuth app.
-
-### Probes: Connected Status
-
-**Current state** (check via `gh auth status`):
-```bash
-gh auth status --show-token     # Shows current user + orgs
-# Returns: ✓ Logged in to github.com as <user> (<token>)
-# ✓ Git operations for github.com configured to use https protocol.
-# ✓ Token: ghp_***************
-```
-
-**New command for Cowork**: `get_github_status` in the agent-sidecar command switch:
+The agent-sidecar (`agent-sidecar/src/index.ts`) sets `process.env.PATH` once during `initAgent()`, before any pi session starts. Adds bundled binary dirs first, then appends the system PATH.
 
 ```typescript
-case "get_github_status": {
+// In agent-sidecar/src/index.ts, near the top of initAgent():
+
+function bundledBinDir(): string {
+    // In dev: resolves to <repo>/src-tauri/binaries/
+    // In packaged: resolves to <bundle>/binaries/
+    return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src-tauri", "binaries");
+}
+
+function buildPath(): string {
+    const bin = bundledBinDir();
+    const parts: string[] = [];
+    const gitDir = join(bin, "git");
+    const ghDir = join(bin, "gh");
+    if (existsSync(gitDir)) parts.push(gitDir);
+    if (existsSync(ghDir)) parts.push(ghDir);
+    if (process.env.PATH) parts.push(process.env.PATH);
+    return parts.join(path.delimiter);
+}
+
+process.env.PATH = buildPath();
+```
+
+That's it. Every tool call that shells out to `git` or `gh` now finds them. The pi session inherits this PATH automatically. No code change in any tool.
+
+---
+
+## Step 3: GitHub App in Cowork's Apps Tab
+
+### New sidecar commands
+
+In the agent-sidecar command switch (`agent-sidecar/src/index.ts`, the `handleCommand` function), add two new IPC commands:
+
+```typescript
+// ── gh_auth_status ─────────────────────────────
+case "gh_auth_status": {
     try {
-        const result = execFileSync("gh", ["auth", "status"], { encoding: "utf-8" });
-        // Parse: extract username, accounts, orgs
-        const hosts = JSON.parse(execFileSync("gh", ["auth", "status", "--show-token", "--json"], { encoding: "utf-8" }));
-        send({ type: "result", id: cmd.id, data: { connected: true, ...hosts } });
+        const status = execFileSync("gh", ["auth", "status", "--show-token", "--json"], {
+            encoding: "utf-8",
+            timeout: 5000,
+        });
+        const data = JSON.parse(status);
+        send({ type: "result", id: cmd.id, data: { connected: true, hosts: data.hosts } });
     } catch {
         send({ type: "result", id: cmd.id, data: { connected: false } });
     }
-}
-```
-
-The `gh auth status --json` output includes:
-```json
-{
-  "hosts": {
-    "github.com": {
-      "user": "arjun",
-      "oauth_token": "gho_...",
-      "git_protocol": "https",
-      "token_scope": "repo,workflow,read:org,admin:org_hook"
-    }
-  }
-}
-```
-
----
-
-## 3. GitHub pi Extension (`@zosmaai/pi-github`)
-
-### Architecture
-
-```
-@zosmaai/pi-github/
-├── package.json       → pi: { extensions: ["./src/index.ts"] }
-├── src/
-│   ├── index.ts       → registers all tools
-│   ├── auth.ts        → gh auth check, status probe
-│   ├── issues.ts      → issue CRUD
-│   ├── projects.ts    → Projects v2 (beta) operations
-│   ├── pulls.ts       → PR listing, review, merge
-│   ├── actions.ts     → GitHub Actions workflows
-│   ├── repos.ts       → repo listing, branch ops
-│   └── types.ts       → shared schemas
-├── README.md
-└── LICENSE
-```
-
-### Tools
-
-**Auth & Status:**
-| Tool | Description |
-|------|-------------|
-| `gh_status` | Show connected accounts, orgs, token scope |
-| `gh_organizations` | List all orgs the user belongs to |
-| `gh_repos` | List repos (by org, by user, starred) |
-
-**Issues:**
-| Tool | Description |
-|------|-------------|
-| `gh_issue_search` | Search issues across repos (state, label, milestone, assignee) |
-| `gh_issue_get` | Get full issue details |
-| `gh_issue_create` | Create issue (title, body, labels, assignees, milestone, project) |
-| `gh_issue_update` | Update issue (title, body, state, labels, assignees, milestone) |
-| `gh_issue_comment` | Add comment to issue |
-
-**Projects v2:**
-| Tool | Description |
-|------|-------------|
-| `gh_project_list` | List projects for an org/user/repo |
-| `gh_project_items` | List items in a project (with field values) |
-| `gh_project_add_item` | Add an issue/PR to a project |
-| `gh_project_update_item` | Update project field values (status, sprint, priority) |
-
-**Pull Requests:**
-| Tool | Description |
-|------|-------------|
-| `gh_pr_list` | List PRs (state, base branch, author, labels) |
-| `gh_pr_get` | Get PR details (files changed, status checks, mergeable state) |
-| `gh_pr_create` | Create PR with title, body, reviewers |
-| `gh_pr_review` | Add review comment or approve/request-changes |
-| `gh_pr_merge` | Merge PR (merge/squash/rebase) |
-| `gh_pr_checks` | Get CI status for a PR |
-
-**Actions:**
-| Tool | Description |
-|------|-------------|
-| `gh_workflow_list` | List workflows in a repo |
-| `gh_workflow_run` | Trigger a workflow_dispatch |
-| `gh_workflow_status` | Get latest run(s) status for a workflow |
-| `gh_workflow_logs` | Get logs for a workflow run |
-| `gh_workflow_cancel` | Cancel a running workflow |
-
-**Repos:**
-| Tool | Description |
-|------|-------------|
-| `gh_repo_get` | Get repo details (stars, forks, issues, language) |
-| `gh_branch_list` | List branches for a repo |
-| `gh_release_list` | List releases |
-
-### Implementation Pattern (uses `gh` CLI)
-
-```typescript
-import { execFileSync } from "node:child_process";
-import { Type } from "typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-function gh(args: string[], opts?: { json?: boolean }): string {
-    const cmd = opts?.json ? [...args, "--json", ...(opts.json === true ? [] : [opts.json])] : args;
-    return execFileSync("gh", cmd, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+    break;
 }
 
-export default function (pi: ExtensionAPI) {
-    // ── Status ──
-    pi.registerTool({
-        name: "gh_status",
-        label: "GitHub Status",
-        description: "Show connected GitHub accounts, organizations, and token scope",
-        parameters: Type.Object({}),
-        async execute(_toolCallId, _params, _signal) {
-            try {
-                const raw = JSON.parse(gh(["auth", "status", "--show-token", "--json"]));
-                return { success: true, ...raw };
-            } catch (e) {
-                return { success: false, error: "Not connected to GitHub. Run 'gh auth login' or set a PAT." };
-            }
-        },
-    });
-
-    // ── Search Issues ──
-    pi.registerTool({
-        name: "gh_issue_search",
-        label: "GitHub Issue Search",
-        description: "Search GitHub issues across repos with filters",
-        parameters: Type.Object({
-            q: Type.String({ description: "Search query" }),
-            repo: Type.Optional(Type.String({ description: "Limit to owner/repo" })),
-            state: Type.Optional(Type.Union([Type.Literal("open"), Type.Literal("closed"), Type.Literal("all")])),
-            label: Type.Optional(Type.String({ description: "Filter by label" })),
-            limit: Type.Optional(Type.Number({ default: 20 })),
-        }),
-        async execute(_toolCallId, params, _signal) {
-            const query = [
-                params.q,
-                params.repo ? `repo:${params.repo}` : "",
-                params.state && params.state !== "all" ? `state:${params.state}` : "",
-                params.label ? `label:"${params.label}"` : "",
-            ].filter(Boolean).join(" ");
-            const json = JSON.parse(gh(["issue", "list", "--search", query, "--limit", String(params.limit ?? 20), "--json", "number,title,state,url,labels,assignees,updatedAt"]));
-            return { success: true, issues: json };
-        },
-    });
-
-    // ── Create Issue ──
-    pi.registerTool({
-        name: "gh_issue_create",
-        label: "GitHub Issue Create",
-        description: "Create a new GitHub issue in a repo",
-        parameters: Type.Object({
-            repo: Type.String({ description: "owner/repo" }),
-            title: Type.String({ description: "Issue title" }),
-            body: Type.Optional(Type.String({ description: "Issue body (Markdown)" })),
-            label: Type.Optional(Type.String({ description: "Comma-separated labels" })),
-            assignee: Type.Optional(Type.String({ description: "Comma-separated usernames" })),
-            project: Type.Optional(Type.String({ description: "Project title or ID" })),
-            milestone: Type.Optional(Type.String({ description: "Milestone title or number" })),
-        }),
-        async execute(_toolCallId, params, _signal) {
-            const args = ["issue", "create", "--repo", params.repo, "--title", params.title];
-            if (params.body) args.push("--body", params.body);
-            if (params.label) args.push("--label", params.label);
-            if (params.assignee) args.push("--assignee", params.assignee);
-            if (params.milestone) args.push("--milestone", params.milestone);
-            const output = gh(args);
-            return { success: true, url: output.trim() };
-        },
-    });
-}
-```
-
-### Auth Check + UI Status Chip
-
-The extension's `export default` function probes auth on init and calls `pi.ctx.ui.setStatus()`:
-
-```typescript
-export default async function (pi: ExtensionAPI) {
+// ── gh_organizations ──────────────────────────
+case "gh_organizations": {
     try {
-        const status = JSON.parse(gh(["auth", "status", "--show-token", "--json"]));
-        const user = status?.hosts?.["github.com"]?.user ?? "unknown";
-        const orgs = Object.keys(status?.hosts ?? {});
-        pi.ctx.ui.setStatus("gh", `gh: ✓ ${user} (${orgs.length} host(s))`);
+        const orgs = execFileSync("gh", ["api", "user/memberships/orgs", "--jq", "[.[] | {login: .organization.login, role: .role}]"], {
+            encoding: "utf-8",
+            timeout: 5000,
+        });
+        const user = execFileSync("gh", ["api", "user", "--jq", "{login, name, avatar_url}"], {
+            encoding: "utf-8",
+            timeout: 5000,
+        });
+        send({
+            type: "result", id: cmd.id, data: {
+                user: JSON.parse(user),
+                orgs: JSON.parse(orgs),
+            }
+        });
     } catch {
-        pi.ctx.ui.setStatus("gh", "gh: ⚪ not connected");
+        send({ type: "error", id: cmd.id, message: "Not authenticated" });
     }
-    // ... register tools ...
+    break;
+}
+
+// ── gh_start_auth ─────────────────────────────
+// Runs `gh auth login` in a subprocess, captures the
+// device code, and starts polling for completion.
+case "gh_start_auth": {
+    // Spawn gh in a PTY or subprocess
+    // Capture the device code from stdout
+    // Send back: { code, url }
+    // Then poll gh_auth_status every 3s until connected
+    break;
 }
 ```
 
-This makes the connection status appear in Cowork's StatusLine footer automatically.
+### Frontend: GitHub App tile + page
+
+New files following the exact pattern of `GoogleApp` / `DiscordApp`:
+
+| File | Purpose |
+|------|---------|
+| `src/components/settings/GithubIntegration.tsx` | Launcher card in Apps list — shows Connected/Disconnected status |
+| `src/components/settings/GithubApp.tsx` | Full-page GitHub setup — auth flow + org list |
+
+### `GithubIntegration.tsx` (launcher tile)
+
+```tsx
+export function GithubIntegration({ onOpen }: { onOpen: () => void }) {
+    const [connected, setConnected] = useState(false);
+    const [user, setUser] = useState<string | null>(null);
+
+    useEffect(() => {
+        invoke("gh_auth_status").then((r: any) => {
+            setConnected(r.connected);
+            if (r.connected) {
+                const gh = r.hosts?.["github.com"];
+                setUser(gh?.user ?? null);
+            }
+        }).catch(() => setConnected(false));
+    }, []);
+
+    return (
+        <button type="button" onClick={onOpen}
+            className="glass w-full text-left px-3.5 py-3 flex items-center gap-3 ...">
+            <span className="w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold shrink-0"
+                style={{ background: "#24292F", color: "white" }}>G</span>
+            <span className="flex-1 min-w-0">
+                <span className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold">GitHub</span>
+                    {connected && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
+                            <Check className="w-2.5 h-2.5" />
+                            {user}
+                        </span>
+                    )}
+                </span>
+                <span className="block text-[11px] text-muted-foreground mt-0.5">
+                    {connected ? `${orgCount} organization(s)` : "Connect your GitHub account"}
+                </span>
+            </span>
+            <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+        </button>
+    );
+}
+```
+
+### `GithubApp.tsx` (full-page setup) — Two states:
+
+**State 1: Not connected — Device code auth**
+
+```
+┌──────────────────────────────────────────┐
+│  ← Back to Apps                          │
+│                                          │
+│  ┌─ GitHub ───────────────────────────┐  │
+│  │                                     │  │
+│  │  Connect your GitHub account to     │  │
+│  │  unlock issue/PR/action access      │  │
+│  │  from your agent.                   │  │
+│  │                                     │  │
+│  │  [Connect with GitHub]              │  │
+│  │                                     │  │
+│  │  ── or use a Personal Access Token ─│  │
+│  │  Token: [________________________]  │  │
+│  │  [Verify Token]                     │  │
+│  └─────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
+```
+
+When "Connect with GitHub" is clicked:
+1. Sidecar spawns `gh auth login --web` in the background
+2. Captures the device code from gh's output
+3. UI shows a modal:
+
+```
+  ┌─── Authenticate with GitHub ───────────┐
+  │                                        │
+  │  1. Copy your one-time code:           │
+  │                                        │
+  │     ┌──────────────────────┐           │
+  │     │   ABCD-1234          │           │
+  │     └──────────────────────┘           │
+  │     [Copy Code]                        │
+  │                                        │
+  │  2. Open this URL in your browser:     │
+  │     https://github.com/login/device    │
+  │     [Open in Browser ──▶]              │
+  │                                        │
+  │  3. Enter the code and authorize       │
+  │                                        │
+  │  ⏳ Waiting for authentication...       │
+  │  ─────────────────────────────────     │
+  │  [Cancel]                              │
+  └────────────────────────────────────────┘
+```
+
+4. Sidecar polls `gh auth status` every 3s
+5. When connected, modal closes, UI refreshes to state 2
+
+**State 2: Connected — Account & org listing**
+
+```
+┌──────────────────────────────────────────┐
+│  ← Back to Apps                          │
+│                                          │
+│  ┌─ GitHub ───────────────────────────┐  │
+│  │  Status: ✅ Connected              │  │
+│  │  [Disconnect]                      │  │
+│  │                                     │  │
+│  │  ── Personal Account ──             │  │
+│  │  ┌───────────────────────────────┐  │  │
+│  │  │ [avatar] @arjun               │  │  │
+│  │  │         arjun@example.com     │  │  │
+│  │  │         Repos: 47             │  │  │
+│  │  └───────────────────────────────┘  │  │
+│  │                                     │  │
+│  │  ── Organizations (3) ──            │  │
+│  │  ┌───────────────────────────────┐  │  │
+│  │  │ [logo] @zosmaai     ★ Owner   │  │  │
+│  │  │         github.com/zosmaai   │  │  │
+│  │  │         Repos: 12             │  │  │
+│  │  ├───────────────────────────────┤  │  │
+│  │  │ [logo] @my-corp     Member   │  │  │
+│  │  │         github.com/my-corp   │  │  │
+│  │  │         Repos: 8             │  │  │
+│  │  └───────────────────────────────┘  │  │
+│  └─────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
+```
+
+The orgs + avatar URLs come from:
+```bash
+gh api user/memberships/orgs --jq '[.[] | {login: .organization.login, role: .role, avatar: .organization.avatar_url}]'
+gh api user --jq '{login, name, avatar_url, email}'
+```
+
+Avatar images are < 100 bytes each (JSON URL) — Cowork's React renders them as `<img src={avatar_url}>`.
+
+### Register in Apps.tsx
+
+```tsx
+// In src/components/settings/Apps.tsx, add:
+import { GithubIntegration } from "./GithubIntegration";
+import { GithubApp } from "./GithubApp";
+
+type AppView = "list" | "discord" | "google" | "github";
+
+// In the render:
+<GithubIntegration onOpen={() => setView("github")} />
+```
 
 ---
 
-## 4. GitHub OAuth vs `gh` CLI Auth
+## Step 4: No pi Extension Needed
 
-### Option Comparison
+Once `git` and `gh` are on PATH:
 
-| Approach | UX | Persistence | Complexity |
-|----------|----|-------------|------------|
-| **A: `gh auth login --web`** (device code) | User clicks button → gets code → opens URL → browser auth | `~/.config/gh/hosts.yml` | Low — call `gh` CLI once |
-| **B: PAT in Cowork settings** | User pastes PAT → Cowork runs `gh auth login --with-token` | `~/.config/gh/hosts.yml` | Low — one-time token injection |
-| **C: GitHub OAuth App** | "Sign in with GitHub" → browser → callback → Cowork stores token | `~/.config/gh/hosts.yml` or Cowork vault | Medium — need OAuth app + callback endpoint |
+| pi tool/skill | What it can do now |
+|---------------|-------------------|
+| **Bash (any tool)** | `git clone`, `git push`, `gh issue list` — works transparently |
+| **pi-web-access** | GitHub repo cloning via `gh` CLI (already checks `checkGhAvailable()`) |
+| **`linear-cli` skill** | Not git-related, but model learns `gh` is available via any `gh *` tool call |
+| **`kubernetes-specialist` skill** | No change, unrelated |
+| **Any future skill** | If it needs git, it has it |
 
-**Recommendation**: Start with **Option A** (device flow via `gh` CLI) for v1, then add **Option C** (GitHub OAuth App) for seamless UX in v2. Option A is literally:
-
-```
-gh auth login --web
-# User visits https://github.com/login/device
-# Enters 8-character code
-# Auths in browser
-# Done
-```
-
-### "Show all Organizations and Personal Accounts"
-
-The `gh api` command lists organizations:
+`gh` is particularly powerful as a CLI because it wraps nearly the entire GitHub API:
 
 ```bash
-gh api user/memberships/orgs --jq '.[].organization.login'
-# → zosmaai, my-company, personal-project
+# Issues
+gh issue list --repo owner/repo --json number,title,state,labels
+gh issue create --repo owner/repo --title "Fix bug" --body "Details"
+gh issue view 123 --repo owner/repo --json assignees,projectItems
+
+# Pull Requests
+gh pr list --repo owner/repo --state open --json number,title,author
+gh pr review 456 --repo owner/repo --approve
+gh pr merge 456 --repo owner/repo --squash
+
+# Projects v2
+gh project list --org my-org --json number,title
+gh project item-list 1 --org my-org --json title,status
+
+# Actions
+gh workflow list --repo owner/repo
+gh workflow run build.yml --repo owner/repo --ref main
+
+# Auth / Status
+gh auth status --show-token --json
+gh api user/memberships/orgs
+gh api user --jq '{login, name}'
 ```
 
-And `gh auth status --json` shows all authenticated hosts (including GitHub Enterprise instances):
-
-```json
-{
-  "hosts": {
-    "github.com": { "user": "arjun", ... },
-    "gitlab.example.com": { "user": "arjun", ... }
-  }
-}
-```
-
-For the extension, add a `gh_organizations` tool:
-
-```typescript
-pi.registerTool({
-    name: "gh_organizations",
-    label: "GitHub Organizations",
-    description: "List all organizations the user belongs to",
-    parameters: Type.Object({}),
-    async execute() {
-        const orgs = JSON.parse(gh(["api", "user/memberships/orgs", "--jq", "[.[].organization.login]"]));
-        const repos = JSON.parse(gh(["api", "user/repos", "--jq", "[.[].full_name]", "--limit", "100"]));
-        return { success: true, organizations: orgs, totalRepos: repos.length };
-    },
-});
-```
-
-And in the Cowork Settings UI, a **GitHub Accounts** panel listing:
-
-```
-┌──────────────────────────────────────┐
-│  GitHub Connected Accounts           │
-├──────────────────────────────────────┤
-│                                      │
-│  github.com                          │
-│  ┌─ @arjun (personal) ───────────┐  │
-│  │ Repos: 47                      │  │
-│  │ Token scope: repo, workflow,   │  │
-│  │   read:org, admin:org_hook     │  │
-│  └────────────────────────────────┘  │
-│  ┌─ @zosmaai ─────────────────────┐  │
-│  │ Organization (Owner)           │  │
-│  │ Repos: 12                      │  │
-│  └────────────────────────────────┘  │
-│                                      │
-│  [Connect another account...]        │
-└──────────────────────────────────────┘
-```
+The model (pi) can call any of these via the shell tool. No dedicated pi extension wraps them. The user just needs to say _"list my open GitHub issues"_ and the model will know to use `gh issue list`.
 
 ---
 
-## 5. Implementation Timeline
+## Step 5: What the User Sees End-to-End
 
-| Day | What |
-|-----|------|
-| **1** | Create `fetch-git.mjs` — download portable Git for each platform. Test on Windows. |
-| **2** | Create `fetch-gh.mjs` — download gh CLI for each platform. Register in tauri.conf.json bundle.resources. |
-| **3** | Add PATH injection in `agent-sidecar/src/index.ts` — `buildBundledPath()` + set `process.env.PATH`. Verify git/gh found by spawned tools. |
-| **4** | Create `@zosmaai/pi-github` repo — scaffold, auth probe + status tool. Verify status chip renders in Cowork. |
-| **5** | Build `gh_issue_search`, `gh_issue_get`, `gh_issue_create`, `gh_issue_comment` tools. |
-| **6** | Build `gh_project_list`, `gh_project_items`, `gh_project_add_item` tools (Projects v2 support). |
-| **7** | Build `gh_pr_list`, `gh_pr_get`, `gh_pr_create` tools. |
-| **8** | Build `gh_organizations` + `gh_repos` tools. Cowork Settings UI for GitHub status display. |
-| **9** | Polish: error messages, token expiry handling, rate-limit handling, tests. |
-| **10** | Ship: Publish `@zosmaai/pi-github` to npm, add Cowork Store tile, write README/docs. |
-
-**Total: ~10 days** for the full GitHub integration + git/gh bundling.
+1. **Installs Cowork** (fresh Windows machine)
+2. Opens **Settings → Apps**
+3. Sees **GitHub** tile in the app list
+4. Clicks **GitHub** → sees "Connect your GitHub account"
+5. Clicks **"Connect with GitHub"** → sees device code + URL
+6. Opens browser, enters code, authorizes
+7. Cowork UI refreshes → shows **@arjun** + **3 organizations** with avatars
+8. **Done.** The pi session already has `git` and `gh` on PATH
+9. User opens a chat: _"show my open issues in @zosmaai/code-review repo"_ → model runs `gh issue list --repo zosmaai/code-review` → returns results
+10. No extension install, no token management, no configuration files
 
 ---
 
-## 6. Immediate Next Actions (today)
+## Effort Summary
 
-1. **Create `fetch-git.mjs`** in `src-tauri/scripts/` — copy `fetch-node.mjs`, adapt for Git
-2. **Create `fetch-gh.mjs`** in `src-tauri/scripts/` — download GitHub CLI binary
-3. **Add binaries to `bundle.resources`** in `tauri.conf.json`
-4. **Add PATH injection** in `agent-sidecar/src/index.ts`
-5. **Scaffold `@zosmaai/pi-github`** repo under `github.com/zosmaai/`
-6. **Build auth probe** — first tool showing connected status + orgs
-7. **Release v0.1.0** of `@zosmaai/pi-github` to npm
-8. **Add Store tile** — Settings → Extensions features it as curated
+| Task | Files | Effort |
+|------|-------|--------|
+| `fetch-git.mjs` | 1 new script | ~3h |
+| `fetch-gh.mjs` | 1 new script | ~2h |
+| Register binaries in `tauri.conf.json` | 1 edit | 5min |
+| PATH injection in `agent-sidecar/src/index.ts` | 1 edit (~10 lines) | 30min |
+| `gh_auth_status` IPC command | 1 edit (~15 lines) | 30min |
+| `gh_organizations` IPC command | 1 edit (~15 lines) | 30min |
+| `GithubIntegration.tsx` | 1 new component | ~2h |
+| `GithubApp.tsx` | 1 new component | ~4h |
+| Register in `Apps.tsx` | 1 edit (~5 lines) | 15min |
 
----
-
-## Cost-Benefit (Why GitHub First)
-
-| Factor | Score |
-|--------|-------|
-| **PM impact** | 🔥🔥🔥🔥🔥 Issues + Projects + PRs = full PM lifecycle |
-| **User base** | Every developer has a GitHub account. No new signup needed. |
-| **Build speed** | Fast — `gh` CLI does 90% of the work. Extension is thin wrappers. |
-| **Zero competition** | No pi GitHub extension exists. |
-| **Bundling synergy** | Git + gh bundled together. Both needed for full dev workflow. |
-| **Self-reinforcing** | Cowork's own repos could be managed through the extension = dogfooding. |
+**Total: ~13 hours / ~2 days**
 
 ---
 
-> **Next:** After GitHub ships, immediately start **Jira** (`@zosmaai/pi-jira`) and **Notion** (`@zosmaai/pi-notion`) in parallel. Both have the same auth+status+CRUD pattern. See the [full roadmap](integrations-roadmap.md) for the complete plan.
+## Comparison: Extension vs No-Extension
+
+| Concern | Building pi extension | Just bundle git+gh |
+|---------|---------------------|-------------------|
+| **Curated tools** | 20+ hand-written tool wrappers | Zero — `gh` CLI is the API |
+| **pi skills needed** | None needed | None needed — `gh` does everything |
+| **Auth management** | Must handle token refresh ourselves | `gh` CLI handles it |
+| **Rate limiting** | Must implement retry + backoff | `gh` CLI handles it |
+| **Pagination** | Must implement cursor logic | `gh` CLI handles it with `--limit` |
+| **Future API changes** | Must update extension | Just update `gh` binary |
+| **npm publish** | Must package + version | Nothing to publish |
+| **Cowork Store tile** | Must be featured | Not needed — it's an App, not an extension |
+| **Maintenance** | Ongoing code to maintain | Zero — `gh` is the abstraction |
+| **Works without PATH** | N/A (would need gh anyway) | PATH injection required once |
+
+**Conclusion:** The "just bundle gh" approach saves ~80% of the work and eliminates ongoing maintenance.
+
+---
+
+> **Next:** After GitHub, **Jira** and **Notion** would follow the same pattern: bundle a CLI tool (or use REST API directly through the pi session's shell tool) + Cowork App tile for auth + status display. No pi extensions needed for any of them either.
