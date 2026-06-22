@@ -1,8 +1,12 @@
 /**
  * GithubApp — full-page GitHub app setup view.
  *
- * Uses PAT (Personal Access Token) auth: user creates a token on GitHub,
- * pastes it here, and the sidecar runs `gh auth login --with-token`.
+ * Uses GitHub's OAuth device authorization grant flow:
+ *   1. Request device code from GitHub API
+ *   2. Show user_code + verification_uri in the UI
+ *   3. User opens URL, enters code, authorizes in browser
+ *   4. Poll until token is granted
+ *   5. Save token to gh's credential store
  *
  * Follows the same pattern as GoogleApp and DiscordApp.
  */
@@ -14,13 +18,12 @@ import {
 	ChevronLeft,
 	Copy,
 	ExternalLink,
-	Eye,
-	EyeOff,
 	Loader2,
+	RefreshCw,
 	User,
 	Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Org {
 	login: string;
@@ -38,15 +41,16 @@ interface GitHubHost {
 	user: string;
 }
 
-type Phase = "idle" | "saving" | "connected" | "error";
+type Phase = "idle" | "starting" | "waiting_auth" | "connected" | "error";
 
 export function GithubApp({ onBack }: { onBack: () => void }) {
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [userInfo, setUserInfo] = useState<GitHubOrgs | null>(null);
+	const [deviceCode, setDeviceCode] = useState<string | null>(null);
+	const [deviceUrl, setDeviceUrl] = useState("https://github.com/login/device");
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
-	const [token, setToken] = useState("");
-	const [showToken, setShowToken] = useState(false);
+	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	// Probe auth status on mount
 	const refresh = useCallback(async () => {
@@ -69,38 +73,96 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 
 	useEffect(() => {
 		refresh();
+		return () => {
+			if (pollRef.current) clearInterval(pollRef.current);
+		};
 	}, [refresh]);
 
-	// Save PAT
-	const handleSaveToken = useCallback(async () => {
-		if (!token.trim()) return;
+	// Start device-code auth flow
+	const handleConnect = useCallback(async () => {
 		setLoading(true);
 		setError(null);
 		try {
-			await invoke("gh_save_token", { token: token.trim() });
-			// Re-probe to show connected state
-			await refresh();
+			const result = await invoke<{
+				code: string;
+				url: string;
+				device_code: string;
+				interval: number;
+			}>("gh_start_auth");
+
+			setDeviceCode(result.code);
+			setDeviceUrl(result.url);
+			setPhase("waiting_auth");
+
+			// Start polling for token
+			let currentInterval = result.interval * 1000;
+
+			const poll = async () => {
+				try {
+					const res = await invoke<{
+						status: string;
+						interval_inc?: number;
+					}>("gh_poll_token", {
+						device_code: result.device_code,
+						interval: Math.floor(currentInterval / 1000),
+					});
+
+					if (res.status === "completed") {
+						if (pollRef.current) clearInterval(pollRef.current);
+						pollRef.current = null;
+						// Refresh to show connected state
+						await refresh();
+					} else if (res.interval_inc) {
+						currentInterval += res.interval_inc * 1000;
+						if (pollRef.current) {
+							clearInterval(pollRef.current);
+							pollRef.current = setInterval(poll, currentInterval);
+						}
+					}
+				} catch (err: unknown) {
+					// Don't stop polling on transient errors
+					const msg = err instanceof Error ? err.message : String(err);
+					if (msg.includes("authorization_pending")) {
+						// Expected — user hasn't authorized yet
+					} else if (msg.includes("expired_token") || msg.includes("access_denied")) {
+						if (pollRef.current) clearInterval(pollRef.current);
+						pollRef.current = null;
+						setError(msg);
+						setPhase("idle");
+					}
+				}
+			};
+
+			pollRef.current = setInterval(poll, currentInterval);
+
+			// Safety timeout — 5 minutes
+			setTimeout(() => {
+				if (pollRef.current) {
+					clearInterval(pollRef.current);
+					pollRef.current = null;
+					if (phase === "waiting_auth") {
+						setError("Authentication timed out. Please try again.");
+						setPhase("idle");
+					}
+				}
+			}, 5 * 60 * 1000);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
+			setPhase("idle");
 		} finally {
 			setLoading(false);
 		}
-	}, [token, refresh]);
+	}, [refresh, phase]);
 
-	// Open GitHub token page
-	const openTokenPage = useCallback(() => {
-		openExternalUrl("https://github.com/settings/tokens?type=beta");
-	}, []);
+	const openUrl = useCallback(() => {
+		openExternalUrl(deviceUrl);
+	}, [deviceUrl]);
 
-	// Copy token help text
-	const copyHelp = useCallback(() => {
-		navigator.clipboard?.writeText(
-			"GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token\n\n" +
-			"Required scopes: repo, workflow, read:org, read:user, user:email",
-		);
-	}, []);
+	const copyCode = useCallback(() => {
+		if (deviceCode) navigator.clipboard?.writeText(deviceCode);
+	}, [deviceCode]);
 
-	// ── Connected state: show accounts & orgs ──
+	// ── Connected state ──
 	if (phase === "connected" && userInfo) {
 		return (
 			<section className="max-w-3xl">
@@ -189,12 +251,82 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					</>
 				)}
 
-				{/* Hint */}
 				<div className="mt-6 glass px-4 py-3.5">
 					<p className="text-[12px] text-foreground/80 leading-relaxed">
 						Git and the GitHub CLI are bundled with Cowork. The agent can manage issues,
-						PRs, repos, and Actions — you can describe what you need in the chat.
+						PRs, repos, and Actions — describe what you need in the chat.
 					</p>
+				</div>
+			</section>
+		);
+	}
+
+	// ── Device code auth in progress ──
+	if (phase === "waiting_auth") {
+		return (
+			<section className="max-w-3xl">
+				<button
+					type="button"
+					onClick={() => {
+						if (pollRef.current) clearInterval(pollRef.current);
+						setPhase("idle");
+					}}
+					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-4"
+				>
+					<ChevronLeft className="w-3.5 h-3.5" />
+					Back to Apps
+				</button>
+
+				<div className="glass px-5 py-6 text-center">
+					<p className="text-[13px] font-semibold text-foreground mb-5">
+						Authenticate with GitHub
+					</p>
+
+					<div className="space-y-5">
+						{/* Step 1: Copy code */}
+						<div>
+							<p className="text-[11px] text-muted-foreground mb-2">
+								1. Copy your one-time code:
+							</p>
+							<div className="flex items-center justify-center gap-2">
+								<code
+									className="text-lg font-mono font-bold tracking-widest bg-background px-5 py-2.5 rounded-lg border border-border select-all cursor-pointer"
+									onClick={copyCode}
+								>
+									{deviceCode ?? "------"}
+								</code>
+								<button
+									type="button"
+									onClick={copyCode}
+									className="p-2 rounded-lg hover:bg-card/60 transition-colors"
+									title="Copy code"
+								>
+									<Copy className="w-4 h-4 text-muted-foreground" />
+								</button>
+							</div>
+						</div>
+
+						{/* Step 2: Open URL */}
+						<div>
+							<p className="text-[11px] text-muted-foreground mb-2">
+								2. Open this URL and enter the code:
+							</p>
+							<button
+								type="button"
+								onClick={openUrl}
+								className="inline-flex items-center gap-1.5 text-[13px] text-primary hover:underline"
+							>
+								{deviceUrl}
+								<ExternalLink className="w-3.5 h-3.5" />
+							</button>
+						</div>
+
+						{/* Step 3: Waiting */}
+						<div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+							<Loader2 className="w-3.5 h-3.5 animate-spin" />
+							3. Waiting for you to authorize in your browser...
+						</div>
+					</div>
 				</div>
 			</section>
 		);
@@ -229,88 +361,36 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					<div className="flex-1 min-w-0">
 						<h3 className="text-[15px] font-semibold text-foreground mb-1">GitHub</h3>
 						<p className="text-[12px] text-muted-foreground leading-relaxed mb-4">
-							Connect your GitHub account so the agent can manage issues, pull requests,
-							projects, and Actions.
+							Connect your GitHub account to unlock issue tracking, pull requests,
+							project management, and Actions — accessible through the agent.
 						</p>
 
-						{/* Step 1: Create token */}
-						<div className="mb-4">
-							<div className="text-[11px] font-semibold text-foreground mb-2">
-								1. Create a GitHub personal access token
-							</div>
-							<button
-								type="button"
-								onClick={openTokenPage}
-								className="inline-flex items-center gap-1.5 text-[12px] text-primary hover:underline"
-							>
-								github.com/settings/tokens
-								<ExternalLink className="w-3 h-3" />
-							</button>
-							<p className="text-[11px] text-muted-foreground mt-1">
-								Create a <strong>Fine-grained token</strong> with repo, workflow,
-								read:org, read:user, and user:email permissions.
-							</p>
-						</div>
-
-						{/* Step 2: Paste token */}
-						<div className="mb-4">
-							<div className="text-[11px] font-semibold text-foreground mb-2">
-								2. Paste your token here
-							</div>
-							<div className="flex items-center gap-2">
-								<div className="relative flex-1">
-									<input
-										type={showToken ? "text" : "password"}
-										value={token}
-										onChange={(e) => setToken(e.target.value)}
-										placeholder="ghp_..."
-										className="w-full text-[13px] bg-background border border-border rounded-lg px-3 py-2 pr-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-									/>
-									<button
-										type="button"
-										onClick={() => setShowToken(!showToken)}
-										className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-									>
-										{showToken ? (
-											<EyeOff className="w-3.5 h-3.5" />
-										) : (
-											<Eye className="w-3.5 h-3.5" />
-										)}
-									</button>
-								</div>
-								<button
-									type="button"
-									onClick={handleSaveToken}
-									disabled={!token.trim() || loading}
-									className="px-4 py-2 rounded-lg text-[13px] font-medium text-primary bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50 whitespace-nowrap"
-								>
-									{loading ? (
-										<Loader2 className="w-4 h-4 animate-spin" />
-									) : (
-										"Connect"
-									)}
-								</button>
-							</div>
-						</div>
-
-						{/* Copy help */}
 						<button
 							type="button"
-							onClick={copyHelp}
-							className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+							onClick={handleConnect}
+							disabled={loading}
+							className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium text-primary bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50"
 						>
-							<Copy className="w-3 h-3" />
-							Copy instructions to clipboard
+							{loading ? (
+								<Loader2 className="w-4 h-4 animate-spin" />
+							) : (
+								<RefreshCw className="w-4 h-4" />
+							)}
+							{loading ? "Starting..." : "Connect with GitHub"}
 						</button>
+
+						<p className="mt-3 text-[11px] text-muted-foreground">
+							Uses GitHub's device-code flow. You'll enter a one-time code in
+							your browser to authorize. No personal access token needed.
+						</p>
 					</div>
 				</div>
 			</div>
 
-			{/* Prerequisites info */}
 			<div className="mt-4 glass px-4 py-3.5">
 				<p className="text-[12px] text-foreground/80 leading-relaxed">
-					Git and the GitHub CLI are bundled with Cowork. They're available to the agent
-					on all platforms with no manual installation.
+					Git and the GitHub CLI are bundled with Cowork. They're available to the
+					agent on all platforms with no manual installation.
 				</p>
 			</div>
 		</section>

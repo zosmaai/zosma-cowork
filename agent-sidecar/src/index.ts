@@ -143,6 +143,7 @@ import {
 } from "./custom-providers.js";
 import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
 import { activateBundledBinaries, checkGitAvailable } from "./bundled-binaries.js";
+import { requestDeviceCode, pollForToken, saveToken } from "./github-auth.js";
 import {
 	customInstructionsBlock,
 	loadInstructions,
@@ -402,11 +403,18 @@ interface GhOrganizationsCommand {
 	id: string;
 }
 
-/** Save a GitHub PAT to gh's credential store. */
-interface GhSaveTokenCommand {
-	type: "gh_save_token";
+/** Start GitHub device-code auth flow. */
+interface GhStartAuthCommand {
+	type: "gh_start_auth";
 	id: string;
-	token: string;
+}
+
+/** Poll for device-code authorization completion. */
+interface GhPollTokenCommand {
+	type: "gh_poll_token";
+	id: string;
+	device_code: string;
+	interval?: number;
 }
 
 interface GetGoogleAppStatusCommand {
@@ -750,7 +758,8 @@ type Command =
 	| UiResponseCommand
 	| GhAuthStatusCommand
 	| GhOrganizationsCommand
-	| GhSaveTokenCommand;
+	| GhStartAuthCommand
+	| GhPollTokenCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -2977,27 +2986,58 @@ async function main() {
 					break;
 				}
 
-				// ── gh_save_token ───────────────────────────────────────
-				// Save a GitHub PAT to gh's credential store.
-				// Runs: echo "<token>" | gh auth login --with-token
-				case "gh_save_token": {
-					const token = (cmd as any).token;
-					if (!token) {
-						send({ type: "error", id: cmd.id, message: "token is required" });
+				// ── gh_start_auth ───────────────────────────────────────
+				// Start GitHub device-code auth flow using the OAuth device
+				// authorization grant API. Returns {code, url} for the UI to show.
+				case "gh_start_auth": {
+					try {
+						const device = requestDeviceCode();
+						log("gh_start_auth: device_code obtained, user_code=%s", device.user_code);
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								code: device.user_code,
+								url: device.verification_uri,
+								device_code: device.device_code,
+								interval: device.interval,
+							},
+						});
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log("gh_start_auth error: %s", errMsg);
+						send({ type: "error", id: cmd.id, message: errMsg });
+					}
+					break;
+				}
+
+				// ── gh_poll_token ───────────────────────────────────────
+				// Poll for the user to authorize the device. Returns status.
+				case "gh_poll_token": {
+					const deviceCode = (cmd as any).device_code;
+					if (!deviceCode) {
+						send({ type: "error", id: cmd.id, message: "device_code is required" });
 						break;
 					}
 					try {
-						const result = execFileSync("gh", ["auth", "login", "--with-token"], {
-							input: token,
-							encoding: "utf-8",
-							timeout: 10000,
-						});
-						log("gh_save_token: PAT saved successfully");
-						send({ type: "result", id: cmd.id, data: { success: true } });
+						const result = pollForToken(deviceCode, (cmd as any).interval ?? 5);
+						if (result.access_token) {
+							// Save the token to gh's credential store
+							saveToken(result.access_token);
+							log("gh_poll_token: token saved, gh authenticated");
+							send({ type: "result", id: cmd.id, data: { status: "completed" } });
+						} else if (result.error === "authorization_pending") {
+							send({ type: "result", id: cmd.id, data: { status: "pending" } });
+						} else if (result.error === "slow_down") {
+							// Increase interval on slow_down
+							send({ type: "result", id: cmd.id, data: { status: "pending", interval_inc: 5 } });
+						} else {
+							const errMsg = result.error_description || result.error || "Unknown error";
+							send({ type: "error", id: cmd.id, message: errMsg });
+						}
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
-						log("gh_save_token error: %s", errMsg);
-						send({ type: "error", id: cmd.id, message: `Failed to save token: ${errMsg}` });
+						send({ type: "error", id: cmd.id, message: errMsg });
 					}
 					break;
 				}
