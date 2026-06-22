@@ -72,6 +72,22 @@ for (const variant of ["node", "node-arm64", "node-x64"]) {
 	);
 }
 
+// 3. Bundled gh and git binaries. The fetch-gh.mjs / fetch-git.mjs scripts
+//    download these during beforeDevCommand, but cargo build starts in
+//    parallel and needs the directories to EXIST (glob patterns in
+//    bundle.resources). Create stub placeholders if the fetch hasn't
+//    finished yet; the real download overwrites them.
+for (const tool of ["gh", "git"]) {
+	// Create the directory with a stub that explains what happened.
+	const stubContent = isWin
+		? `@echo off\r\necho ${tool} stub is a dev placeholder — the fetch script hasn't completed yet. 1>&2\r\nexit /b 1\r\n`
+		: `#!/bin/bash\necho "${tool} stub is a dev placeholder — the fetch script hasn't completed yet." >&2\nexit 1\n`;
+
+	for (const variant of [tool, `${tool}-arm64`, `${tool}-x64`]) {
+		ensure(join("binaries", tool, variant), stubContent, { executable: true });
+	}
+}
+
 if (created === 0) {
 	console.log("[ensure-dev-resources] all bundle resources present — nothing to do.");
 } else {
