@@ -26,7 +26,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+
+/** Tracks the in-flight `gh auth login` device-flow process, if any. */
+let ghAuthProc: ChildProcess | null = null;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timeout configuration
@@ -402,9 +405,22 @@ interface GhOrganizationsCommand {
 	id: string;
 }
 
-/** Launch gh auth login --web (opens browser for OAuth). */
+/** Launch gh auth login --web device flow. Returns {code, url}. */
 interface GhAuthLoginCommand {
 	type: "gh_auth_login";
+	id: string;
+	scopes?: string;
+}
+
+/** Cancel a pending gh auth login device flow. */
+interface GhAuthCancelCommand {
+	type: "gh_auth_cancel";
+	id: string;
+}
+
+/** Sign out of GitHub (gh auth logout). */
+interface GhAuthLogoutCommand {
+	type: "gh_auth_logout";
 	id: string;
 }
 
@@ -749,7 +765,9 @@ type Command =
 	| UiResponseCommand
 	| GhAuthStatusCommand
 	| GhOrganizationsCommand
-	| GhAuthLoginCommand;
+	| GhAuthLoginCommand
+	| GhAuthCancelCommand
+	| GhAuthLogoutCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -2956,64 +2974,181 @@ async function main() {
 				// Returns avatars, login names, roles. Used by the GitHub App UI.
 				case "gh_organizations": {
 					try {
-						const userRaw = execFileSync("gh", ["api", "user", "--jq", '{login, name, avatar_url, email}'], {
-							encoding: "utf-8",
-							timeout: 5000,
-						});
-						const orgsRaw = execFileSync("gh", ["api", "user/memberships/orgs", "--jq", "[.[] | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]"], {
-							encoding: "utf-8",
-							timeout: 5000,
-						});
+						const userRaw = execFileSync(
+							"gh",
+							["api", "user", "--jq", "{login, name, avatar_url, email}"],
+							{ encoding: "utf-8", timeout: 5000 },
+						);
 						const user = JSON.parse(userRaw);
-						const orgs = JSON.parse(orgsRaw);
 
-						// Count total repos
-						const reposRaw = execFileSync("gh", ["api", "user/repos", "--jq", "length", "--limit", "1"], {
-							encoding: "utf-8",
-							timeout: 5000,
-						});
-						const totalRepos = parseInt(reposRaw.trim(), 10) || 0;
+						// Organizations — only active memberships, with role + avatar.
+						let orgs: Array<{ login: string; role: string; avatar_url: string }> = [];
+						try {
+							const orgsRaw = execFileSync(
+								"gh",
+								[
+									"api", "user/memberships/orgs", "--paginate", "--jq",
+									'[.[] | select(.state == "active") | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]',
+								],
+								{ encoding: "utf-8", timeout: 8000 },
+							);
+							// --paginate concatenates one JSON array per page; merge them.
+							orgs = orgsRaw
+								.split("\n")
+								.filter((l) => l.trim().startsWith("["))
+								.flatMap((l) => JSON.parse(l));
+						} catch (e: unknown) {
+							log("gh_organizations: org fetch failed: %s", e instanceof Error ? e.message : String(e));
+						}
+
+						// Accurate repo total (incl. private) via GraphQL viewer.
+						let totalRepos = 0;
+						try {
+							const reposRaw = execFileSync(
+								"gh",
+								[
+									"api", "graphql", "-f",
+									"query={viewer{repositories{totalCount}}}",
+									"--jq", ".data.viewer.repositories.totalCount",
+								],
+								{ encoding: "utf-8", timeout: 5000 },
+							);
+							totalRepos = parseInt(reposRaw.trim(), 10) || 0;
+						} catch {
+							totalRepos = typeof user.public_repos === "number" ? user.public_repos : 0;
+						}
+
+						// Token scopes (so the UI can show what's granted).
+						let scopes: string[] = [];
+						try {
+							const sRaw = execFileSync(
+								"gh",
+								["auth", "status", "--json", "hosts", "--jq", '.hosts["github.com"][0].scopes'],
+								{ encoding: "utf-8", timeout: 5000 },
+							);
+							scopes = sRaw.trim().split(",").map((x) => x.trim()).filter(Boolean);
+						} catch { /* ignore */ }
 
 						send({
 							type: "result",
 							id: cmd.id,
-							data: { user, orgs, totalRepos },
+							data: { user, orgs, totalRepos, scopes },
 						});
-					} catch {
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log("gh_organizations error: %s", errMsg);
 						send({ type: "error", id: cmd.id, message: "Not authenticated" });
 					}
 					break;
 				}
 
 				// ── gh_auth_login ───────────────────────────────────────
-				// Launch `gh auth login --web` which opens the browser and handles
-				// the full OAuth flow. Uses execFile (not detached) so the child
-				// inherits the sidecar's environment (DISPLAY, PATH, etc.) and
-				// can open the browser window. Returns `launched` status and any
-				// stderr output. The frontend polls gh_auth_status until done.
+				// Drive `gh auth login --web` device flow. With non-TTY stdin,
+				// gh prints a one-time code + the device URL and then polls for
+				// authorization on its own — saving the token and configuring
+				// git's credential helper when complete. We parse the code/URL
+				// and hand them to the UI, which opens the browser via Tauri
+				// (reliable across platforms) and polls gh_auth_status.
 				case "gh_auth_login": {
 					try {
-						const child = spawn("gh", ["auth", "login", "--web"], {
-							stdio: ["ignore", "ignore", "pipe"],
-							env: { ...process.env },
-						});
-						let stderr = "";
-						child.stderr?.on("data", (chunk: Buffer) => {
-							stderr += chunk.toString();
-						});
+						// Kill any previous in-flight attempt.
+						if (ghAuthProc && !ghAuthProc.killed) {
+							try { ghAuthProc.kill(); } catch { /* ignore */ }
+							ghAuthProc = null;
+						}
+
+						const scopes =
+							(cmd as GhAuthLoginCommand).scopes?.trim() ||
+							"repo,read:org,gist,workflow,read:user,project";
+
+						const child = spawn(
+							"gh",
+							[
+								"auth", "login",
+								"--hostname", "github.com",
+								"--git-protocol", "https",
+								"--web",
+								"--scopes", scopes,
+							],
+							{ stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
+						);
+						ghAuthProc = child;
+
+						let buf = "";
+						let responded = false;
+						const tryRespond = () => {
+							if (responded) return;
+							const codeMatch = buf.match(/one-time code:\s*([A-Z0-9-]+)/i);
+							if (!codeMatch) return;
+							const urlMatch = buf.match(/(https:\/\/\S*github\.com\/login\/device)/i);
+							responded = true;
+							log("gh_auth_login: device code obtained");
+							send({
+								type: "result",
+								id: cmd.id,
+								data: {
+									code: codeMatch[1],
+									url: urlMatch ? urlMatch[1] : "https://github.com/login/device",
+									scopes,
+								},
+							});
+						};
+						child.stdout?.on("data", (c: Buffer) => { buf += c.toString(); tryRespond(); });
+						child.stderr?.on("data", (c: Buffer) => { buf += c.toString(); tryRespond(); });
 						child.on("error", (err: Error) => {
 							log("gh_auth_login spawn error: %s", err.message);
-						});
-						child.on("exit", (code) => {
-							if (code !== 0 && stderr) {
-								log("gh_auth_login exit code %d: %s", code, stderr);
+							if (!responded) {
+								responded = true;
+								send({ type: "error", id: cmd.id, message: err.message });
 							}
 						});
-						log("gh_auth_login: spawned, browser should open");
-						send({ type: "result", id: cmd.id, data: { launched: true } });
+						child.on("exit", (code) => {
+							log("gh_auth_login exited code=%s", String(code));
+							if (ghAuthProc === child) ghAuthProc = null;
+						});
+
+						// Safety: if no code within 15s, report failure.
+						setTimeout(() => {
+							if (!responded) {
+								responded = true;
+								const tail = buf.slice(-300) || "no output";
+								send({
+									type: "error",
+									id: cmd.id,
+									message: `Timed out waiting for device code. gh output: ${tail}`,
+								});
+							}
+						}, 15000);
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
 						log("gh_auth_login error: %s", errMsg);
+						send({ type: "error", id: cmd.id, message: errMsg });
+					}
+					break;
+				}
+
+				// ── gh_auth_cancel ──────────────────────────────────────
+				// Abort an in-flight device-flow login.
+				case "gh_auth_cancel": {
+					if (ghAuthProc && !ghAuthProc.killed) {
+						try { ghAuthProc.kill(); } catch { /* ignore */ }
+					}
+					ghAuthProc = null;
+					send({ type: "result", id: cmd.id, data: { cancelled: true } });
+					break;
+				}
+
+				// ── gh_auth_logout ──────────────────────────────────────
+				// Sign out: revoke the stored gh token for github.com.
+				case "gh_auth_logout": {
+					try {
+						execFileSync("gh", ["auth", "logout", "--hostname", "github.com"], {
+							encoding: "utf-8",
+							timeout: 5000,
+						});
+						send({ type: "result", id: cmd.id, data: { success: true } });
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
 						send({ type: "error", id: cmd.id, message: errMsg });
 					}
 					break;

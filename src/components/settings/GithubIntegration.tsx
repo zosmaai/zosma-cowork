@@ -23,31 +23,33 @@ export function GithubIntegration({ onOpen }: { onOpen: () => void }) {
 			setConnected(res.connected);
 			if (res.connected && res.hosts?.["github.com"]) {
 				setUser(res.hosts["github.com"].user);
+				// Fetch org count for richer status (based on the live result,
+				// not the connected state var which is stale on first render).
+				try {
+					const orgRes = await invoke<{ orgs: unknown[] }>("gh_organizations");
+					setOrgCount(orgRes.orgs?.length ?? 0);
+				} catch {
+					setOrgCount(0);
+				}
 			} else {
 				setUser(null);
+				setOrgCount(0);
 			}
 		} catch {
 			setConnected(false);
 			setUser(null);
+			setOrgCount(0);
 		}
-
-		// Also fetch org count for richer status display
-		if (connected) {
-			try {
-				const orgRes = await invoke<{ orgs: unknown[] }>("gh_organizations");
-				setOrgCount(orgRes.orgs?.length ?? 0);
-			} catch {
-				setOrgCount(0);
-			}
-		}
-	}, [connected]);
+	}, []);
 
 	useEffect(() => {
 		refresh();
 	}, [refresh]);
 
 	const statusText = connected
-		? `${user ?? "Connected"} · ${orgCount} organization(s)`
+		? orgCount > 0
+			? `Connected · ${orgCount} ${orgCount === 1 ? "organization" : "organizations"}`
+			: "Connected"
 		: "Connect your GitHub account";
 
 	return (

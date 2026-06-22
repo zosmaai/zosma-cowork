@@ -1147,13 +1147,36 @@ async fn gh_organizations(s: State<'_, AppState>) -> Result<Value, String> {
     .await
 }
 
-/// GitHub: run `gh auth login --web` (opens browser for OAuth).
+/// GitHub: drive `gh auth login --web` device flow; returns {code, url}.
 #[tauri::command]
-async fn gh_auth_login(s: State<'_, AppState>) -> Result<Value, String> {
+async fn gh_auth_login(s: State<'_, AppState>, scopes: Option<String>) -> Result<Value, String> {
     let id = format!("gal-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"gh_auth_login","id":id});
+    if let Some(sc) = scopes {
+        payload["scopes"] = serde_json::json!(sc);
+    }
+    scmd_r(&s, &payload, std::time::Duration::from_secs(20)).await
+}
+
+/// GitHub: cancel an in-flight device-flow login.
+#[tauri::command]
+async fn gh_auth_cancel(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gac-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"gh_auth_login","id":id}),
+        &serde_json::json!({"type":"gh_auth_cancel","id":id}),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+}
+
+/// GitHub: sign out (gh auth logout for github.com).
+#[tauri::command]
+async fn gh_auth_logout(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("glo-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"gh_auth_logout","id":id}),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -2363,6 +2386,8 @@ pub fn run() {
             gh_auth_status,
             gh_organizations,
             gh_auth_login,
+            gh_auth_cancel,
+            gh_auth_logout,
             google_get_status,
             google_disconnect,
             google_get_prefs,
