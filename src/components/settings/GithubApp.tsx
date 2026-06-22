@@ -8,12 +8,12 @@
  * gh_auth_status until connected.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { useGithub } from "@/hooks/useGithub";
 import { openExternalUrl } from "@/lib/utils";
 import {
 	Check,
-	ChevronLeft,
 	ChevronDown,
+	ChevronLeft,
 	Copy,
 	ExternalLink,
 	GitBranch,
@@ -28,33 +28,32 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Org {
-	login: string;
-	role: string;
-	avatar_url: string;
-}
-
-interface GitHubInfo {
-	user: { login: string; name: string | null; avatar_url: string; email: string | null };
-	orgs: Org[];
-	totalRepos: number;
-	scopes: string[];
-}
-
-interface GitHubHost {
-	user: string;
-}
-
-type Phase = "idle" | "connecting" | "waiting_auth" | "connected";
+type Phase = "idle" | "connecting" | "waiting_auth";
 
 // Default scopes requested — enough for issues, PRs, projects, Actions.
 const DEFAULT_SCOPES = "repo,read:org,gist,workflow,read:user,project";
 
 const CAPABILITIES = [
-	{ icon: GitBranch, title: "Repos & Code", desc: "Clone, branch, commit, and push over HTTPS — no SSH keys needed." },
-	{ icon: GitPullRequest, title: "Issues & PRs", desc: "Create, review, comment on, and merge pull requests and issues." },
-	{ icon: Play, title: "Actions", desc: "Trigger workflows, watch runs, and read logs from CI/CD." },
-	{ icon: Users, title: "Projects & Orgs", desc: "Manage project boards and work across your organizations." },
+	{
+		icon: GitBranch,
+		title: "Repos & Code",
+		desc: "Clone, branch, commit, and push over HTTPS — no SSH keys needed.",
+	},
+	{
+		icon: GitPullRequest,
+		title: "Issues & PRs",
+		desc: "Create, review, comment on, and merge pull requests and issues.",
+	},
+	{
+		icon: Play,
+		title: "Actions",
+		desc: "Trigger workflows, watch runs, and read logs from CI/CD.",
+	},
+	{
+		icon: Users,
+		title: "Projects & Orgs",
+		desc: "Manage project boards and work across your organizations.",
+	},
 ];
 
 const SCOPE_LABELS: Record<string, string> = {
@@ -70,8 +69,10 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 export function GithubApp({ onBack }: { onBack: () => void }) {
+	const store = useGithub();
+	const { status, info, loading } = store;
+
 	const [phase, setPhase] = useState<Phase>("idle");
-	const [info, setInfo] = useState<GitHubInfo | null>(null);
 	const [code, setCode] = useState<string | null>(null);
 	const [deviceUrl, setDeviceUrl] = useState("https://github.com/login/device");
 	const [error, setError] = useState<string | null>(null);
@@ -82,33 +83,26 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 	const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const clearTimers = useCallback(() => {
-		if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-		if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+		if (pollRef.current) {
+			clearInterval(pollRef.current);
+			pollRef.current = null;
+		}
+		if (timeoutRef.current) {
+			clearTimeout(timeoutRef.current);
+			timeoutRef.current = null;
+		}
 	}, []);
 
-	// Probe auth status + load account info.
-	const refresh = useCallback(async () => {
-		try {
-			const s = await invoke<{ connected: boolean; hosts?: Record<string, GitHubHost> }>(
-				"gh_auth_status",
-			);
-			if (s.connected) {
-				const data = await invoke<GitHubInfo>("gh_organizations");
-				setInfo(data);
-				setPhase("connected");
-				clearTimers();
-				return true;
-			}
-		} catch {
-			/* not connected */
-		}
-		return false;
-	}, [clearTimers]);
-
+	// When the store reports connected (e.g. polling detected auth), leave
+	// the auth sub-flow and stop timers.
 	useEffect(() => {
-		refresh();
-		return () => clearTimers();
-	}, [refresh, clearTimers]);
+		if (status === "connected") {
+			setPhase("idle");
+			clearTimers();
+		}
+	}, [status, clearTimers]);
+
+	useEffect(() => () => clearTimers(), [clearTimers]);
 
 	// Start the device-code flow.
 	const handleConnect = useCallback(async () => {
@@ -116,9 +110,7 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 		setError(null);
 		setPhase("connecting");
 		try {
-			const res = await invoke<{ code: string; url: string }>("gh_auth_login", {
-				scopes: DEFAULT_SCOPES,
-			});
+			const res = await store.connect(DEFAULT_SCOPES);
 			setCode(res.code);
 			setDeviceUrl(res.url);
 			setPhase("waiting_auth");
@@ -127,37 +119,43 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 			try {
 				await navigator.clipboard?.writeText(res.code);
 				setCopied(true);
-			} catch { /* clipboard may be blocked */ }
+			} catch {
+				/* clipboard may be blocked */
+			}
 			openExternalUrl(res.url);
 
-			// Poll for completion.
-			pollRef.current = setInterval(refresh, 3000);
-			timeoutRef.current = setTimeout(() => {
-				clearTimers();
-				setError("Authorization timed out. Please try again.");
-				setPhase("idle");
-			}, 5 * 60 * 1000);
+			// Poll for completion via the shared store.
+			pollRef.current = setInterval(() => {
+				void store.refresh();
+			}, 3000);
+			timeoutRef.current = setTimeout(
+				() => {
+					clearTimers();
+					setError("Authorization timed out. Please try again.");
+					setPhase("idle");
+				},
+				5 * 60 * 1000,
+			);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
 			setPhase("idle");
 		} finally {
 			setBusy(false);
 		}
-	}, [refresh, clearTimers]);
+	}, [store, clearTimers]);
 
 	const cancel = useCallback(async () => {
 		clearTimers();
-		try { await invoke("gh_auth_cancel"); } catch { /* ignore */ }
+		await store.cancel();
 		setPhase("idle");
-	}, [clearTimers]);
+	}, [store, clearTimers]);
 
 	const disconnect = useCallback(async () => {
 		setBusy(true);
-		try { await invoke("gh_auth_logout"); } catch { /* ignore */ }
-		setInfo(null);
+		await store.disconnect();
 		setPhase("idle");
 		setBusy(false);
-	}, []);
+	}, [store]);
 
 	const copyCode = useCallback(() => {
 		if (code) {
@@ -178,8 +176,22 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 		</button>
 	);
 
+	// ─────────────────────── Loading skeleton ───────────────────────
+	// Show while we don't yet know the state, or we're connected but the
+	// account details are still loading — never flash the Connect screen.
+	const showSkeleton =
+		phase === "idle" && ((loading && status === "unknown") || (status === "connected" && !info));
+	if (showSkeleton) {
+		return (
+			<section className="max-w-3xl">
+				{Header}
+				<GithubSkeleton />
+			</section>
+		);
+	}
+
 	// ─────────────────────────── Connected ───────────────────────────
-	if (phase === "connected" && info) {
+	if (status === "connected" && info && phase === "idle") {
 		return (
 			<section className="max-w-3xl">
 				{Header}
@@ -205,9 +217,14 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					Account
 				</h3>
 				<div className="glass px-3.5 py-3 flex items-center gap-3 mb-5">
-					<Avatar src={info.user.avatar_url} fallback={<User className="w-4 h-4 text-muted-foreground" />} />
+					<Avatar
+						src={info.user.avatar_url}
+						fallback={<User className="w-4 h-4 text-muted-foreground" />}
+					/>
 					<div className="flex-1 min-w-0">
-						<div className="text-[13px] font-semibold text-foreground truncate">@{info.user.login}</div>
+						<div className="text-[13px] font-semibold text-foreground truncate">
+							@{info.user.login}
+						</div>
 						{info.user.name && (
 							<div className="text-[11px] text-muted-foreground truncate">{info.user.name}</div>
 						)}
@@ -227,9 +244,14 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 						<div className="space-y-2 mb-5">
 							{info.orgs.map((org) => (
 								<div key={org.login} className="glass px-3.5 py-3 flex items-center gap-3">
-									<Avatar src={org.avatar_url} fallback={<Users className="w-4 h-4 text-muted-foreground" />} />
+									<Avatar
+										src={org.avatar_url}
+										fallback={<Users className="w-4 h-4 text-muted-foreground" />}
+									/>
 									<div className="flex-1 min-w-0">
-										<div className="text-[13px] font-semibold text-foreground truncate">@{org.login}</div>
+										<div className="text-[13px] font-semibold text-foreground truncate">
+											@{org.login}
+										</div>
 									</div>
 									<span className="text-[11px] text-muted-foreground capitalize">
 										{org.role === "admin" ? "Owner" : org.role}
@@ -263,9 +285,9 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 
 				<div className="glass px-4 py-3.5">
 					<p className="text-[12px] text-foreground/80 leading-relaxed">
-						<strong>You're all set.</strong> Just ask the agent in chat — e.g. "open a PR
-						for this branch", "list my open issues in zosmaai/cowork", or "what failed in
-						the last CI run". Git operations over HTTPS use your token automatically.
+						<strong>You're all set.</strong> Just ask the agent in chat — e.g. "open a PR for this
+						branch", "list my open issues in zosmaai/cowork", or "what failed in the last CI run".
+						Git operations over HTTPS use your token automatically.
 					</p>
 				</div>
 			</section>
@@ -350,9 +372,9 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					<div className="flex-1 min-w-0">
 						<h3 className="text-[15px] font-semibold text-foreground mb-1">GitHub</h3>
 						<p className="text-[12px] text-muted-foreground leading-relaxed mb-4">
-							Connect your account so the agent can work with your repos, issues, pull
-							requests, projects, and Actions. Authentication uses GitHub's own device
-							flow — <strong>no personal access token to create or paste.</strong>
+							Connect your account so the agent can work with your repos, issues, pull requests,
+							projects, and Actions. Authentication uses GitHub's own device flow —{" "}
+							<strong>no personal access token to create or paste.</strong>
 						</p>
 						<button
 							type="button"
@@ -360,7 +382,11 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 							disabled={busy}
 							className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
 						>
-							{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+							{busy ? (
+								<Loader2 className="w-4 h-4 animate-spin" />
+							) : (
+								<RefreshCw className="w-4 h-4" />
+							)}
 							{busy ? "Starting…" : "Connect with GitHub"}
 						</button>
 						<p className="mt-2.5 text-[11px] text-muted-foreground">
@@ -396,9 +422,9 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 			<div className="glass px-4 py-3 mb-4 flex items-start gap-2.5">
 				<Shield className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
 				<p className="text-[11px] text-muted-foreground leading-relaxed">
-					You'll grant access to <strong>repositories, organizations, gists, workflows,
-					profile,</strong> and <strong>projects</strong>. You can review and revoke this
-					anytime in your{" "}
+					You'll grant access to{" "}
+					<strong>repositories, organizations, gists, workflows, profile,</strong> and{" "}
+					<strong>projects</strong>. You can review and revoke this anytime in your{" "}
 					<button
 						type="button"
 						onClick={() => openExternalUrl("https://github.com/settings/applications")}
@@ -416,7 +442,9 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 				onClick={() => setShowManual((v) => !v)}
 				className="w-full glass px-4 py-3 flex items-center justify-between hover:bg-card/60 transition-colors"
 			>
-				<span className="text-[12px] font-medium text-foreground">Prefer to set it up yourself?</span>
+				<span className="text-[12px] font-medium text-foreground">
+					Prefer to set it up yourself?
+				</span>
 				<ChevronDown
 					className={`w-4 h-4 text-muted-foreground transition-transform ${showManual ? "rotate-180" : ""}`}
 				/>
@@ -424,16 +452,15 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 			{showManual && (
 				<div className="glass px-4 py-3.5 mt-2 space-y-2.5">
 					<p className="text-[11px] text-muted-foreground leading-relaxed">
-						Cowork bundles the GitHub CLI (<code className="text-foreground">gh</code>) and
-						git. If you'd rather authenticate from a terminal, run:
+						Cowork bundles the GitHub CLI (<code className="text-foreground">gh</code>) and git. If
+						you'd rather authenticate from a terminal, run:
 					</p>
 					<code className="block px-3 py-2 bg-background border border-border rounded-lg text-[11px] font-mono select-all">
 						gh auth login --web --scopes "{DEFAULT_SCOPES}"
 					</code>
 					<p className="text-[11px] text-muted-foreground leading-relaxed">
-						This opens the same device flow, saves your token, and configures git's
-						credential helper. Come back here and it'll show as connected. Learn more in
-						the{" "}
+						This opens the same device flow, saves your token, and configures git's credential
+						helper. Come back here and it'll show as connected. Learn more in the{" "}
 						<button
 							type="button"
 							onClick={() => openExternalUrl("https://cli.github.com/manual/gh_auth_login")}
@@ -449,6 +476,38 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 	);
 }
 
+function GithubSkeleton() {
+	return (
+		<div className="animate-pulse">
+			{/* status bar */}
+			<div className="glass px-4 py-3 mb-4 flex items-center justify-between">
+				<div className="h-3.5 w-32 rounded bg-muted" />
+				<div className="h-3 w-16 rounded bg-muted/70" />
+			</div>
+			{/* account label */}
+			<div className="h-2.5 w-20 rounded bg-muted/70 mb-2" />
+			<div className="glass px-3.5 py-3 flex items-center gap-3 mb-5">
+				<div className="w-9 h-9 rounded-full bg-muted shrink-0" />
+				<div className="flex-1 space-y-1.5">
+					<div className="h-3 w-28 rounded bg-muted" />
+					<div className="h-2.5 w-20 rounded bg-muted/70" />
+				</div>
+				<div className="h-6 w-10 rounded bg-muted/70" />
+			</div>
+			{/* orgs label */}
+			<div className="h-2.5 w-24 rounded bg-muted/70 mb-2" />
+			<div className="space-y-2">
+				{[0, 1, 2].map((i) => (
+					<div key={i} className="glass px-3.5 py-3 flex items-center gap-3">
+						<div className="w-9 h-9 rounded-full bg-muted shrink-0" />
+						<div className="h-3 w-24 rounded bg-muted" />
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
 function Avatar({ src, fallback }: { src?: string; fallback: React.ReactNode }) {
 	return (
 		<div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">
@@ -459,7 +518,8 @@ function Avatar({ src, fallback }: { src?: string; fallback: React.ReactNode }) 
 
 function GithubGlyph() {
 	return (
-		<svg width="22" height="22" viewBox="0 0 16 16" fill="white" aria-hidden>
+		<svg width="22" height="22" viewBox="0 0 16 16" fill="white" role="img" aria-label="GitHub">
+			<title>GitHub</title>
 			<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
 		</svg>
 	);

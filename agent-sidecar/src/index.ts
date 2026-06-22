@@ -26,10 +26,47 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
 
 /** Tracks the in-flight `gh auth login` device-flow process, if any. */
 let ghAuthProc: ChildProcess | null = null;
+
+/** Promisified execFile for running gh calls concurrently. */
+const execFileAsync = promisify(execFile);
+
+/** Run a gh command, returning trimmed stdout (or null on failure). */
+async function ghJson(args: string[], timeout = 8000): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync("gh", args, { timeout, encoding: "utf-8" });
+		return stdout.trim();
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Short-lived cache for GitHub account/org data so revisiting the Apps
+ * tab is instant. gh calls each spawn a process (~0.5s); caching avoids
+ * re-running them on every mount. Invalidated on login/logout.
+ */
+interface GhCacheEntry {
+	data: unknown;
+	at: number;
+}
+const ghCache = new Map<string, GhCacheEntry>();
+const GH_CACHE_TTL = 60_000; // 60s
+function ghCacheGet(key: string): unknown | undefined {
+	const e = ghCache.get(key);
+	if (e && Date.now() - e.at < GH_CACHE_TTL) return e.data;
+	return undefined;
+}
+function ghCacheSet(key: string, data: unknown): void {
+	ghCache.set(key, { data, at: Date.now() });
+}
+function ghCacheClear(): void {
+	ghCache.clear();
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timeout configuration
@@ -2945,15 +2982,22 @@ async function main() {
 
 				// ── gh_auth_status ────────────────────────────────────────
 				// Check if GitHub CLI is authenticated. Returns connected state
-				// and host info. Used by the GitHub App UI.
+				// and host info. Cached for 60s. Used by the GitHub App UI.
 				case "gh_auth_status": {
+					const cached = ghCacheGet("status");
+					if (cached !== undefined) {
+						send({ type: "result", id: cmd.id, data: cached });
+						break;
+					}
+					const status = await ghJson(["auth", "status", "--json", "hosts"], 5000);
+					if (!status) {
+						// Don't cache the disconnected state — login polling needs
+						// a fresh probe to detect the moment auth completes.
+						send({ type: "result", id: cmd.id, data: { connected: false } });
+						break;
+					}
 					try {
-						const status = execFileSync("gh", ["auth", "status", "--json", "hosts"], {
-							encoding: "utf-8",
-							timeout: 5000,
-						});
 						const raw = JSON.parse(status);
-						// gh returns hosts as arrays per hostname
 						const hosts: Record<string, { user: string }> = {};
 						for (const [hostname, entries] of Object.entries(raw.hosts ?? {})) {
 							const arr = entries as Array<{ login?: string }>;
@@ -2962,7 +3006,10 @@ async function main() {
 							}
 						}
 						const connected = Object.keys(hosts).length > 0;
-						send({ type: "result", id: cmd.id, data: { connected, hosts } });
+						const data = { connected, hosts };
+						// Only cache the positive (connected) result.
+						if (connected) ghCacheSet("status", data);
+						send({ type: "result", id: cmd.id, data });
 					} catch {
 						send({ type: "result", id: cmd.id, data: { connected: false } });
 					}
@@ -2970,73 +3017,57 @@ async function main() {
 				}
 
 				// ── gh_organizations ────────────────────────────────────
-				// List personal account + organizations for the authenticated user.
-				// Returns avatars, login names, roles. Used by the GitHub App UI.
+				// Personal account + organizations + repo count + scopes.
+				// All gh calls run concurrently (each spawns a ~0.5s process)
+				// and the result is cached for 60s. Used by the GitHub App UI.
 				case "gh_organizations": {
-					try {
-						const userRaw = execFileSync(
-							"gh",
-							["api", "user", "--jq", "{login, name, avatar_url, email}"],
-							{ encoding: "utf-8", timeout: 5000 },
-						);
-						const user = JSON.parse(userRaw);
+					const cachedOrg = ghCacheGet("organizations");
+					if (cachedOrg !== undefined) {
+						send({ type: "result", id: cmd.id, data: cachedOrg });
+						break;
+					}
+					// Run all four gh calls in parallel.
+					const [userRaw, orgsRaw, reposRaw, scopesRaw] = await Promise.all([
+						ghJson(["api", "user", "--jq", "{login, name, avatar_url, email, public_repos}"], 6000),
+						ghJson(
+							[
+								"api", "user/memberships/orgs", "--paginate", "--jq",
+								'[.[] | select(.state == "active") | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]',
+							],
+							8000,
+						),
+						ghJson(
+							["api", "graphql", "-f", "query={viewer{repositories{totalCount}}}", "--jq", ".data.viewer.repositories.totalCount"],
+							6000,
+						),
+						ghJson(["auth", "status", "--json", "hosts", "--jq", '.hosts["github.com"][0].scopes'], 5000),
+					]);
 
-						// Organizations — only active memberships, with role + avatar.
+					if (!userRaw) {
+						send({ type: "error", id: cmd.id, message: "Not authenticated" });
+						break;
+					}
+					try {
+						const user = JSON.parse(userRaw);
 						let orgs: Array<{ login: string; role: string; avatar_url: string }> = [];
-						try {
-							const orgsRaw = execFileSync(
-								"gh",
-								[
-									"api", "user/memberships/orgs", "--paginate", "--jq",
-									'[.[] | select(.state == "active") | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]',
-								],
-								{ encoding: "utf-8", timeout: 8000 },
-							);
-							// --paginate concatenates one JSON array per page; merge them.
+						if (orgsRaw) {
 							orgs = orgsRaw
 								.split("\n")
 								.filter((l) => l.trim().startsWith("["))
 								.flatMap((l) => JSON.parse(l));
-						} catch (e: unknown) {
-							log("gh_organizations: org fetch failed: %s", e instanceof Error ? e.message : String(e));
 						}
-
-						// Accurate repo total (incl. private) via GraphQL viewer.
-						let totalRepos = 0;
-						try {
-							const reposRaw = execFileSync(
-								"gh",
-								[
-									"api", "graphql", "-f",
-									"query={viewer{repositories{totalCount}}}",
-									"--jq", ".data.viewer.repositories.totalCount",
-								],
-								{ encoding: "utf-8", timeout: 5000 },
-							);
-							totalRepos = parseInt(reposRaw.trim(), 10) || 0;
-						} catch {
-							totalRepos = typeof user.public_repos === "number" ? user.public_repos : 0;
-						}
-
-						// Token scopes (so the UI can show what's granted).
-						let scopes: string[] = [];
-						try {
-							const sRaw = execFileSync(
-								"gh",
-								["auth", "status", "--json", "hosts", "--jq", '.hosts["github.com"][0].scopes'],
-								{ encoding: "utf-8", timeout: 5000 },
-							);
-							scopes = sRaw.trim().split(",").map((x) => x.trim()).filter(Boolean);
-						} catch { /* ignore */ }
-
-						send({
-							type: "result",
-							id: cmd.id,
-							data: { user, orgs, totalRepos, scopes },
-						});
+						const totalRepos =
+							(reposRaw && parseInt(reposRaw, 10)) ||
+							(typeof user.public_repos === "number" ? user.public_repos : 0);
+						const scopes = scopesRaw
+							? scopesRaw.split(",").map((x) => x.trim()).filter(Boolean)
+							: [];
+						const data = { user, orgs, totalRepos, scopes };
+						ghCacheSet("organizations", data);
+						send({ type: "result", id: cmd.id, data });
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
-						log("gh_organizations error: %s", errMsg);
+						log("gh_organizations parse error: %s", errMsg);
 						send({ type: "error", id: cmd.id, message: "Not authenticated" });
 					}
 					break;
@@ -3051,6 +3082,8 @@ async function main() {
 				// (reliable across platforms) and polls gh_auth_status.
 				case "gh_auth_login": {
 					try {
+						// Invalidate cached status/org data so polling sees fresh state.
+						ghCacheClear();
 						// Kill any previous in-flight attempt.
 						if (ghAuthProc && !ghAuthProc.killed) {
 							try { ghAuthProc.kill(); } catch { /* ignore */ }
@@ -3105,6 +3138,9 @@ async function main() {
 						child.on("exit", (code) => {
 							log("gh_auth_login exited code=%s", String(code));
 							if (ghAuthProc === child) ghAuthProc = null;
+							// Auth just completed (or failed) — drop stale cache so the
+							// next status poll reflects the new connection immediately.
+							ghCacheClear();
 						});
 
 						// Safety: if no code within 15s, report failure.
@@ -3146,6 +3182,7 @@ async function main() {
 							encoding: "utf-8",
 							timeout: 5000,
 						});
+						ghCacheClear();
 						send({ type: "result", id: cmd.id, data: { success: true } });
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
