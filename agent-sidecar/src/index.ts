@@ -26,6 +26,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timeout configuration
@@ -141,6 +142,7 @@ import {
 	saveCustomProvider,
 } from "./custom-providers.js";
 import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
+import { activateBundledBinaries, checkGitAvailable } from "./bundled-binaries.js";
 import {
 	customInstructionsBlock,
 	loadInstructions,
@@ -386,6 +388,26 @@ interface GetGooglePrefsCommand {
 }
 
 /** Report which app extensions the selection needs + whether they're installed. */
+// ── GitHub App commands ─────────────────────────────────────────
+
+/** Probe GitHub CLI auth status. */
+interface GhAuthStatusCommand {
+	type: "gh_auth_status";
+	id: string;
+}
+
+/** List GitHub user + organizations. */
+interface GhOrganizationsCommand {
+	type: "gh_organizations";
+	id: string;
+}
+
+/** Start GitHub device-code auth flow. */
+interface GhStartAuthCommand {
+	type: "gh_start_auth";
+	id: string;
+}
+
 interface GetGoogleAppStatusCommand {
 	type: "get_google_app_status";
 	id: string;
@@ -724,7 +746,10 @@ type Command =
 	| StartRemoteCommand
 	| StopRemoteCommand
 	| GetRemoteStatusCommand
-	| UiResponseCommand;
+	| UiResponseCommand
+	| GhAuthStatusCommand
+	| GhOrganizationsCommand
+	| GhStartAuthCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -1579,6 +1604,10 @@ async function main() {
 
 	async function initAgent(zosmaDirPath: string, workspace?: string) {
 		zosmaDir = zosmaDirPath;
+		// Activate bundled binaries (git, gh) before anything else — enriches
+		// PATH so the pi session and spawned tools find them transparently.
+		const bundledTools = activateBundledBinaries();
+
 		// A caller-supplied workspace folder overrides the default. Resolved &
 		// created here so the rest of init binds tools/sessions to a real dir.
 		if (workspace !== undefined) {
@@ -2892,6 +2921,101 @@ async function main() {
 							id: cmd.id,
 							message: `Failed to install Google app extensions: ${errMsg}`,
 						});
+					}
+					break;
+				}
+
+				// ── gh_auth_status ────────────────────────────────────────
+				// Check if GitHub CLI is authenticated. Returns connected state
+				// and host info (username per host). Used by the GitHub App UI.
+				case "gh_auth_status": {
+					try {
+						const status = execFileSync("gh", ["auth", "status", "--show-token", "--json"], {
+							encoding: "utf-8",
+							timeout: 5000,
+						});
+						const data = JSON.parse(status);
+						send({ type: "result", id: cmd.id, data: { connected: true, hosts: data.hosts } });
+					} catch {
+						send({ type: "result", id: cmd.id, data: { connected: false } });
+					}
+					break;
+				}
+
+				// ── gh_organizations ────────────────────────────────────
+				// List personal account + organizations for the authenticated user.
+				// Returns avatars, login names, roles. Used by the GitHub App UI.
+				case "gh_organizations": {
+					try {
+						const userRaw = execFileSync("gh", ["api", "user", "--jq", '{login, name, avatar_url, email}'], {
+							encoding: "utf-8",
+							timeout: 5000,
+						});
+						const orgsRaw = execFileSync("gh", ["api", "user/memberships/orgs", "--jq", "[.[] | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]"], {
+							encoding: "utf-8",
+							timeout: 5000,
+						});
+						const user = JSON.parse(userRaw);
+						const orgs = JSON.parse(orgsRaw);
+
+						// Count total repos
+						const reposRaw = execFileSync("gh", ["api", "user/repos", "--jq", "length", "--limit", "1"], {
+							encoding: "utf-8",
+							timeout: 5000,
+						});
+						const totalRepos = parseInt(reposRaw.trim(), 10) || 0;
+
+						send({
+							type: "result",
+							id: cmd.id,
+							data: { user, orgs, totalRepos },
+						});
+					} catch {
+						send({ type: "error", id: cmd.id, message: "Not authenticated" });
+					}
+					break;
+				}
+
+				// ── gh_start_auth ───────────────────────────────────────
+				// Start the GitHub device-code auth flow. Spawns `gh auth login`,
+				// captures the device code, returns {code, url} for the UI to show.
+				case "gh_start_auth": {
+					try {
+						const proc = spawn("gh", ["auth", "login", "--web"], {
+							stdio: ["pipe", "pipe", "pipe"],
+						});
+
+						let output = "";
+						proc.stdout?.on("data", (chunk: Buffer) => {
+							output += chunk.toString();
+						});
+						proc.stderr?.on("data", (chunk: Buffer) => {
+							output += chunk.toString();
+						});
+
+						// Try to capture device code from the output
+						const codeMatch = output.match(/code:\s*([A-Z0-9-]+)/i);
+						const urlMatch = output.match(/(https?:\/\/[^\s]+login\/device)/);
+
+						// Don't await — the process stays alive until auth completes.
+						// We poll gh_auth_status from the frontend instead.
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								code: codeMatch?.[1] ?? null,
+								url: urlMatch?.[1] ?? "https://github.com/login/device",
+							},
+						});
+
+						// Wait for completion then notify UI
+						await new Promise<void>((resolve) => {
+							proc.on("exit", () => resolve());
+						});
+						send({ type: "event", event: { kind: "gh_auth_completed" } });
+					} catch (err: unknown) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						send({ type: "error", id: cmd.id, message: `Auth failed: ${errMsg}` });
 					}
 					break;
 				}

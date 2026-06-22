@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "node scripts/ensure-dev-resources.mjs && npm run dev:frontend",
-    "beforeBuildCommand": "node src-tauri/scripts/fetch-node.mjs && node scripts/prebuild.mjs && npm run build:frontend"
+    "beforeBuildCommand": "node src-tauri/scripts/fetch-node.mjs && node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/prebuild.mjs && npm run build:frontend"
   },
   "app": {
     "windows": [
@@ -44,7 +44,7 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "resources": ["agent-sidecar/index.cjs", "binaries/node", "binaries/node-arm64", "binaries/node-x64"],
+    "resources": ["agent-sidecar/index.cjs", "binaries/node", "binaries/node-arm64", "binaries/node-x64", "binaries/gh/**", "binaries/git/**"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
