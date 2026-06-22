@@ -171,6 +171,7 @@ import { extractChatMessages } from "./extract-chat-messages.js";
 // it behave like the other subscription logins via the existing start_oauth /
 // get_auth_status commands. See gemini-antigravity/ for the ToS-risk caveat.
 import { registerGeminiAntigravity } from "./gemini-antigravity/index.js";
+import zosmaGmail from "./gmail/extension.js";
 import zosmaGoogleCalendar from "./google-calendar/extension.js";
 import zosmaGoogleWorkspace from "./google-workspace/extension.js";
 import {
@@ -212,7 +213,7 @@ import piAnthropicMessages from "./vendor/anthropic-messages/extensions/index.js
  * the owned versions — which refresh via the Zosma broker with no client secret
  * — are the single source of truth and tool names don't double-register.
  */
-const SUPERSEDED_GOOGLE_PACKAGES = ["pi-google-workspace"];
+const SUPERSEDED_GOOGLE_PACKAGES = ["pi-google-workspace", "@e9n/pi-gmail"];
 // Loads pi's disk/npm/git extensions via virtualModules-backed jiti so they
 // work in the bundled sidecar (no node_modules beside it). See #147.
 import { buildExtensionFactories, readPiPackages } from "./disk-extension-loader.js";
@@ -1573,6 +1574,7 @@ async function main() {
 				zosmaOfficeDocs,
 				zosmaGoogleCalendar,
 				zosmaGoogleWorkspace,
+				zosmaGmail,
 				...diskExtensionFactories,
 			],
 			// Cowork self-knowledge (#263): materialize the ABOUT doc under the

@@ -1,0 +1,15 @@
+The tool surface in this directory (tool.ts, client.ts, formatter.ts, types.ts)
+is vendored from the MIT-licensed npm package `@e9n/pi-gmail`.
+
+  Copyright (c) Espen Nilsen <hi@e9n.dev>
+  SPDX-License-Identifier: MIT
+
+Modifications by ZOSMAAI: the upstream OAuth layer (settings.json clientId/
+clientSecret + a separate ~/.pi/agent/db/gmail-tokens.json store) has been
+removed and replaced with the shared broker-aware token core in
+../google-auth/oauth-access.ts, so Gmail uses the SAME brokered
+~/.pi/agent/google-workspace/oauth.json as the other Google tools (one consent,
+no client secret on disk). The account email is resolved live from the Gmail
+users/me/profile endpoint rather than a stored field.
+
+Full MIT license text: https://opensource.org/license/mit
