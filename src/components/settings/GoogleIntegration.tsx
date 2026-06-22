@@ -148,6 +148,7 @@ const EMPTY_PREFS: ScopePrefs = {
 
 export function GoogleIntegration() {
 	const [status, setStatus] = useState<GoogleStatus | null>(null);
+	const [statusLoading, setStatusLoading] = useState(true);
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [error, setError] = useState<string | null>(null);
 	const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
@@ -175,6 +176,8 @@ export function GoogleIntegration() {
 			if (data.connected) setConnectedEmail(data.email);
 		} catch {
 			// transient — sidecar may not be ready
+		} finally {
+			setStatusLoading(false);
 		}
 	}, []);
 
@@ -318,6 +321,9 @@ export function GoogleIntegration() {
 
 	// ── Derived ─────────────────────────────────────────────────────
 	const connected = status?.connected ?? false;
+	// First-load gate — show a skeleton instead of flashing the Connect button
+	// before we know whether the account is already connected.
+	const firstLoad = statusLoading && status === null;
 	const granted = status?.granted ?? ({} as Record<GoogleProduct, string>);
 	const inFlight = phase !== "idle" && phase !== "done";
 	const liveScopes = useMemo(() => computeScopes(matrix, prefs), [matrix, prefs]);
@@ -344,7 +350,10 @@ export function GoogleIntegration() {
 				<div className="flex items-center gap-3">
 					<span className="flex-1">
 						<span className="text-[13px] font-semibold text-foreground">Google Workspace</span>
-						{connected && connectedEmail && (
+						{firstLoad && (
+							<span className="block h-2.5 w-32 rounded bg-muted/70 animate-pulse mt-1" />
+						)}
+						{!firstLoad && connected && connectedEmail && (
 							<span className="block text-[11px] text-muted-foreground mt-0.5">
 								{connectedEmail}
 								{status?.byo && (
@@ -356,7 +365,9 @@ export function GoogleIntegration() {
 						)}
 					</span>
 
-					{connected ? (
+					{firstLoad ? (
+						<div className="h-[30px] w-24 rounded-md bg-muted/70 animate-pulse" />
+					) : connected ? (
 						<button
 							type="button"
 							onClick={handleDisconnect}
@@ -403,7 +414,7 @@ export function GoogleIntegration() {
 			</div>
 
 			{/* Not connected — show the app's required extensions + install state */}
-			{!connected && appStatus && appStatus.requirements.length > 0 && (
+			{!firstLoad && !connected && appStatus && appStatus.requirements.length > 0 && (
 				<div className="px-3.5 pb-3 pt-0 border-t border-elev-border/60">
 					<p className="pt-2.5 text-[10px] text-muted-foreground mb-1.5">
 						{needsInstall
