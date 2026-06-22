@@ -1,3 +1,0 @@
-#!/bin/bash
-echo "GitHub CLI variant 'gh-arm64' not available for this build." >&2
-exit 1
