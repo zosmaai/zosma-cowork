@@ -1147,30 +1147,14 @@ async fn gh_organizations(s: State<'_, AppState>) -> Result<Value, String> {
     .await
 }
 
-/// GitHub: start device-code auth flow.
+/// GitHub: run `gh auth login --web` (opens browser for OAuth).
 #[tauri::command]
-async fn gh_start_auth(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gsa-{}", uuid_v4());
+async fn gh_auth_login(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gal-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"gh_start_auth","id":id}),
-        std::time::Duration::from_secs(15),
-    )
-    .await
-}
-
-/// GitHub: poll for device-code authorization completion.
-#[tauri::command]
-async fn gh_poll_token(s: State<'_, AppState>, device_code: String, interval: Option<u32>) -> Result<Value, String> {
-    let id = format!("gpt-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"gh_poll_token","id":id,"device_code":device_code});
-    if let Some(iv) = interval {
-        payload["interval"] = serde_json::json!(iv);
-    }
-    scmd_r(
-        &s,
-        &payload,
-        std::time::Duration::from_secs(15),
+        &serde_json::json!({"type":"gh_auth_login","id":id}),
+        std::time::Duration::from_secs(10),
     )
     .await
 }
@@ -2378,8 +2362,7 @@ pub fn run() {
             google_connect,
             gh_auth_status,
             gh_organizations,
-            gh_start_auth,
-            gh_poll_token,
+            gh_auth_login,
             google_get_status,
             google_disconnect,
             google_get_prefs,

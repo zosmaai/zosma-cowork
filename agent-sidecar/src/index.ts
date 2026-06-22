@@ -26,7 +26,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timeout configuration
@@ -143,7 +143,6 @@ import {
 } from "./custom-providers.js";
 import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
 import { activateBundledBinaries, checkGitAvailable } from "./bundled-binaries.js";
-import { requestDeviceCode, pollForToken, saveToken } from "./github-auth.js";
 import {
 	customInstructionsBlock,
 	loadInstructions,
@@ -403,18 +402,10 @@ interface GhOrganizationsCommand {
 	id: string;
 }
 
-/** Start GitHub device-code auth flow. */
-interface GhStartAuthCommand {
-	type: "gh_start_auth";
+/** Launch gh auth login --web (opens browser for OAuth). */
+interface GhAuthLoginCommand {
+	type: "gh_auth_login";
 	id: string;
-}
-
-/** Poll for device-code authorization completion. */
-interface GhPollTokenCommand {
-	type: "gh_poll_token";
-	id: string;
-	device_code: string;
-	interval?: number;
 }
 
 interface GetGoogleAppStatusCommand {
@@ -758,8 +749,7 @@ type Command =
 	| UiResponseCommand
 	| GhAuthStatusCommand
 	| GhOrganizationsCommand
-	| GhStartAuthCommand
-	| GhPollTokenCommand;
+	| GhAuthLoginCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -2986,57 +2976,23 @@ async function main() {
 					break;
 				}
 
-				// ── gh_start_auth ───────────────────────────────────────
-				// Start GitHub device-code auth flow using the OAuth device
-				// authorization grant API. Returns {code, url} for the UI to show.
-				case "gh_start_auth": {
+				// ── gh_auth_login ───────────────────────────────────────
+				// Launch `gh auth login --web` which opens the browser and handles
+				// the full OAuth flow. gh saves the token and configures git's
+				// credential helper automatically. The frontend polls
+				// gh_auth_status to detect when auth completes.
+				case "gh_auth_login": {
 					try {
-						const device = requestDeviceCode();
-						log("gh_start_auth: device_code obtained, user_code=%s", device.user_code);
-						send({
-							type: "result",
-							id: cmd.id,
-							data: {
-								code: device.user_code,
-								url: device.verification_uri,
-								device_code: device.device_code,
-								interval: device.interval,
-							},
+						const child = spawn("gh", ["auth", "login", "--web"], {
+							stdio: "ignore",
+							detached: true,
 						});
+						child.unref();
+						log("gh_auth_login: spawned, browser should open");
+						send({ type: "result", id: cmd.id, data: { launched: true } });
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
-						log("gh_start_auth error: %s", errMsg);
-						send({ type: "error", id: cmd.id, message: errMsg });
-					}
-					break;
-				}
-
-				// ── gh_poll_token ───────────────────────────────────────
-				// Poll for the user to authorize the device. Returns status.
-				case "gh_poll_token": {
-					const deviceCode = (cmd as any).device_code;
-					if (!deviceCode) {
-						send({ type: "error", id: cmd.id, message: "device_code is required" });
-						break;
-					}
-					try {
-						const result = pollForToken(deviceCode, (cmd as any).interval ?? 5);
-						if (result.access_token) {
-							// Save the token to gh's credential store
-							saveToken(result.access_token);
-							log("gh_poll_token: token saved, gh authenticated");
-							send({ type: "result", id: cmd.id, data: { status: "completed" } });
-						} else if (result.error === "authorization_pending") {
-							send({ type: "result", id: cmd.id, data: { status: "pending" } });
-						} else if (result.error === "slow_down") {
-							// Increase interval on slow_down
-							send({ type: "result", id: cmd.id, data: { status: "pending", interval_inc: 5 } });
-						} else {
-							const errMsg = result.error_description || result.error || "Unknown error";
-							send({ type: "error", id: cmd.id, message: errMsg });
-						}
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
+						log("gh_auth_login error: %s", errMsg);
 						send({ type: "error", id: cmd.id, message: errMsg });
 					}
 					break;
