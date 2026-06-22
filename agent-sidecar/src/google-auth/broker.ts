@@ -93,6 +93,15 @@ export const DEFAULT_CLIENT_ID =
 // Left unreplaced (still starting with "__ZOSMA_") they are ignored.
 const BAKED_CLIENT_ID = "__ZOSMA_GOOGLE_CLIENT_ID__";
 const BAKED_BROKER_URL = "__ZOSMA_OAUTH_BROKER_URL__";
+// OPT-IN direct-secret slot ("Option A"). Unset by default → the brokered,
+// secretless flow stays the default and NOTHING is baked. When a build/dev env
+// supplies ZOSMA_GOOGLE_CLIENT_SECRET (or prebuild bakes this slot), the secret
+// is written into the package config files so the upstream pi-google-workspace
+// and @e9n/pi-gmail extensions — which self-refresh DIRECTLY with Google and
+// require a client_secret — work without a broker round-trip. Trade-off: a baked
+// secret is extractable from the bundle; only acceptable for a Desktop/Installed
+// OAuth client type (where Google does not treat the secret as confidential).
+const BAKED_CLIENT_SECRET = "__ZOSMA_GOOGLE_CLIENT_SECRET__";
 const unbaked = (v: string): string => (v.startsWith("__ZOSMA_") ? "" : v.trim());
 
 /** Resolved broker base URL (env → baked → staging default; slashes trimmed). */
@@ -105,6 +114,15 @@ export function brokerUrl(): string {
 /** Resolved public client id (env → baked → staging default). */
 export function resolveClientId(): string {
 	return process.env.ZOSMA_GOOGLE_CLIENT_ID?.trim() || unbaked(BAKED_CLIENT_ID) || DEFAULT_CLIENT_ID;
+}
+
+/**
+ * Resolved Zosma client secret (env → baked → ""). Empty by default, which
+ * keeps the brokered secretless flow. When non-empty, fan-out writes it so the
+ * upstream Google extensions can self-refresh directly. See BAKED_CLIENT_SECRET.
+ */
+export function resolveClientSecret(): string {
+	return process.env.ZOSMA_GOOGLE_CLIENT_SECRET?.trim() || unbaked(BAKED_CLIENT_SECRET) || "";
 }
 
 export interface EmbeddedClient {
@@ -132,9 +150,17 @@ export function embeddedClient(byo?: ByoClientInput | null): EmbeddedClient {
 	if (byo?.clientId && byo?.clientSecret) {
 		return { clientId: byo.clientId, clientSecret: byo.clientSecret, brokerUrl: "" };
 	}
+	// Keep the broker URL for the INITIAL code exchange (the Zosma Web client's
+	// only registered redirect_uri is the broker /callback; the ephemeral
+	// loopback port is not registered, so direct code exchange would fail). When
+	// a direct secret is present (Option A), ALSO write it so the upstream
+	// pi-google-workspace + @e9n/pi-gmail extensions can self-refresh directly
+	// with Google (token refresh needs no redirect_uri). The owned calendar
+	// extension then also refreshes directly (clientSecret present → useBroker
+	// false), so all tools behave consistently.
 	return {
 		clientId: resolveClientId(),
-		clientSecret: process.env.ZOSMA_GOOGLE_CLIENT_SECRET ?? "",
+		clientSecret: resolveClientSecret(),
 		brokerUrl: brokerUrl(),
 	};
 }

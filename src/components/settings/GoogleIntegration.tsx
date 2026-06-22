@@ -21,6 +21,7 @@ import {
 	Check,
 	ChevronDown,
 	Download,
+	ExternalLink,
 	FileText,
 	HardDrive,
 	KeyRound,
@@ -110,6 +111,41 @@ function tierStyle(tier: ScopeTier): React.CSSProperties {
 }
 
 const GOOGLE_CLOUD_CONSOLE = "https://console.cloud.google.com/apis/credentials";
+const GOOGLE_CONSENT_SCREEN = "https://console.cloud.google.com/apis/credentials/consent";
+const GOOGLE_API_LIBRARY = "https://console.cloud.google.com/apis/library";
+
+/** Step-by-step guide shown when the user brings their own OAuth client. */
+const BYO_STEPS: { title: string; body: React.ReactNode; url?: string; urlLabel?: string }[] = [
+	{
+		title: "Configure the OAuth consent screen",
+		body: "Pick External, add an app name + your email, then add yourself under Test users (no Google review needed while testing).",
+		url: GOOGLE_CONSENT_SCREEN,
+		urlLabel: "Open consent screen",
+	},
+	{
+		title: "Enable the APIs you'll use",
+		body: "Enable Gmail, Drive, Docs, Sheets, Slides, and Calendar APIs — only the ones you turn on above are needed.",
+		url: GOOGLE_API_LIBRARY,
+		urlLabel: "Open API library",
+	},
+	{
+		title: "Create the OAuth client",
+		body: (
+			<>
+				Credentials → Create credentials → OAuth client ID. Set Application type to{" "}
+				<span className="font-semibold text-foreground">Desktop app</span> — this lets Cowork use a
+				local <code className="text-[10px]">127.0.0.1</code> sign-in without registering a redirect
+				URL.
+			</>
+		),
+		url: GOOGLE_CLOUD_CONSOLE,
+		urlLabel: "Open credentials",
+	},
+	{
+		title: "Paste the Client ID + secret below",
+		body: "Copy them from the dialog Google shows after creating the client, then click Connect. Stored locally (chmod 0600) — never uploaded.",
+	},
+];
 
 /** Resolve the consent scope list from a selection (mirrors sidecar resolveScopes). */
 function computeScopes(matrix: Matrix | null, prefs: ScopePrefs): string[] {
@@ -584,36 +620,61 @@ export function GoogleIntegration() {
 								Use my own Google OAuth client
 							</label>
 							{useByo && (
-								<div className="mt-2 space-y-1.5">
-									<input
-										type="text"
-										value={byoId}
-										onChange={(e) => setByoId(e.target.value)}
-										placeholder="Client ID"
-										className="w-full text-[11px] px-2 py-1 rounded border border-border bg-background/60 text-foreground placeholder:text-muted-foreground/60"
-									/>
-									<input
-										type="password"
-										value={byoSecret}
-										onChange={(e) => setByoSecret(e.target.value)}
-										placeholder={
-											byoConfigured
-												? "Client secret (saved — leave blank to keep)"
-												: "Client secret"
-										}
-										className="w-full text-[11px] px-2 py-1 rounded border border-border bg-background/60 text-foreground placeholder:text-muted-foreground/60"
-									/>
+								<div className="mt-2.5 space-y-2.5">
 									<p className="text-[10px] text-muted-foreground leading-relaxed">
-										Create a Desktop/Web OAuth client and enable the APIs in the{" "}
-										<button
-											type="button"
-											onClick={() => invoke("open_url", { url: GOOGLE_CLOUD_CONSOLE })}
-											className="text-primary hover:underline"
-										>
-											Google Cloud console
-										</button>
-										. Stored locally (0600), never uploaded.
+										Use your own Google Cloud project instead of Zosma's — your own quota, full
+										control, and tokens never touch the Zosma broker.
 									</p>
+
+									{/* Numbered setup guide */}
+									<ol className="space-y-2">
+										{BYO_STEPS.map((step, i) => (
+											<li key={step.title} className="flex gap-2.5">
+												<span className="shrink-0 mt-0.5 w-4 h-4 rounded-full bg-primary/15 text-primary text-[9px] font-bold flex items-center justify-center">
+													{i + 1}
+												</span>
+												<div className="min-w-0">
+													<p className="text-[11px] font-medium text-foreground/90 leading-snug">
+														{step.title}
+													</p>
+													<p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+														{step.body}
+													</p>
+													{step.url && (
+														<button
+															type="button"
+															onClick={() => invoke("open_url", { url: step.url })}
+															className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+														>
+															{step.urlLabel}
+															<ExternalLink className="w-2.5 h-2.5" />
+														</button>
+													)}
+												</div>
+											</li>
+										))}
+									</ol>
+
+									<div className="space-y-1.5 pt-0.5">
+										<input
+											type="text"
+											value={byoId}
+											onChange={(e) => setByoId(e.target.value)}
+											placeholder="Client ID (…apps.googleusercontent.com)"
+											className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background/60 text-foreground placeholder:text-muted-foreground/60 font-mono"
+										/>
+										<input
+											type="password"
+											value={byoSecret}
+											onChange={(e) => setByoSecret(e.target.value)}
+											placeholder={
+												byoConfigured
+													? "Client secret (saved — leave blank to keep)"
+													: "Client secret (GOCSPX-…)"
+											}
+											className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background/60 text-foreground placeholder:text-muted-foreground/60 font-mono"
+										/>
+									</div>
 								</div>
 							)}
 						</div>

@@ -83,6 +83,19 @@ for (const [token, envName] of [
 		console.log(`[prebuild]   ${envName} unset — using committed staging default`);
 	}
 }
+
+// OPT-IN: bake the Zosma Google client SECRET ("Option A"). Off by default —
+// when ZOSMA_GOOGLE_CLIENT_SECRET is unset, the placeholder stays unreplaced and
+// the brokered secretless flow remains in effect. When set, the secret is baked
+// so the upstream pi-google-workspace + @e9n/pi-gmail extensions can self-refresh
+// directly with Google. Only do this for a Desktop/Installed OAuth client type.
+const zosmaGoogleSecret = (process.env.ZOSMA_GOOGLE_CLIENT_SECRET || "").trim();
+if (zosmaGoogleSecret) {
+	code = code.split("__ZOSMA_GOOGLE_CLIENT_SECRET__").join(zosmaGoogleSecret);
+	console.log("[prebuild]   baked ZOSMA_GOOGLE_CLIENT_SECRET (direct-refresh enabled)");
+} else {
+	console.log("[prebuild]   ZOSMA_GOOGLE_CLIENT_SECRET unset — brokered secretless flow (default)");
+}
 writeFileSync(bundlePath, code, "utf-8");
 
 // Copy bundled file into src-tauri/ for Tauri resource bundling
