@@ -12,6 +12,8 @@
  *                      {"type":"error", "id":"...", "message":"..."}
  */
 
+import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
 	chmodSync,
 	existsSync,
@@ -25,8 +27,6 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-import { randomUUID } from "node:crypto";
-import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 
 /** Tracks the in-flight `gh auth login` device-flow process, if any. */
@@ -116,19 +116,6 @@ Guidelines:
 - Show file paths clearly when working with files.
 - Prefer your built-in tools over shelling out when both work.`;
 
-import {
-	AuthStorage,
-	DefaultPackageManager,
-	DefaultResourceLoader,
-	type ExtensionFactory,
-	type ExtensionUIContext,
-	type ExtensionUIDialogOptions,
-	ModelRegistry,
-	SessionManager,
-	SettingsManager,
-	type Theme,
-	createAgentSession,
-} from "@earendil-works/pi-coding-agent";
 // pi-coding-agent's AuthStorage.login does not forward an `originator`
 // parameter to provider-specific OAuth flows. OpenAI's auth server
 // validates `originator` against a whitelist tied to the Codex CLI
@@ -147,11 +134,29 @@ import {
 // build the extension `virtualModules` map — see #147. This supersedes the
 // earlier #154 note that pi-agent-core was intentionally undeclared.)
 import { loginOpenAICodex } from "@earendil-works/pi-ai/oauth";
-// Registers the "Sign in with Google → Gemini" OAuth provider (Antigravity /
-// Code Assist backend) into pi's public runtime registry — no pi edits. Makes
-// it behave like the other subscription logins via the existing start_oauth /
-// get_auth_status commands. See gemini-antigravity/ for the ToS-risk caveat.
-import { registerGeminiAntigravity } from "./gemini-antigravity/index.js";
+import {
+	AuthStorage,
+	DefaultPackageManager,
+	DefaultResourceLoader,
+	type ExtensionFactory,
+	type ExtensionUIContext,
+	type ExtensionUIDialogOptions,
+	ModelRegistry,
+	SessionManager,
+	SettingsManager,
+	type Theme,
+	createAgentSession,
+} from "@earendil-works/pi-coding-agent";
+import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
+import { activateBundledBinaries } from "./bundled-binaries.js";
+import { commandQueue } from "./command-queue.js";
+import {
+	deleteCustomProvider,
+	discoverModels,
+	listCustomProviders,
+	saveCustomProvider,
+} from "./custom-providers.js";
+import { eventBus } from "./event-bus.js";
 import {
 	discoverExtensions,
 	installExtension,
@@ -160,34 +165,30 @@ import {
 	setExtensionEnabled,
 	uninstallExtension,
 } from "./extension-manager.js";
-import { eventBus } from "./event-bus.js";
-import { startRemoteServer, stopRemoteServer } from "./remote-server.js";
-import { commandQueue } from "./command-queue.js";
-import { createPromptScheduler } from "./prompt-scheduler.js";
-import {
-	handleClearQueueCommand,
-	handleFollowUpCommand,
-	handleSteerCommand,
-} from "./steering.js";
 import { extractChatMessages } from "./extract-chat-messages.js";
-import * as sessionStore from "./session-store.js";
-import {
-	loadSettings as loadSettingsStore,
-	saveSettings as saveSettingsStore,
-} from "./settings-store.js";
-import {
-	deleteCustomProvider,
-	discoverModels,
-	listCustomProviders,
-	saveCustomProvider,
-} from "./custom-providers.js";
-import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
-import { activateBundledBinaries, checkGitAvailable } from "./bundled-binaries.js";
+// Registers the "Sign in with Google → Gemini" OAuth provider (Antigravity /
+// Code Assist backend) into pi's public runtime registry — no pi edits. Makes
+// it behave like the other subscription logins via the existing start_oauth /
+// get_auth_status commands. See gemini-antigravity/ for the ToS-risk caveat.
+import { registerGeminiAntigravity } from "./gemini-antigravity/index.js";
+import zosmaGoogleCalendar from "./google-calendar/extension.js";
+import zosmaGoogleWorkspace from "./google-workspace/extension.js";
 import {
 	customInstructionsBlock,
 	loadInstructions,
 	saveInstructions,
 } from "./instructions-store.js";
+// Zosma Office Document Generation extension — registers 8 OfficeCLI tools.
+import zosmaOfficeDocs from "./office-docs/extension.js";
+import { createPromptScheduler } from "./prompt-scheduler.js";
+import { startRemoteServer, stopRemoteServer } from "./remote-server.js";
+import * as sessionStore from "./session-store.js";
+import {
+	loadSettings as loadSettingsStore,
+	saveSettings as saveSettingsStore,
+} from "./settings-store.js";
+import { handleClearQueueCommand, handleFollowUpCommand, handleSteerCommand } from "./steering.js";
+import { runTaskFire } from "./task-fire.js";
 import {
 	deleteTask,
 	getCompletedTasks,
@@ -197,7 +198,6 @@ import {
 	setTaskEnabled,
 	watchTaskFiles,
 } from "./tasks-store.js";
-import { runTaskFire } from "./task-fire.js";
 // Vendored pi-anthropic-messages bridge (see scripts/prebuild.mjs). Without
 // this loaded as an extension, Claude Pro/Max OAuth requests are
 // fingerprinted by Anthropic as a "third-party app" and rejected with a
@@ -205,21 +205,23 @@ import { runTaskFire } from "./task-fire.js";
 // bridge rewrites the system prompt and tool names so requests pass as
 // canonical Claude CLI traffic. esbuild inlines this module into our bundle.
 import piAnthropicMessages from "./vendor/anthropic-messages/extensions/index.js";
-// Zosma Office Document Generation extension — registers 8 OfficeCLI tools.
-import zosmaOfficeDocs from "./office-docs/extension.js";
-import zosmaGoogleCalendar from "./google-calendar/extension.js";
-// Vendored forked pi-routines scheduler (#300). Bundled into the sidecar so it
-// works on any machine (no absolute ~/code path). Loaded ONLY by Cowork; the
-// pi CLI never sees it. Source of truth: github.com/zosmaai/pi-routines,
-// vendored by VERIFIED release tag (see agent-sidecar/scripts/fetch-vendor.mjs
-// + vendor.lock.json; bump with `npm run vendor:latest`).
-import piRoutines from "./vendor/pi-routines/src/index.js";
+
+/**
+ * Upstream npm packages replaced by owned, broker-aware in-sidecar extensions.
+ * Their disk copies are skipped at load time (see buildExtensionFactories) so
+ * the owned versions — which refresh via the Zosma broker with no client secret
+ * — are the single source of truth and tool names don't double-register.
+ */
+const SUPERSEDED_GOOGLE_PACKAGES = ["pi-google-workspace"];
+// Loads pi's disk/npm/git extensions via virtualModules-backed jiti so they
+// work in the bundled sidecar (no node_modules beside it). See #147.
+import { buildExtensionFactories, readPiPackages } from "./disk-extension-loader.js";
+import { appExtensionStatus } from "./google-auth/app-requirements.js";
 import {
 	defaultGooglePaths,
 	disconnectGoogle,
 	embeddedClient,
 	fanOutCredentials,
-	GOOGLE_SCOPES,
 	googleStatus,
 	hasEmbeddedClient,
 	migrateLegacyTokens,
@@ -236,17 +238,16 @@ import {
 import {
 	CAPABILITY_MATRIX,
 	DEFAULT_PREFS,
-	resolveScopes,
 	type ScopePrefs,
+	resolveScopes,
 	tierOf,
 } from "./google-auth/scopes.js";
-import { appExtensionStatus } from "./google-auth/app-requirements.js";
-// Loads pi's disk/npm/git extensions via virtualModules-backed jiti so they
-// work in the bundled sidecar (no node_modules beside it). See #147.
-import {
-	buildExtensionFactories,
-	readPiPackages,
-} from "./disk-extension-loader.js";
+// Vendored forked pi-routines scheduler (#300). Bundled into the sidecar so it
+// works on any machine (no absolute ~/code path). Loaded ONLY by Cowork; the
+// pi CLI never sees it. Source of truth: github.com/zosmaai/pi-routines,
+// vendored by VERIFIED release tag (see agent-sidecar/scripts/fetch-vendor.mjs
+// + vendor.lock.json; bump with `npm run vendor:latest`).
+import piRoutines from "./vendor/pi-routines/src/index.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -482,7 +483,6 @@ interface SaveGooglePrefsCommand {
 	/** null clears BYO (revert to Zosma client). */
 	byo?: { clientId: string; clientSecret: string } | null;
 }
-
 
 interface ReloadCommand {
 	type: "reload";
@@ -1089,8 +1089,7 @@ function createUiContext(): ExtensionUIContext {
 			}
 		},
 		setTitle: (title) => emitUiRequest({ id: randomUUID(), method: "setTitle", title }),
-		setEditorText: (text) =>
-			emitUiRequest({ id: randomUUID(), method: "set_editor_text", text }),
+		setEditorText: (text) => emitUiRequest({ id: randomUUID(), method: "set_editor_text", text }),
 		pasteToEditor(text) {
 			this.setEditorText(text);
 		},
@@ -1258,7 +1257,7 @@ function cleanStaleLocks(dir: string): void {
  * Created on the first remote prompt, updated on subsequent ones.
  */
 let remoteSessionFile: string | null = null;
-let remoteSessionFirstTs: number = 0;
+let remoteSessionFirstTs = 0;
 
 // ---------------------------------------------------------------------------
 // Session persistence helpers
@@ -1540,6 +1539,9 @@ async function main() {
 				cwd,
 				agentDir: piResourceDir,
 				settingsManager,
+				// Owned, broker-aware extensions supersede these upstream packages;
+				// skip their disk copies so tool names don't double-register.
+				excludePackages: SUPERSEDED_GOOGLE_PACKAGES,
 			});
 			diskExtensionFactories = built.factories;
 			log(
@@ -1548,11 +1550,7 @@ async function main() {
 				}`,
 			);
 		} catch (err) {
-			log(
-				`failed to resolve pi extensions: ${
-					err instanceof Error ? err.message : String(err)
-				}`,
-			);
+			log(`failed to resolve pi extensions: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
 		// The forked pi-routines is injected as a vendored extension factory
@@ -1569,11 +1567,12 @@ async function main() {
 			// We load ALL extensions ourselves (vendored inline + pi's disk/npm
 			// extensions via jiti). Skills/prompts/themes still load normally.
 			noExtensions: true,
-		extensionFactories: [
+			extensionFactories: [
 				...(includeRoutines ? [piRoutinesFactory] : []),
 				piAnthropicMessages,
 				zosmaOfficeDocs,
 				zosmaGoogleCalendar,
+				zosmaGoogleWorkspace,
 				...diskExtensionFactories,
 			],
 			// Cowork self-knowledge (#263): materialize the ABOUT doc under the
@@ -1591,9 +1590,7 @@ async function main() {
 				let personaBlock = "";
 				if (includePersona) {
 					try {
-						personaBlock = customInstructionsBlock(
-							loadInstructions(zosmaAgentDir(zosmaDir)),
-						);
+						personaBlock = customInstructionsBlock(loadInstructions(zosmaAgentDir(zosmaDir)));
 					} catch (err) {
 						log(
 							"loadInstructions failed (custom instructions omitted): %s",
@@ -1982,11 +1979,7 @@ async function main() {
 								activeSession.model?.provider,
 								workspaceCwd,
 							);
-							log(
-								"Saved remote session: %s (%d messages)",
-								remoteSessionFile,
-								chatMessages.length,
-							);
+							log("Saved remote session: %s (%d messages)", remoteSessionFile, chatMessages.length);
 						}
 					}
 				} catch (err) {
@@ -2003,364 +1996,362 @@ async function main() {
 		log("Command: type=%s id=%s", cmd.type, "id" in cmd ? cmd.id : "-");
 
 		switch (cmd.type) {
-				// ── init ───────────────────────────────────────────────────
-				case "init": {
-					await initAgent(cmd.zosmaDir ?? defaultZosmaDir(), cmd.workspace);
+			// ── init ───────────────────────────────────────────────────
+			case "init": {
+				await initAgent(cmd.zosmaDir ?? defaultZosmaDir(), cmd.workspace);
+				break;
+			}
+
+			// ── get_models ─────────────────────────────────────────────
+			case "get_models": {
+				if (!initialized || !modelRegistry) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
 					break;
 				}
+				const available = await modelRegistry.getAvailable();
+				const models = available.map((m) => ({
+					id: m.id,
+					name: m.name,
+					provider: m.provider,
+					reasoning: m.reasoning,
+					contextWindow: m.contextWindow,
+					maxTokens: m.maxTokens,
+				}));
+				send({ type: "result", id: cmd.id, data: { models } });
+				break;
+			}
 
-				// ── get_models ─────────────────────────────────────────────
-				case "get_models": {
-					if (!initialized || !modelRegistry) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					const available = await modelRegistry.getAvailable();
-					const models = available.map((m) => ({
-						id: m.id,
-						name: m.name,
-						provider: m.provider,
-						reasoning: m.reasoning,
-						contextWindow: m.contextWindow,
-						maxTokens: m.maxTokens,
-					}));
-					send({ type: "result", id: cmd.id, data: { models } });
+			// ── prompt ─────────────────────────────────────────────────
+			case "prompt": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
 					break;
 				}
+				// Schedule on the serialized chain but DO NOT await here — awaiting
+				// inside the stdin read loop would block it for the whole
+				// generation, so a desktop `abort` (sent over stdin) could not be
+				// read until the prompt finished. By scheduling and returning, the
+				// loop keeps reading stdin: `abort` is dispatched immediately
+				// (calls session.abort()), and the next prompt runs only after this
+				// one settles (the chain serializes prompts so two never overlap).
+				const promptCmd = cmd;
+				promptScheduler.schedule(
+					() => runPromptTask(promptCmd),
+					(err: unknown) => {
+						// runPromptTask handles its own errors; this is a defensive
+						// guard so a thrown task never breaks the chain for later
+						// prompts.
+						const msg = err instanceof Error ? err.message : String(err);
+						log("prompt task error: %s", msg);
+						send({ type: "error", id: promptCmd.id, message: msg });
+						send({ type: "done", id: promptCmd.id });
+					},
+				);
+				break;
+			}
 
-				// ── prompt ─────────────────────────────────────────────────
-				case "prompt": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					// Schedule on the serialized chain but DO NOT await here — awaiting
-					// inside the stdin read loop would block it for the whole
-					// generation, so a desktop `abort` (sent over stdin) could not be
-					// read until the prompt finished. By scheduling and returning, the
-					// loop keeps reading stdin: `abort` is dispatched immediately
-					// (calls session.abort()), and the next prompt runs only after this
-					// one settles (the chain serializes prompts so two never overlap).
-					const promptCmd = cmd;
-					promptScheduler.schedule(
-						() => runPromptTask(promptCmd),
-						(err: unknown) => {
-							// runPromptTask handles its own errors; this is a defensive
-							// guard so a thrown task never breaks the chain for later
-							// prompts.
-							const msg = err instanceof Error ? err.message : String(err);
-							log("prompt task error: %s", msg);
-							send({ type: "error", id: promptCmd.id, message: msg });
-							send({ type: "done", id: promptCmd.id });
-						},
+			// ── abort ──────────────────────────────────────────────────
+			case "abort": {
+				if (session) {
+					session.abort();
+				}
+				send({
+					type: "done",
+					id: cmd.id ?? activePromptId ?? "abort",
+				});
+				activePromptId = null;
+				break;
+			}
+
+			// ── steer ─────────────────────────────────────────────────
+			// Queue a steering message on the running session. Delivered
+			// after the current assistant turn's tool calls finish, before
+			// the next LLM call. Bypasses promptScheduler deliberately —
+			// see steering.ts for the protocol contract.
+			case "steer": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				await handleSteerCommand(session, cmd, send);
+				break;
+			}
+
+			// ── follow_up ─────────────────────────────────────────────
+			// Queue a follow-up message; delivered once the agent has no
+			// more tool calls or steering messages pending. Bypasses
+			// promptScheduler — see steering.ts.
+			case "follow_up": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				await handleFollowUpCommand(session, cmd, send);
+				break;
+			}
+
+			// ── clear_queue ─────────────────────────────
+			// Drain the SDK queue and return what was drained so the
+			// composer can present the messages for editing. Issue #201
+			// PR 3 — see steering.ts.
+			case "clear_queue": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				await handleClearQueueCommand(session, cmd, send);
+				break;
+			}
+
+			// ── ui_response ────────────────────────────────────────────
+			// Frontend's answer to a ctx.ui dialog request. Resolves the
+			// pending promise in the extension UI bridge; no result/done is
+			// sent (the `id` is a UI-request id, not a command id).
+			case "ui_response": {
+				resolveUiResponse({
+					id: cmd.id,
+					value: cmd.value,
+					confirmed: cmd.confirmed,
+					cancelled: cmd.cancelled,
+				});
+				break;
+			}
+
+			// ── set_model ──────────────────────────────────────────────
+			// ── get_active_model ───────────────────────────────────────
+			// Returns the model the engine will actually run (session.model).
+			// The frontend uses this to mirror the engine on startup so the
+			// model shown near the input matches the model that answers.
+			case "get_active_model": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				const m = session.model;
+				send({
+					type: "result",
+					id: cmd.id,
+					data: m ? { provider: m.provider, id: m.id, name: m.name } : null,
+				});
+				break;
+			}
+
+			// ── get_session_stats (#268) ──────────────────────────
+			// Token usage, cost, and live context-window usage for the
+			// current session state — powers the always-on status line.
+			// `contextUsage` may be omitted (no model/context window) or
+			// carry null tokens/percent right after compaction; the
+			// frontend renders those gracefully (see docs/rpc.md).
+			case "get_session_stats": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				const stats = session.getSessionStats();
+				send({
+					type: "result",
+					id: cmd.id,
+					data: {
+						...stats,
+						thinkingLevel: session.thinkingLevel,
+						availableThinkingLevels: session.getAvailableThinkingLevels(),
+						supportsThinking: session.supportsThinking(),
+					},
+				});
+				break;
+			}
+
+			// ── get_thinking_level (#268) ────────────────────────
+			case "get_thinking_level": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				send({
+					type: "result",
+					id: cmd.id,
+					data: {
+						thinkingLevel: session.thinkingLevel,
+						availableThinkingLevels: session.getAvailableThinkingLevels(),
+						supportsThinking: session.supportsThinking(),
+					},
+				});
+				break;
+			}
+
+			// ── set_thinking_level (#268) ────────────────────────
+			// The SDK clamps the requested level to what the active model
+			// supports, so we echo back the EFFECTIVE level (session.
+			// thinkingLevel) rather than the requested one.
+			case "set_thinking_level": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				session.setThinkingLevel(cmd.level as Parameters<typeof session.setThinkingLevel>[0]);
+				send({
+					type: "result",
+					id: cmd.id,
+					data: {
+						thinkingLevel: session.thinkingLevel,
+						availableThinkingLevels: session.getAvailableThinkingLevels(),
+						supportsThinking: session.supportsThinking(),
+					},
+				});
+				break;
+			}
+
+			// ── cycle_thinking_level (#268) ──────────────────────
+			// Advances off→minimal→low→medium→high→(xhigh)→off across the
+			// model's supported levels. Returns undefined for non-reasoning
+			// models; we still echo the (unchanged) level for the UI.
+			case "cycle_thinking_level": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				session.cycleThinkingLevel();
+				send({
+					type: "result",
+					id: cmd.id,
+					data: {
+						thinkingLevel: session.thinkingLevel,
+						availableThinkingLevels: session.getAvailableThinkingLevels(),
+						supportsThinking: session.supportsThinking(),
+					},
+				});
+				break;
+			}
+
+			case "set_model": {
+				if (!initialized || !session) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				const found = modelRegistry?.find(cmd.provider, cmd.model);
+				if (found) {
+					log("set_model: found %s/%s (id=%s)", cmd.provider, cmd.model, found.id);
+					await session.setModel(found as Parameters<typeof session.setModel>[0]);
+					const currentModel = session.model;
+					log(
+						"set_model: after setModel, session.model = %s/%s",
+						currentModel?.provider,
+						currentModel?.id,
 					);
-					break;
-				}
-
-				// ── abort ──────────────────────────────────────────────────
-				case "abort": {
-					if (session) {
-						session.abort();
-					}
-					send({
-						type: "done",
-						id: cmd.id ?? activePromptId ?? "abort",
-					});
-					activePromptId = null;
-					break;
-				}
-
-				// ── steer ─────────────────────────────────────────────────
-				// Queue a steering message on the running session. Delivered
-				// after the current assistant turn's tool calls finish, before
-				// the next LLM call. Bypasses promptScheduler deliberately —
-				// see steering.ts for the protocol contract.
-				case "steer": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					await handleSteerCommand(session, cmd, send);
-					break;
-				}
-
-				// ── follow_up ─────────────────────────────────────────────
-				// Queue a follow-up message; delivered once the agent has no
-				// more tool calls or steering messages pending. Bypasses
-				// promptScheduler — see steering.ts.
-				case "follow_up": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					await handleFollowUpCommand(session, cmd, send);
-					break;
-				}
-
-				// ── clear_queue ─────────────────────────────
-				// Drain the SDK queue and return what was drained so the
-				// composer can present the messages for editing. Issue #201
-				// PR 3 — see steering.ts.
-				case "clear_queue": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					await handleClearQueueCommand(session, cmd, send);
-					break;
-				}
-
-				// ── ui_response ────────────────────────────────────────────
-				// Frontend's answer to a ctx.ui dialog request. Resolves the
-				// pending promise in the extension UI bridge; no result/done is
-				// sent (the `id` is a UI-request id, not a command id).
-				case "ui_response": {
-					resolveUiResponse({
-						id: cmd.id,
-						value: cmd.value,
-						confirmed: cmd.confirmed,
-						cancelled: cmd.cancelled,
-					});
-					break;
-				}
-
-				// ── set_model ──────────────────────────────────────────────
-				// ── get_active_model ───────────────────────────────────────
-				// Returns the model the engine will actually run (session.model).
-				// The frontend uses this to mirror the engine on startup so the
-				// model shown near the input matches the model that answers.
-				case "get_active_model": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					const m = session.model;
-					send({
-						type: "result",
-						id: cmd.id,
-						data: m
-							? { provider: m.provider, id: m.id, name: m.name }
-							: null,
-					});
-					break;
-				}
-
-				// ── get_session_stats (#268) ──────────────────────────
-				// Token usage, cost, and live context-window usage for the
-				// current session state — powers the always-on status line.
-				// `contextUsage` may be omitted (no model/context window) or
-				// carry null tokens/percent right after compaction; the
-				// frontend renders those gracefully (see docs/rpc.md).
-				case "get_session_stats": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					const stats = session.getSessionStats();
-					send({
-						type: "result",
-						id: cmd.id,
-						data: {
-							...stats,
-							thinkingLevel: session.thinkingLevel,
-							availableThinkingLevels: session.getAvailableThinkingLevels(),
-							supportsThinking: session.supportsThinking(),
-						},
-					});
-					break;
-				}
-
-				// ── get_thinking_level (#268) ────────────────────────
-				case "get_thinking_level": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					send({
-						type: "result",
-						id: cmd.id,
-						data: {
-							thinkingLevel: session.thinkingLevel,
-							availableThinkingLevels: session.getAvailableThinkingLevels(),
-							supportsThinking: session.supportsThinking(),
-						},
-					});
-					break;
-				}
-
-				// ── set_thinking_level (#268) ────────────────────────
-				// The SDK clamps the requested level to what the active model
-				// supports, so we echo back the EFFECTIVE level (session.
-				// thinkingLevel) rather than the requested one.
-				case "set_thinking_level": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					session.setThinkingLevel(cmd.level as Parameters<typeof session.setThinkingLevel>[0]);
-					send({
-						type: "result",
-						id: cmd.id,
-						data: {
-							thinkingLevel: session.thinkingLevel,
-							availableThinkingLevels: session.getAvailableThinkingLevels(),
-							supportsThinking: session.supportsThinking(),
-						},
-					});
-					break;
-				}
-
-				// ── cycle_thinking_level (#268) ──────────────────────
-				// Advances off→minimal→low→medium→high→(xhigh)→off across the
-				// model's supported levels. Returns undefined for non-reasoning
-				// models; we still echo the (unchanged) level for the UI.
-				case "cycle_thinking_level": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					session.cycleThinkingLevel();
-					send({
-						type: "result",
-						id: cmd.id,
-						data: {
-							thinkingLevel: session.thinkingLevel,
-							availableThinkingLevels: session.getAvailableThinkingLevels(),
-							supportsThinking: session.supportsThinking(),
-						},
-					});
-					break;
-				}
-
-				case "set_model": {
-					if (!initialized || !session) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					const found = modelRegistry?.find(cmd.provider, cmd.model);
-					if (found) {
-						log("set_model: found %s/%s (id=%s)", cmd.provider, cmd.model, found.id);
-						await session.setModel(found as Parameters<typeof session.setModel>[0]);
-						const currentModel = session.model;
-						log(
-							"set_model: after setModel, session.model = %s/%s",
-							currentModel?.provider,
-							currentModel?.id,
-						);
-						send({ type: "result", id: cmd.id, data: { success: true } });
-					} else {
-						log("set_model: NOT FOUND %s/%s", cmd.provider, cmd.model);
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Model not found: ${cmd.provider}/${cmd.model}`,
-						});
-					}
-					break;
-				}
-
-				// ── save_auth ──────────────────────────────────────────────
-				case "save_auth": {
-					const piDir = piAgentDir();
-					ensureDir(piDir);
-					cleanStaleLocks(piDir);
-
-					const authPath = join(piDir, "auth.json");
-					let existing: Record<string, unknown> = {};
-					try {
-						if (existsSync(authPath)) {
-							existing = JSON.parse(readFileSync(authPath, "utf-8"));
-						}
-					} catch {
-						// Start fresh if corrupt
-					}
-
-					existing[cmd.provider] = { type: "api_key", key: cmd.key };
-					writeFileSync(authPath, JSON.stringify(existing, null, 2), "utf-8");
-					log("Saved API key for %s", cmd.provider);
-
-					// Reload: recreate everything with fresh auth
-					await initAgent(zosmaDir);
 					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
+				} else {
+					log("set_model: NOT FOUND %s/%s", cmd.provider, cmd.model);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Model not found: ${cmd.provider}/${cmd.model}`,
+					});
+				}
+				break;
+			}
+
+			// ── save_auth ──────────────────────────────────────────────
+			case "save_auth": {
+				const piDir = piAgentDir();
+				ensureDir(piDir);
+				cleanStaleLocks(piDir);
+
+				const authPath = join(piDir, "auth.json");
+				let existing: Record<string, unknown> = {};
+				try {
+					if (existsSync(authPath)) {
+						existing = JSON.parse(readFileSync(authPath, "utf-8"));
+					}
+				} catch {
+					// Start fresh if corrupt
 				}
 
-				// ── start_oauth ────────────────────────────────────────────
-				case "start_oauth": {
-					if (!authStorage) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					// If a previous flow is still in flight (e.g. the user closed
-					// the browser without completing), abort it and wait for its
-					// cleanup before installing a new one. This makes start_oauth
-					// idempotent — clicking "Sign In" again always works.
-					if (oauthAbort) {
-						log("start_oauth: aborting previous in-flight flow");
-						oauthAbort.abort();
-						if (oauthInflight) {
-							try {
-								await oauthInflight;
-							} catch {
-								// expected: previous flow rejected with AbortError
-							}
+				existing[cmd.provider] = { type: "api_key", key: cmd.key };
+				writeFileSync(authPath, JSON.stringify(existing, null, 2), "utf-8");
+				log("Saved API key for %s", cmd.provider);
+
+				// Reload: recreate everything with fresh auth
+				await initAgent(zosmaDir);
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── start_oauth ────────────────────────────────────────────
+			case "start_oauth": {
+				if (!authStorage) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
+					break;
+				}
+				// If a previous flow is still in flight (e.g. the user closed
+				// the browser without completing), abort it and wait for its
+				// cleanup before installing a new one. This makes start_oauth
+				// idempotent — clicking "Sign In" again always works.
+				if (oauthAbort) {
+					log("start_oauth: aborting previous in-flight flow");
+					oauthAbort.abort();
+					if (oauthInflight) {
+						try {
+							await oauthInflight;
+						} catch {
+							// expected: previous flow rejected with AbortError
 						}
 					}
-					const ac = new AbortController();
-					oauthAbort = ac;
-					const provider = cmd.provider;
-					const cmdId = cmd.id;
-					const storage = authStorage;
-					log("Starting OAuth for %s", provider);
-					// Build the callback bag once so we can reuse it for both the
-					// generic storage.login() path AND the openai-codex override
-					// path below. Closing over `provider`, `ac`, `storage`, and
-					// `cmdId` makes the duplication painless.
-					oauthInflight = (async () => {
-						try {
-							if (provider === "openai-codex") {
-								// Direct call to loginOpenAICodex with a whitelisted
-								// originator. See the import-site comment for context.
-								const creds = await loginOpenAICodex({
-									originator: "codex_cli_rs",
-									onAuth: (info) => {
-										send({
-											type: "event",
-											event: {
-												kind: "oauth_open_url",
-												provider,
-												url: info.url,
-												instructions: info.instructions,
-											},
+				}
+				const ac = new AbortController();
+				oauthAbort = ac;
+				const provider = cmd.provider;
+				const cmdId = cmd.id;
+				const storage = authStorage;
+				log("Starting OAuth for %s", provider);
+				// Build the callback bag once so we can reuse it for both the
+				// generic storage.login() path AND the openai-codex override
+				// path below. Closing over `provider`, `ac`, `storage`, and
+				// `cmdId` makes the duplication painless.
+				oauthInflight = (async () => {
+					try {
+						if (provider === "openai-codex") {
+							// Direct call to loginOpenAICodex with a whitelisted
+							// originator. See the import-site comment for context.
+							const creds = await loginOpenAICodex({
+								originator: "codex_cli_rs",
+								onAuth: (info) => {
+									send({
+										type: "event",
+										event: {
+											kind: "oauth_open_url",
+											provider,
+											url: info.url,
+											instructions: info.instructions,
+										},
+									});
+								},
+								onPrompt: async (prompt) => {
+									throw new Error(
+										`Interactive prompts are not supported in the desktop OAuth flow (message: ${String(prompt.message ?? "")})`,
+									);
+								},
+								onProgress: (message) => {
+									send({
+										type: "event",
+										event: { kind: "oauth_progress", provider, message },
+									});
+								},
+								onManualCodeInput: () =>
+									new Promise<string>((_resolve, reject) => {
+										const err = new Error("OAuth cancelled");
+										err.name = "AbortError";
+										if (ac.signal.aborted) {
+											reject(err);
+											return;
+										}
+										ac.signal.addEventListener("abort", () => reject(err), {
+											once: true,
 										});
-									},
-									onPrompt: async (prompt) => {
-										throw new Error(
-											`Interactive prompts are not supported in the desktop OAuth flow (message: ${String(prompt.message ?? "")})`,
-										);
-									},
-									onProgress: (message) => {
-										send({
-											type: "event",
-											event: { kind: "oauth_progress", provider, message },
-										});
-									},
-									onManualCodeInput: () =>
-										new Promise<string>((_resolve, reject) => {
-											const err = new Error("OAuth cancelled");
-											err.name = "AbortError";
-											if (ac.signal.aborted) {
-												reject(err);
-												return;
-											}
-											ac.signal.addEventListener("abort", () => reject(err), {
-												once: true,
-											});
-										}),
-								});
-								// Persist exactly the way AuthStorage.login would have.
-								storage.set(provider, { type: "oauth", ...creds });
-							} else {
+									}),
+							});
+							// Persist exactly the way AuthStorage.login would have.
+							storage.set(provider, { type: "oauth", ...creds });
+						} else {
 							await storage.login(provider, {
 								onAuth: (info) => {
 									send({
@@ -2386,8 +2377,7 @@ async function main() {
 									const msg = String(prompt.message ?? "").trim();
 									const placeholder = String(prompt.placeholder ?? "").trim();
 									const blankIsValid =
-										/blank for|default[: ]/i.test(placeholder) ||
-										/enterprise/i.test(msg);
+										/blank for|default[: ]/i.test(placeholder) || /enterprise/i.test(msg);
 									if (blankIsValid) {
 										log(
 											"OAuth prompt auto-answered with empty (message=%s, placeholder=%s)",
@@ -2430,221 +2420,190 @@ async function main() {
 									}),
 								signal: ac.signal,
 							});
-							}
-							log("OAuth login succeeded for %s", provider);
-							// Release the AbortSignal so the dangling
-							// onManualCodeInput promise rejects and gets GC'd.
-							if (!ac.signal.aborted) ac.abort();
-							send({ type: "result", id: cmdId, data: { success: true } });
-							send({
-								type: "event",
-								event: { kind: "oauth_completed", provider },
-							});
-							// Reload the agent so the new provider's models appear.
-							initAgent(zosmaDir).catch((err) => {
-								log("initAgent failed after oauth: %s", err);
-								send({
-									type: "event",
-									event: { kind: "agent_reload_failed", error: String(err) },
-								});
-							});
-						} catch (err: unknown) {
-							const errAny = err as { name?: string; message?: string } | undefined;
-							const cancelled = errAny?.name === "AbortError" || ac.signal.aborted;
-							log(
-								"OAuth login %s for %s: %s",
-								cancelled ? "cancelled" : "failed",
-								provider,
-								errAny?.message ?? err,
-							);
-							send({
-								type: "result",
-								id: cmdId,
-								data: {
-									success: false,
-									cancelled,
-									error: cancelled ? undefined : String(errAny?.message ?? err),
-								},
-							});
-							send({
-								type: "event",
-								event: {
-									kind: cancelled ? "oauth_cancelled" : "oauth_failed",
-									provider,
-									error: cancelled ? undefined : String(errAny?.message ?? err),
-								},
-							});
-						} finally {
-							// Only clear if we still own the slot. A subsequent
-							// start_oauth call may have installed a fresh AC/promise
-							// while this one was unwinding.
-							if (oauthAbort === ac) {
-								oauthAbort = null;
-								oauthInflight = null;
-							}
 						}
-					})();
-					break;
-				}
-
-				// ── cancel_oauth ───────────────────────────────────────────
-				case "cancel_oauth": {
-					if (oauthAbort) {
-						log("Cancelling OAuth flow");
-						oauthAbort.abort();
-					}
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── logout ─────────────────────────────────────────────────
-				case "logout": {
-					if (!authStorage) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					try {
-						authStorage.logout(cmd.provider);
-						log("Logged out provider %s", cmd.provider);
-					} catch (err) {
-						log("logout failed: %s", err);
-					}
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					initAgent(zosmaDir).catch((err) => {
-						log("initAgent failed after logout: %s", err);
+						log("OAuth login succeeded for %s", provider);
+						// Release the AbortSignal so the dangling
+						// onManualCodeInput promise rejects and gets GC'd.
+						if (!ac.signal.aborted) ac.abort();
+						send({ type: "result", id: cmdId, data: { success: true } });
 						send({
 							type: "event",
-							event: { kind: "agent_reload_failed", error: String(err) },
+							event: { kind: "oauth_completed", provider },
 						});
-					});
-					break;
-				}
-
-				// ── get_auth_status ────────────────────────────────────────
-				case "get_auth_status": {
-					if (!authStorage) {
-						send({ type: "error", id: cmd.id, message: "Not initialized" });
-						break;
-					}
-					const providers: Array<{
-						id: string;
-						type: "api_key" | "oauth" | "unknown";
-						expires?: number;
-					}> = [];
-					for (const providerId of authStorage.list()) {
-						const cred = authStorage.get(providerId);
-						if (!cred) continue;
-						if (cred.type === "oauth") {
-							providers.push({
-								id: providerId,
-								type: "oauth",
-								expires: (cred as { expires?: number }).expires,
+						// Reload the agent so the new provider's models appear.
+						initAgent(zosmaDir).catch((err) => {
+							log("initAgent failed after oauth: %s", err);
+							send({
+								type: "event",
+								event: { kind: "agent_reload_failed", error: String(err) },
 							});
-						} else if (cred.type === "api_key") {
-							providers.push({ id: providerId, type: "api_key" });
-						} else {
-							providers.push({ id: providerId, type: "unknown" });
-						}
-					}
-					// Also expose OAuth providers the SDK supports, so the UI can
-					// offer "Sign in" buttons for providers the user hasn't yet
-					// configured.
-					let supported: string[] = [];
-					try {
-						supported = authStorage.getOAuthProviders().map((p) => p.id);
-					} catch {
-						// older SDKs may not expose this — fail soft
-					}
-					// Expose the full list of providers pi-mono knows about, so the
-					// UI can offer an API-key entry for any of them (issue #150 —
-					// previously the UI hardcoded a single "opencode-go" slot).
-					// Built from modelRegistry.getAll() deduped by provider, with
-					// the registry's own displayName for pretty labels.
-					let apiKeyProviders: Array<{ id: string; displayName: string }> = [];
-					try {
-						if (!modelRegistry) throw new Error("model registry not ready");
-						const seen = new Set<string>();
-						for (const m of modelRegistry.getAll()) {
-							if (seen.has(m.provider)) continue;
-							seen.add(m.provider);
-							apiKeyProviders.push({
-								id: m.provider,
-								displayName:
-									modelRegistry.getProviderDisplayName?.(m.provider) ??
-									m.provider,
-							});
-						}
-						apiKeyProviders.sort((a, b) =>
-							a.displayName.localeCompare(b.displayName),
+						});
+					} catch (err: unknown) {
+						const errAny = err as { name?: string; message?: string } | undefined;
+						const cancelled = errAny?.name === "AbortError" || ac.signal.aborted;
+						log(
+							"OAuth login %s for %s: %s",
+							cancelled ? "cancelled" : "failed",
+							provider,
+							errAny?.message ?? err,
 						);
-					} catch {
-						// fail soft — UI will fall back to a freeform input
-						apiKeyProviders = [];
+						send({
+							type: "result",
+							id: cmdId,
+							data: {
+								success: false,
+								cancelled,
+								error: cancelled ? undefined : String(errAny?.message ?? err),
+							},
+						});
+						send({
+							type: "event",
+							event: {
+								kind: cancelled ? "oauth_cancelled" : "oauth_failed",
+								provider,
+								error: cancelled ? undefined : String(errAny?.message ?? err),
+							},
+						});
+					} finally {
+						// Only clear if we still own the slot. A subsequent
+						// start_oauth call may have installed a fresh AC/promise
+						// while this one was unwinding.
+						if (oauthAbort === ac) {
+							oauthAbort = null;
+							oauthInflight = null;
+						}
 					}
-					send({
-						type: "result",
-						id: cmd.id,
-						data: { providers, supported, apiKeyProviders },
-					});
+				})();
+				break;
+			}
+
+			// ── cancel_oauth ───────────────────────────────────────────
+			case "cancel_oauth": {
+				if (oauthAbort) {
+					log("Cancelling OAuth flow");
+					oauthAbort.abort();
+				}
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── logout ─────────────────────────────────────────────────
+			case "logout": {
+				if (!authStorage) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
 					break;
 				}
-
-				// ── custom OpenAI-compatible providers (issue #207) ─────────
-				//
-				// Three handlers that let the UI add / list / remove user-defined
-				// providers in models.json's `providers.<id>` map. After save or
-				// delete we re-run initAgent() so ModelRegistry reloads from disk
-				// and the model selector sees the change immediately.
-				case "list_custom_providers": {
-					const modelsPath = join(piAgentDir(), "models.json");
+				try {
+					authStorage.logout(cmd.provider);
+					log("Logged out provider %s", cmd.provider);
+				} catch (err) {
+					log("logout failed: %s", err);
+				}
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				initAgent(zosmaDir).catch((err) => {
+					log("initAgent failed after logout: %s", err);
 					send({
-						type: "result",
-						id: cmd.id,
-						data: { providers: listCustomProviders(modelsPath) },
+						type: "event",
+						event: { kind: "agent_reload_failed", error: String(err) },
 					});
+				});
+				break;
+			}
+
+			// ── get_auth_status ────────────────────────────────────────
+			case "get_auth_status": {
+				if (!authStorage) {
+					send({ type: "error", id: cmd.id, message: "Not initialized" });
 					break;
 				}
-
-				case "save_custom_provider": {
-					const modelsPath = join(piAgentDir(), "models.json");
-					// New UX (#207 follow-up): the form collects only a base URL +
-					// optional key. An empty `models` array means "discover the model
-					// list from the server". A non-empty array is the manual-entry
-					// fallback the UI reveals when discovery finds nothing.
-					let provider = cmd.provider;
-					if (!provider.models || provider.models.length === 0) {
-						let discovered: Awaited<ReturnType<typeof discoverModels>>;
-						try {
-							discovered = await discoverModels(provider.baseUrl, provider.apiKey);
-						} catch (err) {
-							// Malformed base URL etc. — a normal validation error.
-							send({
-								type: "error",
-								id: cmd.id,
-								message: err instanceof Error ? err.message : String(err),
-							});
-							break;
-						}
-						if (discovered.models.length === 0) {
-							// Signal the UI to reveal its manual model-id field. The
-							// reachable flag lets it word the hint precisely. The
-							// `NO_MODELS_DISCOVERED:` prefix is the cross-boundary
-							// contract (Tauri invoke only carries the message string).
-							send({
-								type: "error",
-								id: cmd.id,
-								message: `NO_MODELS_DISCOVERED:${discovered.reachable ? "reachable" : "unreachable"}`,
-							});
-							break;
-						}
-						provider = {
-							...provider,
-							models: discovered.models.map((id) => ({ id })),
-						};
+				const providers: Array<{
+					id: string;
+					type: "api_key" | "oauth" | "unknown";
+					expires?: number;
+				}> = [];
+				for (const providerId of authStorage.list()) {
+					const cred = authStorage.get(providerId);
+					if (!cred) continue;
+					if (cred.type === "oauth") {
+						providers.push({
+							id: providerId,
+							type: "oauth",
+							expires: (cred as { expires?: number }).expires,
+						});
+					} else if (cred.type === "api_key") {
+						providers.push({ id: providerId, type: "api_key" });
+					} else {
+						providers.push({ id: providerId, type: "unknown" });
 					}
+				}
+				// Also expose OAuth providers the SDK supports, so the UI can
+				// offer "Sign in" buttons for providers the user hasn't yet
+				// configured.
+				let supported: string[] = [];
+				try {
+					supported = authStorage.getOAuthProviders().map((p) => p.id);
+				} catch {
+					// older SDKs may not expose this — fail soft
+				}
+				// Expose the full list of providers pi-mono knows about, so the
+				// UI can offer an API-key entry for any of them (issue #150 —
+				// previously the UI hardcoded a single "opencode-go" slot).
+				// Built from modelRegistry.getAll() deduped by provider, with
+				// the registry's own displayName for pretty labels.
+				let apiKeyProviders: Array<{ id: string; displayName: string }> = [];
+				try {
+					if (!modelRegistry) throw new Error("model registry not ready");
+					const seen = new Set<string>();
+					for (const m of modelRegistry.getAll()) {
+						if (seen.has(m.provider)) continue;
+						seen.add(m.provider);
+						apiKeyProviders.push({
+							id: m.provider,
+							displayName: modelRegistry.getProviderDisplayName?.(m.provider) ?? m.provider,
+						});
+					}
+					apiKeyProviders.sort((a, b) => a.displayName.localeCompare(b.displayName));
+				} catch {
+					// fail soft — UI will fall back to a freeform input
+					apiKeyProviders = [];
+				}
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { providers, supported, apiKeyProviders },
+				});
+				break;
+			}
+
+			// ── custom OpenAI-compatible providers (issue #207) ─────────
+			//
+			// Three handlers that let the UI add / list / remove user-defined
+			// providers in models.json's `providers.<id>` map. After save or
+			// delete we re-run initAgent() so ModelRegistry reloads from disk
+			// and the model selector sees the change immediately.
+			case "list_custom_providers": {
+				const modelsPath = join(piAgentDir(), "models.json");
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { providers: listCustomProviders(modelsPath) },
+				});
+				break;
+			}
+
+			case "save_custom_provider": {
+				const modelsPath = join(piAgentDir(), "models.json");
+				// New UX (#207 follow-up): the form collects only a base URL +
+				// optional key. An empty `models` array means "discover the model
+				// list from the server". A non-empty array is the manual-entry
+				// fallback the UI reveals when discovery finds nothing.
+				let provider = cmd.provider;
+				if (!provider.models || provider.models.length === 0) {
+					let discovered: Awaited<ReturnType<typeof discoverModels>>;
 					try {
-						saveCustomProvider(modelsPath, provider);
+						discovered = await discoverModels(provider.baseUrl, provider.apiKey);
 					} catch (err) {
+						// Malformed base URL etc. — a normal validation error.
 						send({
 							type: "error",
 							id: cmd.id,
@@ -2652,1103 +2611,1160 @@ async function main() {
 						});
 						break;
 					}
-					log("Saved custom provider %s (%d models)", provider.id, provider.models.length);
-					// Reload the agent so ModelRegistry picks up the new provider
-					// without an app restart. The provider is already persisted to
-					// models.json above, so a reload failure (e.g. resource
-					// resolution shelling out to a missing npm) must not fail the
-					// save — the model appears on the next init regardless. initAgent
-					// already degrades gracefully on resource-reload errors; this
-					// catch is defense-in-depth against any other init fragility.
-					try {
-						await initAgent(zosmaDir);
-					} catch (err) {
-						log(
-							"save_custom_provider: agent reload failed (provider saved): %s",
-							err instanceof Error ? err.message : String(err),
-						);
-						send({ type: "result", id: cmd.id, data: { success: true } });
-						break;
-					}
-					// Surface ModelRegistry's own validation result so the UI can
-					// show a precise error if pi-mono rejected the merged config.
-					const regError = modelRegistry?.getError();
-					if (regError) {
-						send({ type: "error", id: cmd.id, message: regError });
-						break;
-					}
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				case "delete_custom_provider": {
-					const modelsPath = join(piAgentDir(), "models.json");
-					deleteCustomProvider(modelsPath, cmd.providerId);
-					log("Deleted custom provider %s", cmd.providerId);
-					// Provider already removed from models.json; a reload failure
-					// must not fail the delete (mirrors save_custom_provider).
-					try {
-						await initAgent(zosmaDir);
-					} catch (err) {
-						log(
-							"delete_custom_provider: agent reload failed (provider deleted): %s",
-							err instanceof Error ? err.message : String(err),
-						);
-					}
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── connect_google (B2 #186) ────────────────────────────────
-				case "connect_google": {
-					// Connectable with EITHER the Zosma embedded client OR a BYO client.
-					const hasByo = Boolean(
-						cmd.byo?.clientId || readByoClient(defaultCoworkGooglePaths()),
-					);
-					if (!hasEmbeddedClient() && !hasByo) {
+					if (discovered.models.length === 0) {
+						// Signal the UI to reveal its manual model-id field. The
+						// reachable flag lets it word the hint precisely. The
+						// `NO_MODELS_DISCOVERED:` prefix is the cross-boundary
+						// contract (Tauri invoke only carries the message string).
 						send({
 							type: "error",
 							id: cmd.id,
-							message:
-								"No Google OAuth client configured. Set ZOSMA_GOOGLE_CLIENT_ID, or supply your own client id + secret in Advanced.",
+							message: `NO_MODELS_DISCOVERED:${discovered.reachable ? "reachable" : "unreachable"}`,
 						});
 						break;
 					}
-					// Abort a prior in-flight flow if the user clicks Connect again.
-					if (googleConsentAbort) {
-						googleConsentAbort.abort();
-					}
-					const ac = new AbortController();
-					googleConsentAbort = ac;
-					const cmdId = cmd.id;
-					const paths = defaultGooglePaths();
-					const coworkPaths = defaultCoworkGooglePaths();
-
-					// Resolve the selection + client: explicit command values win, else
-					// the saved Cowork prefs/BYO, else the Full-access / Zosma defaults.
-					const prefs = cmd.prefs ?? readScopePrefs(coworkPaths);
-					const byo =
-						cmd.byo === null
-							? null
-							: (cmd.byo ?? readByoClient(coworkPaths));
-					// Persist the selection so refresh/reconnect/status reuse it.
-					writeScopePrefs(coworkPaths, prefs);
-					if (cmd.byo) writeByoClient(coworkPaths, cmd.byo);
-					else if (cmd.byo === null) clearByoOnly(coworkPaths); // explicit revert to Zosma
-					const client = embeddedClient(byo);
-					const scopes = resolveScopes(prefs);
-					// Audit trail: the EXACT scopes we will ask Google for, derived from
-					// the selection — verifies “captured == requested” (#281).
+					provider = {
+						...provider,
+						models: discovered.models.map((id) => ({ id })),
+					};
+				}
+				try {
+					saveCustomProvider(modelsPath, provider);
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+					break;
+				}
+				log("Saved custom provider %s (%d models)", provider.id, provider.models.length);
+				// Reload the agent so ModelRegistry picks up the new provider
+				// without an app restart. The provider is already persisted to
+				// models.json above, so a reload failure (e.g. resource
+				// resolution shelling out to a missing npm) must not fail the
+				// save — the model appears on the next init regardless. initAgent
+				// already degrades gracefully on resource-reload errors; this
+				// catch is defense-in-depth against any other init fragility.
+				try {
+					await initAgent(zosmaDir);
+				} catch (err) {
 					log(
-						"Google connect: byo=%s prefs=%o requesting %d scopes: %s",
-						Boolean(byo),
-						prefs,
-						scopes.length,
-						scopes.join(" "),
+						"save_custom_provider: agent reload failed (provider saved): %s",
+						err instanceof Error ? err.message : String(err),
 					);
-
-					// Fire the async consent flow (non-blocking from the handler's
-					// perspective — the send() for result/error comes from within).
-					(async () => {
-						try {
-							send({
-								type: "event",
-								event: {
-									kind: "oauth_progress",
-									provider: "google",
-									message: "Opening browser for Google consent…",
-								},
-							});
-							const result = await runConsent({
-								client,
-								scopes,
-								onAuthUrl: (url) => {
-									send({
-										type: "event",
-										event: {
-											kind: "oauth_open_url",
-											provider: "google",
-											url,
-											instructions:
-												"Sign in with your Google account to connect Gmail, Calendar, Drive, Docs, Sheets and Slides.",
-										},
-									});
-								},
-								signal: ac.signal,
-							});
-
-							send({
-								type: "event",
-								event: {
-									kind: "oauth_progress",
-									provider: "google",
-									message: "Google consent granted. Fanning out credentials…",
-								},
-							});
-
-							fanOutCredentials(paths, {
-								client,
-								tokens: result.tokens,
-								email: result.email,
-								redirectUri: result.redirectUri,
-								prefs,
-							});
-
-							log("Google: credentials fanned out to %s and %s + %s", paths.workspaceOAuth, paths.piSettings, paths.gmailTokens);
-							if (!ac.signal.aborted) ac.abort();
-							googleConsentAbort = null;
-
-							send({
-								type: "result",
-								id: cmdId,
-								data: { success: true, email: result.email },
-							});
-							send({
-								type: "event",
-								event: { kind: "oauth_completed", provider: "google", email: result.email },
-							});
-						} catch (err: unknown) {
-							const errMsg = err instanceof Error ? err.message : String(err);
-							const cancelled = err instanceof Error && err.name === "AbortError";
-							log("Google consent %s: %s", cancelled ? "cancelled" : "failed", errMsg);
-							// Release the abort controller slot so re-connect works.
-							if (googleConsentAbort === ac) googleConsentAbort = null;
-							send({
-								type: "result",
-								id: cmdId,
-								data: { success: false, cancelled, error: errMsg },
-							});
-							send({
-								type: "event",
-								event: {
-									kind: cancelled ? "oauth_cancelled" : "oauth_failed",
-									provider: "google",
-									error: cancelled ? undefined : errMsg,
-								},
-							});
-						}
-						void 0; // no return value expected
-					})();
+					send({ type: "result", id: cmd.id, data: { success: true } });
 					break;
 				}
-
-				// ── get_google_status (B2 #186) ───────────────────────────────
-				case "get_google_status": {
-					try {
-						const paths = defaultGooglePaths();
-						const status = googleStatus(paths, defaultCoworkGooglePaths());
-						log("Google status: connected=%s email=%s", status.connected, status.email ?? "-");
-						send({ type: "result", id: cmd.id, data: status });
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log("get_google_status error: %s", errMsg);
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Failed to check Google status: ${errMsg}`,
-						});
-					}
+				// Surface ModelRegistry's own validation result so the UI can
+				// show a precise error if pi-mono rejected the merged config.
+				const regError = modelRegistry?.getError();
+				if (regError) {
+					send({ type: "error", id: cmd.id, message: regError });
 					break;
 				}
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
 
-				// ── disconnect_google (B2 #186) ────────────────────────────
-				case "disconnect_google": {
-					try {
-						const paths = defaultGooglePaths();
-						const result = await disconnectGoogle(paths, undefined, defaultCoworkGooglePaths());
-						log("Google disconnected: revoked=%s removed=%s", result.revoked, result.removed.join(", "));
-						send({ type: "result", id: cmd.id, data: result });
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log("disconnect_google error: %s", errMsg);
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Failed to disconnect Google: ${errMsg}`,
-						});
-					}
+			case "delete_custom_provider": {
+				const modelsPath = join(piAgentDir(), "models.json");
+				deleteCustomProvider(modelsPath, cmd.providerId);
+				log("Deleted custom provider %s", cmd.providerId);
+				// Provider already removed from models.json; a reload failure
+				// must not fail the delete (mirrors save_custom_provider).
+				try {
+					await initAgent(zosmaDir);
+				} catch (err) {
+					log(
+						"delete_custom_provider: agent reload failed (provider deleted): %s",
+						err instanceof Error ? err.message : String(err),
+					);
+				}
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── connect_google (B2 #186) ────────────────────────────────
+			case "connect_google": {
+				// Connectable with EITHER the Zosma embedded client OR a BYO client.
+				const hasByo = Boolean(cmd.byo?.clientId || readByoClient(defaultCoworkGooglePaths()));
+				if (!hasEmbeddedClient() && !hasByo) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message:
+							"No Google OAuth client configured. Set ZOSMA_GOOGLE_CLIENT_ID, or supply your own client id + secret in Advanced.",
+					});
 					break;
 				}
+				// Abort a prior in-flight flow if the user clicks Connect again.
+				if (googleConsentAbort) {
+					googleConsentAbort.abort();
+				}
+				const ac = new AbortController();
+				googleConsentAbort = ac;
+				const cmdId = cmd.id;
+				const paths = defaultGooglePaths();
+				const coworkPaths = defaultCoworkGooglePaths();
 
-				// ── get_google_prefs (#281) ──────────────────────────
-				case "get_google_prefs": {
+				// Resolve the selection + client: explicit command values win, else
+				// the saved Cowork prefs/BYO, else the Full-access / Zosma defaults.
+				const prefs = cmd.prefs ?? readScopePrefs(coworkPaths);
+				const byo = cmd.byo === null ? null : (cmd.byo ?? readByoClient(coworkPaths));
+				// Persist the selection so refresh/reconnect/status reuse it.
+				writeScopePrefs(coworkPaths, prefs);
+				if (cmd.byo) writeByoClient(coworkPaths, cmd.byo);
+				else if (cmd.byo === null) clearByoOnly(coworkPaths); // explicit revert to Zosma
+				const client = embeddedClient(byo);
+				const scopes = resolveScopes(prefs);
+				// Audit trail: the EXACT scopes we will ask Google for, derived from
+				// the selection — verifies “captured == requested” (#281).
+				log(
+					"Google connect: byo=%s prefs=%o requesting %d scopes: %s",
+					Boolean(byo),
+					prefs,
+					scopes.length,
+					scopes.join(" "),
+				);
+
+				// Fire the async consent flow (non-blocking from the handler's
+				// perspective — the send() for result/error comes from within).
+				(async () => {
 					try {
-						const coworkPaths = defaultCoworkGooglePaths();
-						const prefs = readScopePrefs(coworkPaths);
-						const byo = readByoClient(coworkPaths);
 						send({
-							type: "result",
-							id: cmd.id,
-							data: {
-								matrix: CAPABILITY_MATRIX,
-								defaults: DEFAULT_PREFS,
-								prefs,
-								requestedScopes: resolveScopes(prefs),
-								requestedTier: tierOf(prefs),
-								// never leak the secret — only whether a BYO client is set + its id
-								byo: byo ? { clientId: byo.clientId, configured: true } : null,
+							type: "event",
+							event: {
+								kind: "oauth_progress",
+								provider: "google",
+								message: "Opening browser for Google consent…",
 							},
 						});
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						send({ type: "error", id: cmd.id, message: `Failed to read Google prefs: ${errMsg}` });
-					}
-					break;
-				}
-
-				// ── save_google_prefs (#281) ────────────────────────
-				case "save_google_prefs": {
-					try {
-						const coworkPaths = defaultCoworkGooglePaths();
-						if (cmd.prefs) writeScopePrefs(coworkPaths, cmd.prefs);
-						if (cmd.byo === null) {
-							clearByoOnly(coworkPaths); // revert to the Zosma client
-						} else if (cmd.byo) {
-							writeByoClient(coworkPaths, cmd.byo);
-						}
-						const prefs = readScopePrefs(coworkPaths);
-						send({
-							type: "result",
-							id: cmd.id,
-							data: { success: true, prefs, requestedScopes: resolveScopes(prefs) },
-						});
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						send({ type: "error", id: cmd.id, message: `Failed to save Google prefs: ${errMsg}` });
-					}
-					break;
-				}
-
-				// ── get_google_app_status (#281) ──────────────────────
-				// Which app extensions does the (selected) products need, and are they
-				// installed at pi's path? Gates the Connect/auth step in the UI.
-				case "get_google_app_status": {
-					try {
-						const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
-						const status = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
-						send({ type: "result", id: cmd.id, data: status });
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Failed to read Google app status: ${errMsg}`,
-						});
-					}
-					break;
-				}
-
-				// ── install_google_app (#281) ─────────────────────
-				// Install (via pi's OWN package manager — no parallel registry, no
-				// `pi` binary dependency) every extension the selection needs but is
-				// missing, then reload so the new extensions are live this session.
-				case "install_google_app": {
-					try {
-						const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
-						const before = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
-						if (before.missing.length > 0) {
-							const home = homedir();
-							const agentDir = piAgentDir();
-							const sm = SettingsManager.create(home, agentDir);
-							const pm = new DefaultPackageManager({ cwd: home, agentDir, settingsManager: sm });
-							for (const pkg of before.missing) {
+						const result = await runConsent({
+							client,
+							scopes,
+							onAuthUrl: (url) => {
 								send({
 									type: "event",
 									event: {
-										kind: "oauth_progress",
+										kind: "oauth_open_url",
 										provider: "google",
-										message: `Installing ${pkg}…`,
+										url,
+										instructions:
+											"Sign in with your Google account to connect Gmail, Calendar, Drive, Docs, Sheets and Slides.",
 									},
 								});
-								log("Google app: installing %s via pi package manager", pkg);
-								await pm.installAndPersist(`npm:${pkg}`);
-							}
-							// Reload the agent so newly installed extensions load now.
-							await initAgent(zosmaDir);
-						}
-						const after = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
-						send({ type: "result", id: cmd.id, data: after });
+							},
+							signal: ac.signal,
+						});
+
+						send({
+							type: "event",
+							event: {
+								kind: "oauth_progress",
+								provider: "google",
+								message: "Google consent granted. Fanning out credentials…",
+							},
+						});
+
+						fanOutCredentials(paths, {
+							client,
+							tokens: result.tokens,
+							email: result.email,
+							redirectUri: result.redirectUri,
+							prefs,
+						});
+
+						log(
+							"Google: credentials fanned out to %s and %s + %s",
+							paths.workspaceOAuth,
+							paths.piSettings,
+							paths.gmailTokens,
+						);
+						if (!ac.signal.aborted) ac.abort();
+						googleConsentAbort = null;
+
+						send({
+							type: "result",
+							id: cmdId,
+							data: { success: true, email: result.email },
+						});
+						send({
+							type: "event",
+							event: { kind: "oauth_completed", provider: "google", email: result.email },
+						});
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
-						log("install_google_app error: %s", errMsg);
+						const cancelled = err instanceof Error && err.name === "AbortError";
+						log("Google consent %s: %s", cancelled ? "cancelled" : "failed", errMsg);
+						// Release the abort controller slot so re-connect works.
+						if (googleConsentAbort === ac) googleConsentAbort = null;
 						send({
-							type: "error",
-							id: cmd.id,
-							message: `Failed to install Google app extensions: ${errMsg}`,
+							type: "result",
+							id: cmdId,
+							data: { success: false, cancelled, error: errMsg },
+						});
+						send({
+							type: "event",
+							event: {
+								kind: cancelled ? "oauth_cancelled" : "oauth_failed",
+								provider: "google",
+								error: cancelled ? undefined : errMsg,
+							},
 						});
 					}
-					break;
+					void 0; // no return value expected
+				})();
+				break;
+			}
+
+			// ── get_google_status (B2 #186) ───────────────────────────────
+			case "get_google_status": {
+				try {
+					const paths = defaultGooglePaths();
+					const status = googleStatus(paths, defaultCoworkGooglePaths());
+					log("Google status: connected=%s email=%s", status.connected, status.email ?? "-");
+					send({ type: "result", id: cmd.id, data: status });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log("get_google_status error: %s", errMsg);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Failed to check Google status: ${errMsg}`,
+					});
 				}
+				break;
+			}
 
-				// ── gh_auth_status ────────────────────────────────────────
-				// Check if GitHub CLI is authenticated. Returns connected state
-				// and host info. Cached for 60s. Used by the GitHub App UI.
-				case "gh_auth_status": {
-					const cached = ghCacheGet("status");
-					if (cached !== undefined) {
-						send({ type: "result", id: cmd.id, data: cached });
-						break;
-					}
-					const status = await ghJson(["auth", "status", "--json", "hosts"], 5000);
-					if (!status) {
-						// Don't cache the disconnected state — login polling needs
-						// a fresh probe to detect the moment auth completes.
-						send({ type: "result", id: cmd.id, data: { connected: false } });
-						break;
-					}
-					try {
-						const raw = JSON.parse(status);
-						const hosts: Record<string, { user: string }> = {};
-						for (const [hostname, entries] of Object.entries(raw.hosts ?? {})) {
-							const arr = entries as Array<{ login?: string }>;
-							if (arr.length > 0 && arr[0].login) {
-								hosts[hostname] = { user: arr[0].login };
-							}
-						}
-						const connected = Object.keys(hosts).length > 0;
-						const data = { connected, hosts };
-						// Only cache the positive (connected) result.
-						if (connected) ghCacheSet("status", data);
-						send({ type: "result", id: cmd.id, data });
-					} catch {
-						send({ type: "result", id: cmd.id, data: { connected: false } });
-					}
-					break;
+			// ── disconnect_google (B2 #186) ────────────────────────────
+			case "disconnect_google": {
+				try {
+					const paths = defaultGooglePaths();
+					const result = await disconnectGoogle(paths, undefined, defaultCoworkGooglePaths());
+					log(
+						"Google disconnected: revoked=%s removed=%s",
+						result.revoked,
+						result.removed.join(", "),
+					);
+					send({ type: "result", id: cmd.id, data: result });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log("disconnect_google error: %s", errMsg);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Failed to disconnect Google: ${errMsg}`,
+					});
 				}
+				break;
+			}
 
-				// ── gh_organizations ────────────────────────────────────
-				// Personal account + organizations + repo count + scopes.
-				// All gh calls run concurrently (each spawns a ~0.5s process)
-				// and the result is cached for 60s. Used by the GitHub App UI.
-				case "gh_organizations": {
-					const cachedOrg = ghCacheGet("organizations");
-					if (cachedOrg !== undefined) {
-						send({ type: "result", id: cmd.id, data: cachedOrg });
-						break;
-					}
-					// Run all four gh calls in parallel.
-					const [userRaw, orgsRaw, reposRaw, scopesRaw] = await Promise.all([
-						ghJson(["api", "user", "--jq", "{login, name, avatar_url, email, public_repos}"], 6000),
-						ghJson(
-							[
-								"api", "user/memberships/orgs", "--paginate", "--jq",
-								'[.[] | select(.state == "active") | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]',
-							],
-							8000,
-						),
-						ghJson(
-							["api", "graphql", "-f", "query={viewer{repositories{totalCount}}}", "--jq", ".data.viewer.repositories.totalCount"],
-							6000,
-						),
-						ghJson(["auth", "status", "--json", "hosts", "--jq", '.hosts["github.com"][0].scopes'], 5000),
-					]);
-
-					if (!userRaw) {
-						send({ type: "error", id: cmd.id, message: "Not authenticated" });
-						break;
-					}
-					try {
-						const user = JSON.parse(userRaw);
-						let orgs: Array<{ login: string; role: string; avatar_url: string }> = [];
-						if (orgsRaw) {
-							orgs = orgsRaw
-								.split("\n")
-								.filter((l) => l.trim().startsWith("["))
-								.flatMap((l) => JSON.parse(l));
-						}
-						const totalRepos =
-							(reposRaw && parseInt(reposRaw, 10)) ||
-							(typeof user.public_repos === "number" ? user.public_repos : 0);
-						const scopes = scopesRaw
-							? scopesRaw.split(",").map((x) => x.trim()).filter(Boolean)
-							: [];
-						const data = { user, orgs, totalRepos, scopes };
-						ghCacheSet("organizations", data);
-						send({ type: "result", id: cmd.id, data });
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log("gh_organizations parse error: %s", errMsg);
-						send({ type: "error", id: cmd.id, message: "Not authenticated" });
-					}
-					break;
+			// ── get_google_prefs (#281) ──────────────────────────
+			case "get_google_prefs": {
+				try {
+					const coworkPaths = defaultCoworkGooglePaths();
+					const prefs = readScopePrefs(coworkPaths);
+					const byo = readByoClient(coworkPaths);
+					send({
+						type: "result",
+						id: cmd.id,
+						data: {
+							matrix: CAPABILITY_MATRIX,
+							defaults: DEFAULT_PREFS,
+							prefs,
+							requestedScopes: resolveScopes(prefs),
+							requestedTier: tierOf(prefs),
+							// never leak the secret — only whether a BYO client is set + its id
+							byo: byo ? { clientId: byo.clientId, configured: true } : null,
+						},
+					});
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					send({ type: "error", id: cmd.id, message: `Failed to read Google prefs: ${errMsg}` });
 				}
+				break;
+			}
 
-				// ── gh_auth_login ───────────────────────────────────────
-				// Drive `gh auth login --web` device flow. With non-TTY stdin,
-				// gh prints a one-time code + the device URL and then polls for
-				// authorization on its own — saving the token and configuring
-				// git's credential helper when complete. We parse the code/URL
-				// and hand them to the UI, which opens the browser via Tauri
-				// (reliable across platforms) and polls gh_auth_status.
-				case "gh_auth_login": {
-					try {
-						// Invalidate cached status/org data so polling sees fresh state.
-						ghCacheClear();
-						// Kill any previous in-flight attempt.
-						if (ghAuthProc && !ghAuthProc.killed) {
-							try { ghAuthProc.kill(); } catch { /* ignore */ }
-							ghAuthProc = null;
-						}
+			// ── save_google_prefs (#281) ────────────────────────
+			case "save_google_prefs": {
+				try {
+					const coworkPaths = defaultCoworkGooglePaths();
+					if (cmd.prefs) writeScopePrefs(coworkPaths, cmd.prefs);
+					if (cmd.byo === null) {
+						clearByoOnly(coworkPaths); // revert to the Zosma client
+					} else if (cmd.byo) {
+						writeByoClient(coworkPaths, cmd.byo);
+					}
+					const prefs = readScopePrefs(coworkPaths);
+					send({
+						type: "result",
+						id: cmd.id,
+						data: { success: true, prefs, requestedScopes: resolveScopes(prefs) },
+					});
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					send({ type: "error", id: cmd.id, message: `Failed to save Google prefs: ${errMsg}` });
+				}
+				break;
+			}
 
-						const scopes =
-							(cmd as GhAuthLoginCommand).scopes?.trim() ||
-							"repo,read:org,gist,workflow,read:user,project";
+			// ── get_google_app_status (#281) ──────────────────────
+			// Which app extensions does the (selected) products need, and are they
+			// installed at pi's path? Gates the Connect/auth step in the UI.
+			case "get_google_app_status": {
+				try {
+					const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
+					const status = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+					send({ type: "result", id: cmd.id, data: status });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Failed to read Google app status: ${errMsg}`,
+					});
+				}
+				break;
+			}
 
-						const child = spawn(
-							"gh",
-							[
-								"auth", "login",
-								"--hostname", "github.com",
-								"--git-protocol", "https",
-								"--web",
-								"--scopes", scopes,
-							],
-							{ stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
-						);
-						ghAuthProc = child;
-
-						let buf = "";
-						let responded = false;
-						const tryRespond = () => {
-							if (responded) return;
-							const codeMatch = buf.match(/one-time code:\s*([A-Z0-9-]+)/i);
-							if (!codeMatch) return;
-							const urlMatch = buf.match(/(https:\/\/\S*github\.com\/login\/device)/i);
-							responded = true;
-							log("gh_auth_login: device code obtained");
+			// ── install_google_app (#281) ─────────────────────
+			// Install (via pi's OWN package manager — no parallel registry, no
+			// `pi` binary dependency) every extension the selection needs but is
+			// missing, then reload so the new extensions are live this session.
+			case "install_google_app": {
+				try {
+					const prefs = cmd.prefs ?? readScopePrefs(defaultCoworkGooglePaths());
+					const before = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+					if (before.missing.length > 0) {
+						const home = homedir();
+						const agentDir = piAgentDir();
+						const sm = SettingsManager.create(home, agentDir);
+						const pm = new DefaultPackageManager({ cwd: home, agentDir, settingsManager: sm });
+						for (const pkg of before.missing) {
 							send({
-								type: "result",
-								id: cmd.id,
-								data: {
-									code: codeMatch[1],
-									url: urlMatch ? urlMatch[1] : "https://github.com/login/device",
-									scopes,
+								type: "event",
+								event: {
+									kind: "oauth_progress",
+									provider: "google",
+									message: `Installing ${pkg}…`,
 								},
 							});
-						};
-						child.stdout?.on("data", (c: Buffer) => { buf += c.toString(); tryRespond(); });
-						child.stderr?.on("data", (c: Buffer) => { buf += c.toString(); tryRespond(); });
-						child.on("error", (err: Error) => {
-							log("gh_auth_login spawn error: %s", err.message);
-							if (!responded) {
-								responded = true;
-								send({ type: "error", id: cmd.id, message: err.message });
-							}
-						});
-						child.on("exit", (code) => {
-							log("gh_auth_login exited code=%s", String(code));
-							if (ghAuthProc === child) ghAuthProc = null;
-							// Auth just completed (or failed) — drop stale cache so the
-							// next status poll reflects the new connection immediately.
-							ghCacheClear();
-						});
-
-						// Safety: if no code within 15s, report failure.
-						setTimeout(() => {
-							if (!responded) {
-								responded = true;
-								const tail = buf.slice(-300) || "no output";
-								send({
-									type: "error",
-									id: cmd.id,
-									message: `Timed out waiting for device code. gh output: ${tail}`,
-								});
-							}
-						}, 15000);
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log("gh_auth_login error: %s", errMsg);
-						send({ type: "error", id: cmd.id, message: errMsg });
+							log("Google app: installing %s via pi package manager", pkg);
+							await pm.installAndPersist(`npm:${pkg}`);
+						}
+						// Reload the agent so newly installed extensions load now.
+						await initAgent(zosmaDir);
 					}
+					const after = appExtensionStatus(prefs, readPiPackages(piAgentDir()));
+					send({ type: "result", id: cmd.id, data: after });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log("install_google_app error: %s", errMsg);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Failed to install Google app extensions: ${errMsg}`,
+					});
+				}
+				break;
+			}
+
+			// ── gh_auth_status ────────────────────────────────────────
+			// Check if GitHub CLI is authenticated. Returns connected state
+			// and host info. Cached for 60s. Used by the GitHub App UI.
+			case "gh_auth_status": {
+				const cached = ghCacheGet("status");
+				if (cached !== undefined) {
+					send({ type: "result", id: cmd.id, data: cached });
 					break;
 				}
+				const status = await ghJson(["auth", "status", "--json", "hosts"], 5000);
+				if (!status) {
+					// Don't cache the disconnected state — login polling needs
+					// a fresh probe to detect the moment auth completes.
+					send({ type: "result", id: cmd.id, data: { connected: false } });
+					break;
+				}
+				try {
+					const raw = JSON.parse(status);
+					const hosts: Record<string, { user: string }> = {};
+					for (const [hostname, entries] of Object.entries(raw.hosts ?? {})) {
+						const arr = entries as Array<{ login?: string }>;
+						if (arr.length > 0 && arr[0].login) {
+							hosts[hostname] = { user: arr[0].login };
+						}
+					}
+					const connected = Object.keys(hosts).length > 0;
+					const data = { connected, hosts };
+					// Only cache the positive (connected) result.
+					if (connected) ghCacheSet("status", data);
+					send({ type: "result", id: cmd.id, data });
+				} catch {
+					send({ type: "result", id: cmd.id, data: { connected: false } });
+				}
+				break;
+			}
 
-				// ── gh_auth_cancel ──────────────────────────────────────
-				// Abort an in-flight device-flow login.
-				case "gh_auth_cancel": {
+			// ── gh_organizations ────────────────────────────────────
+			// Personal account + organizations + repo count + scopes.
+			// All gh calls run concurrently (each spawns a ~0.5s process)
+			// and the result is cached for 60s. Used by the GitHub App UI.
+			case "gh_organizations": {
+				const cachedOrg = ghCacheGet("organizations");
+				if (cachedOrg !== undefined) {
+					send({ type: "result", id: cmd.id, data: cachedOrg });
+					break;
+				}
+				// Run all four gh calls in parallel.
+				const [userRaw, orgsRaw, reposRaw, scopesRaw] = await Promise.all([
+					ghJson(["api", "user", "--jq", "{login, name, avatar_url, email, public_repos}"], 6000),
+					ghJson(
+						[
+							"api",
+							"user/memberships/orgs",
+							"--paginate",
+							"--jq",
+							'[.[] | select(.state == "active") | {login: .organization.login, role: .role, avatar_url: .organization.avatar_url}]',
+						],
+						8000,
+					),
+					ghJson(
+						[
+							"api",
+							"graphql",
+							"-f",
+							"query={viewer{repositories{totalCount}}}",
+							"--jq",
+							".data.viewer.repositories.totalCount",
+						],
+						6000,
+					),
+					ghJson(
+						["auth", "status", "--json", "hosts", "--jq", '.hosts["github.com"][0].scopes'],
+						5000,
+					),
+				]);
+
+				if (!userRaw) {
+					send({ type: "error", id: cmd.id, message: "Not authenticated" });
+					break;
+				}
+				try {
+					const user = JSON.parse(userRaw);
+					let orgs: Array<{ login: string; role: string; avatar_url: string }> = [];
+					if (orgsRaw) {
+						orgs = orgsRaw
+							.split("\n")
+							.filter((l) => l.trim().startsWith("["))
+							.flatMap((l) => JSON.parse(l));
+					}
+					const totalRepos =
+						(reposRaw && Number.parseInt(reposRaw, 10)) ||
+						(typeof user.public_repos === "number" ? user.public_repos : 0);
+					const scopes = scopesRaw
+						? scopesRaw
+								.split(",")
+								.map((x) => x.trim())
+								.filter(Boolean)
+						: [];
+					const data = { user, orgs, totalRepos, scopes };
+					ghCacheSet("organizations", data);
+					send({ type: "result", id: cmd.id, data });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log("gh_organizations parse error: %s", errMsg);
+					send({ type: "error", id: cmd.id, message: "Not authenticated" });
+				}
+				break;
+			}
+
+			// ── gh_auth_login ───────────────────────────────────────
+			// Drive `gh auth login --web` device flow. With non-TTY stdin,
+			// gh prints a one-time code + the device URL and then polls for
+			// authorization on its own — saving the token and configuring
+			// git's credential helper when complete. We parse the code/URL
+			// and hand them to the UI, which opens the browser via Tauri
+			// (reliable across platforms) and polls gh_auth_status.
+			case "gh_auth_login": {
+				try {
+					// Invalidate cached status/org data so polling sees fresh state.
+					ghCacheClear();
+					// Kill any previous in-flight attempt.
 					if (ghAuthProc && !ghAuthProc.killed) {
-						try { ghAuthProc.kill(); } catch { /* ignore */ }
+						try {
+							ghAuthProc.kill();
+						} catch {
+							/* ignore */
+						}
+						ghAuthProc = null;
 					}
-					ghAuthProc = null;
-					send({ type: "result", id: cmd.id, data: { cancelled: true } });
-					break;
-				}
 
-				// ── gh_auth_logout ──────────────────────────────────────
-				// Sign out: revoke the stored gh token for github.com.
-				case "gh_auth_logout": {
-					try {
-						execFileSync("gh", ["auth", "logout", "--hostname", "github.com"], {
-							encoding: "utf-8",
-							timeout: 5000,
-						});
-						ghCacheClear();
-						send({ type: "result", id: cmd.id, data: { success: true } });
-					} catch (err: unknown) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						send({ type: "error", id: cmd.id, message: errMsg });
-					}
-					break;
-				}
+					const scopes =
+						(cmd as GhAuthLoginCommand).scopes?.trim() ||
+						"repo,read:org,gist,workflow,read:user,project";
 
-				// ── reload ─────────────────────────────────────────────────
-				case "reload": {
-					await initAgent(zosmaDir);
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── new_session ────────────────────────────────────────────
-				case "new_session": {
-					// Reset the in-memory session for a fresh start
-					if (session) {
-						session.abort();
-					}
-					if (!authStorage || !modelRegistry || !settingsManager || !resourceLoader) {
-						send({ type: "error", id: cmd.id, error: "Agent not initialized" });
-						break;
-					}
-					// If the UI passed a folder, switch the workspace. A changed cwd
-					// also rebinds the resource loader so a `.agents/` folder inside
-					// the chosen project is discovered (pi's "open from any folder").
-					// Same folder → reuse the cached loader (avoids a disk re-scan).
-					const requestedCwd = resolveWorkspace(cmd.cwd);
-					if (requestedCwd !== workspaceCwd) {
-						workspaceCwd = requestedCwd;
-						retargetTasksWatcher(workspaceCwd);
-						log("new_session: workspace → %s", workspaceCwd);
-						resourceLoader = await buildResourceLoader(workspaceCwd);
-					}
-					const newSessionManager = SessionManager.inMemory(workspaceCwd);
-					const result = await createAgentSession({
-						cwd: workspaceCwd,
-						authStorage,
-						modelRegistry,
-						sessionManager: newSessionManager,
-						settingsManager,
-						resourceLoader,
-					});
-					session = result.session;
-					sessionManager = newSessionManager;
-
-					// Re-subscribe to events
-					session.subscribe((event) => {
-						send({ type: "event", event });
-					});
-
-					// Re-bind the extension UI bridge for the new session.
-					await bindExtensionUi(result.session);
-
-					send({
-						type: "result",
-						id: cmd.id,
-						data: { success: true, cwd: workspaceCwd },
-					});
-					break;
-				}
-
-				// ── get_workspace ──────────────────────────────────────────
-				case "get_workspace": {
-					send({
-						type: "result",
-						id: cmd.id,
-						data: { cwd: workspaceCwd, default: defaultWorkspaceDir() },
-					});
-					break;
-				}
-
-				// ── list_sessions ──────────────────────────────────────────
-				case "list_sessions": {
-					const sessions = listSessionFiles(zosmaDir);
-					send({
-						type: "result",
-						id: cmd.id,
-						data: { sessions },
-					});
-					break;
-				}
-
-				// ── save_session ───────────────────────────────────────────
-				case "save_session": {
-					saveSession(
-						zosmaDir,
-						cmd.id,
-						cmd.title || "Chat",
-						cmd.messages || [],
-						cmd.model,
-						cmd.provider,
-						// Stamp the active workspace so resume restores this folder.
-						workspaceCwd,
+					const child = spawn(
+						"gh",
+						[
+							"auth",
+							"login",
+							"--hostname",
+							"github.com",
+							"--git-protocol",
+							"https",
+							"--web",
+							"--scopes",
+							scopes,
+						],
+						{ stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
 					);
-					send({ type: "done", id: cmd.id });
-					break;
-				}
+					ghAuthProc = child;
 
-				// ── load_session ───────────────────────────────────────────
-				case "load_session": {
-					try {
-						const messages = loadSessionMessages(zosmaDir, cmd.sessionFile);
-						// Also read the header for metadata
-						const filePath = join(sessionsDir(zosmaDir), cmd.sessionFile);
-						const content = readFileSync(filePath, "utf-8");
-						const header = JSON.parse(content.trim().split("\n")[0]);
-
-						// Resume semantics (like pi's /resume): reload the pi session
-						// so newly added extensions/skills/prompts are picked up
-						// without restarting the app, then continue the saved
-						// conversation inside the reloaded session.
-						//
-						// Extensions/skills are bound at session-creation time, so the
-						// currently-active session can't see resources added after it
-						// was built. We re-scan the loader and rebuild the session.
-						// Unlike the `reload` command we do NOT call initAgent(): that
-						// re-emits `ready` and would reset the frontend model selection.
-						if (authStorage && modelRegistry && settingsManager && resourceLoader) {
-							// 0. Restore the workspace this conversation ran in. Legacy
-							//    sessions have no saved cwd → resolveWorkspace(undefined)
-							//    falls back to the default (home).
-							const sessionCwd = resolveWorkspace(
-								typeof header.cwd === "string" ? header.cwd : undefined,
-							);
-							if (sessionCwd !== workspaceCwd) {
-								// Folder changed: rebuild the loader bound to the restored
-								// cwd (this also re-scans disk for new extensions/skills).
-								workspaceCwd = sessionCwd;
-								retargetTasksWatcher(workspaceCwd);
-								log("load_session: workspace → %s", workspaceCwd);
-								resourceLoader = await buildResourceLoader(workspaceCwd);
-							} else {
-								// Same folder: just re-scan for newly added resources.
-								await resourceLoader.reload();
-							}
-							// Rebuild the session from the (re)loaded loader.
-							if (session) {
-								session.abort();
-							}
-							const resumedSessionManager =
-								SessionManager.inMemory(workspaceCwd);
-							const resumed = await createAgentSession({
-								cwd: workspaceCwd,
-								authStorage,
-								modelRegistry,
-								sessionManager: resumedSessionManager,
-								settingsManager,
-								resourceLoader,
-							});
-							session = resumed.session;
-							sessionManager = resumedSessionManager;
-							// Re-subscribe so the rebuilt session's events reach stdout.
-							session.subscribe((event) => {
-								send({ type: "event", event });
-							});
-
-							// Re-bind the extension UI bridge for the resumed session.
-							await bindExtensionUi(resumed.session);
-						}
-
-						// 3. Restore the saved conversation into the reloaded session.
-						if (session && Array.isArray(messages) && messages.length > 0) {
-							restoreSessionContext(session, messages);
-						}
-
+					let buf = "";
+					let responded = false;
+					const tryRespond = () => {
+						if (responded) return;
+						const codeMatch = buf.match(/one-time code:\s*([A-Z0-9-]+)/i);
+						if (!codeMatch) return;
+						const urlMatch = buf.match(/(https:\/\/\S*github\.com\/login\/device)/i);
+						responded = true;
+						log("gh_auth_login: device code obtained");
 						send({
 							type: "result",
 							id: cmd.id,
 							data: {
-								messages,
-								title: header.title || "",
-								model: header.model,
-								provider: header.provider,
-								cwd: workspaceCwd,
+								code: codeMatch[1],
+								url: urlMatch ? urlMatch[1] : "https://github.com/login/device",
+								scopes,
 							},
 						});
-					} catch (err) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: err instanceof Error ? err.message : String(err),
-						});
+					};
+					child.stdout?.on("data", (c: Buffer) => {
+						buf += c.toString();
+						tryRespond();
+					});
+					child.stderr?.on("data", (c: Buffer) => {
+						buf += c.toString();
+						tryRespond();
+					});
+					child.on("error", (err: Error) => {
+						log("gh_auth_login spawn error: %s", err.message);
+						if (!responded) {
+							responded = true;
+							send({ type: "error", id: cmd.id, message: err.message });
+						}
+					});
+					child.on("exit", (code) => {
+						log("gh_auth_login exited code=%s", String(code));
+						if (ghAuthProc === child) ghAuthProc = null;
+						// Auth just completed (or failed) — drop stale cache so the
+						// next status poll reflects the new connection immediately.
+						ghCacheClear();
+					});
+
+					// Safety: if no code within 15s, report failure.
+					setTimeout(() => {
+						if (!responded) {
+							responded = true;
+							const tail = buf.slice(-300) || "no output";
+							send({
+								type: "error",
+								id: cmd.id,
+								message: `Timed out waiting for device code. gh output: ${tail}`,
+							});
+						}
+					}, 15000);
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					log("gh_auth_login error: %s", errMsg);
+					send({ type: "error", id: cmd.id, message: errMsg });
+				}
+				break;
+			}
+
+			// ── gh_auth_cancel ──────────────────────────────────────
+			// Abort an in-flight device-flow login.
+			case "gh_auth_cancel": {
+				if (ghAuthProc && !ghAuthProc.killed) {
+					try {
+						ghAuthProc.kill();
+					} catch {
+						/* ignore */
 					}
+				}
+				ghAuthProc = null;
+				send({ type: "result", id: cmd.id, data: { cancelled: true } });
+				break;
+			}
+
+			// ── gh_auth_logout ──────────────────────────────────────
+			// Sign out: revoke the stored gh token for github.com.
+			case "gh_auth_logout": {
+				try {
+					execFileSync("gh", ["auth", "logout", "--hostname", "github.com"], {
+						encoding: "utf-8",
+						timeout: 5000,
+					});
+					ghCacheClear();
+					send({ type: "result", id: cmd.id, data: { success: true } });
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					send({ type: "error", id: cmd.id, message: errMsg });
+				}
+				break;
+			}
+
+			// ── reload ─────────────────────────────────────────────────
+			case "reload": {
+				await initAgent(zosmaDir);
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── new_session ────────────────────────────────────────────
+			case "new_session": {
+				// Reset the in-memory session for a fresh start
+				if (session) {
+					session.abort();
+				}
+				if (!authStorage || !modelRegistry || !settingsManager || !resourceLoader) {
+					send({ type: "error", id: cmd.id, error: "Agent not initialized" });
 					break;
 				}
+				// If the UI passed a folder, switch the workspace. A changed cwd
+				// also rebinds the resource loader so a `.agents/` folder inside
+				// the chosen project is discovered (pi's "open from any folder").
+				// Same folder → reuse the cached loader (avoids a disk re-scan).
+				const requestedCwd = resolveWorkspace(cmd.cwd);
+				if (requestedCwd !== workspaceCwd) {
+					workspaceCwd = requestedCwd;
+					retargetTasksWatcher(workspaceCwd);
+					log("new_session: workspace → %s", workspaceCwd);
+					resourceLoader = await buildResourceLoader(workspaceCwd);
+				}
+				const newSessionManager = SessionManager.inMemory(workspaceCwd);
+				const result = await createAgentSession({
+					cwd: workspaceCwd,
+					authStorage,
+					modelRegistry,
+					sessionManager: newSessionManager,
+					settingsManager,
+					resourceLoader,
+				});
+				session = result.session;
+				sessionManager = newSessionManager;
 
-				// ── delete_session ─────────────────────────────────────────
-				case "delete_session": {
-					const deleted = deleteSessionFile(zosmaDir, cmd.sessionFile);
+				// Re-subscribe to events
+				session.subscribe((event) => {
+					send({ type: "event", event });
+				});
+
+				// Re-bind the extension UI bridge for the new session.
+				await bindExtensionUi(result.session);
+
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { success: true, cwd: workspaceCwd },
+				});
+				break;
+			}
+
+			// ── get_workspace ──────────────────────────────────────────
+			case "get_workspace": {
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { cwd: workspaceCwd, default: defaultWorkspaceDir() },
+				});
+				break;
+			}
+
+			// ── list_sessions ──────────────────────────────────────────
+			case "list_sessions": {
+				const sessions = listSessionFiles(zosmaDir);
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { sessions },
+				});
+				break;
+			}
+
+			// ── save_session ───────────────────────────────────────────
+			case "save_session": {
+				saveSession(
+					zosmaDir,
+					cmd.id,
+					cmd.title || "Chat",
+					cmd.messages || [],
+					cmd.model,
+					cmd.provider,
+					// Stamp the active workspace so resume restores this folder.
+					workspaceCwd,
+				);
+				send({ type: "done", id: cmd.id });
+				break;
+			}
+
+			// ── load_session ───────────────────────────────────────────
+			case "load_session": {
+				try {
+					const messages = loadSessionMessages(zosmaDir, cmd.sessionFile);
+					// Also read the header for metadata
+					const filePath = join(sessionsDir(zosmaDir), cmd.sessionFile);
+					const content = readFileSync(filePath, "utf-8");
+					const header = JSON.parse(content.trim().split("\n")[0]);
+
+					// Resume semantics (like pi's /resume): reload the pi session
+					// so newly added extensions/skills/prompts are picked up
+					// without restarting the app, then continue the saved
+					// conversation inside the reloaded session.
+					//
+					// Extensions/skills are bound at session-creation time, so the
+					// currently-active session can't see resources added after it
+					// was built. We re-scan the loader and rebuild the session.
+					// Unlike the `reload` command we do NOT call initAgent(): that
+					// re-emits `ready` and would reset the frontend model selection.
+					if (authStorage && modelRegistry && settingsManager && resourceLoader) {
+						// 0. Restore the workspace this conversation ran in. Legacy
+						//    sessions have no saved cwd → resolveWorkspace(undefined)
+						//    falls back to the default (home).
+						const sessionCwd = resolveWorkspace(
+							typeof header.cwd === "string" ? header.cwd : undefined,
+						);
+						if (sessionCwd !== workspaceCwd) {
+							// Folder changed: rebuild the loader bound to the restored
+							// cwd (this also re-scans disk for new extensions/skills).
+							workspaceCwd = sessionCwd;
+							retargetTasksWatcher(workspaceCwd);
+							log("load_session: workspace → %s", workspaceCwd);
+							resourceLoader = await buildResourceLoader(workspaceCwd);
+						} else {
+							// Same folder: just re-scan for newly added resources.
+							await resourceLoader.reload();
+						}
+						// Rebuild the session from the (re)loaded loader.
+						if (session) {
+							session.abort();
+						}
+						const resumedSessionManager = SessionManager.inMemory(workspaceCwd);
+						const resumed = await createAgentSession({
+							cwd: workspaceCwd,
+							authStorage,
+							modelRegistry,
+							sessionManager: resumedSessionManager,
+							settingsManager,
+							resourceLoader,
+						});
+						session = resumed.session;
+						sessionManager = resumedSessionManager;
+						// Re-subscribe so the rebuilt session's events reach stdout.
+						session.subscribe((event) => {
+							send({ type: "event", event });
+						});
+
+						// Re-bind the extension UI bridge for the resumed session.
+						await bindExtensionUi(resumed.session);
+					}
+
+					// 3. Restore the saved conversation into the reloaded session.
+					if (session && Array.isArray(messages) && messages.length > 0) {
+						restoreSessionContext(session, messages);
+					}
+
 					send({
 						type: "result",
 						id: cmd.id,
-						data: { deleted },
+						data: {
+							messages,
+							title: header.title || "",
+							model: header.model,
+							provider: header.provider,
+							cwd: workspaceCwd,
+						},
 					});
-					break;
-				}
-
-				// ── rename_session ─────────────────────────────────────────
-				case "rename_session": {
-					const renamed = renameSession(zosmaDir, cmd.sessionFile, cmd.title);
-					send({ type: "result", id: cmd.id, data: { renamed } });
-					break;
-				}
-
-				// ── set_session_pinned ─────────────────────────────────────
-				case "set_session_pinned": {
-					const ok = setSessionPinned(zosmaDir, cmd.sessionFile, cmd.pinned);
-					send({ type: "result", id: cmd.id, data: { ok, pinned: cmd.pinned } });
-					break;
-				}
-
-				// ── search_sessions (deep content search) ──────────────────
-				case "search_sessions": {
-					const matches = searchSessions(zosmaDir, cmd.query);
-					send({ type: "result", id: cmd.id, data: { matches } });
-					break;
-				}
-
-				// ── get_settings ───────────────────────────────────────────
-				case "get_settings": {
-					try {
-						const settings = loadSettings(zosmaDir);
-						send({
-							type: "result",
-							id: cmd.id,
-							data: { settings },
-						});
-					} catch (err) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: err instanceof Error ? err.message : String(err),
-						});
-					}
-					break;
-				}
-
-				// ── save_settings ───────────────────────────────────────────
-				case "save_settings": {
-					try {
-						const { id: _sid, type: _t, ...rest } = cmd as Record<string, unknown>;
-						saveSettings(zosmaDir, rest as Record<string, unknown>);
-						send({ type: "result", id: cmd.id, data: { success: true } });
-					} catch (err) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: err instanceof Error ? err.message : String(err),
-						});
-					}
-					break;
-				}
-
-				// ── get_instructions ────────────────────────────────────────
-				// Read the user's custom instructions Markdown (INSTRUCTIONS.md).
-				case "get_instructions": {
-					try {
-						const content = loadInstructions(zosmaAgentDir(zosmaDir));
-						send({ type: "result", id: cmd.id, data: { content } });
-					} catch (err) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: err instanceof Error ? err.message : String(err),
-						});
-					}
-					break;
-				}
-
-				// ── save_instructions ───────────────────────────────────────
-				// Persist INSTRUCTIONS.md, then reload the live session so the new
-				// custom instructions take effect immediately — for the active chat
-				// (conversation preserved) AND every subsequent new chat (the shared
-				// resource loader's cached system prompt is refreshed by reload()).
-				case "save_instructions": {
-					try {
-						saveInstructions(zosmaAgentDir(zosmaDir), cmd.content ?? "");
-						try {
-							if (session) await session.reload();
-						} catch (reloadErr) {
-							// Non-fatal: the file is saved and will apply to the next
-							// new chat even if a live reload couldn't run right now.
-							log(
-								"save_instructions: session.reload() failed (applies on next new chat): %s",
-								reloadErr instanceof Error ? reloadErr.message : String(reloadErr),
-							);
-						}
-						send({ type: "result", id: cmd.id, data: { success: true } });
-					} catch (err) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: err instanceof Error ? err.message : String(err),
-						});
-					}
-					break;
-				}
-
-				// ── list_extensions ─────────────────────────────────────────
-				case "list_extensions": {
-					const extensions = await discoverExtensions(zosmaDir, workspaceCwd);
-					send({ type: "result", id: cmd.id, data: { extensions } });
-					break;
-				}
-
-				// ── Tasks bridge ───────────────────────────────────────────
-				// Read/write pi-routines' per-cwd .pi/scheduled_tasks.json
-				// directly (no LLM round-trip). cwd defaults to the active
-				// session's workspaceCwd. See tasks-store.ts.
-				case "tasks_list": {
-					const tasks = listTasks(cmd.cwd ?? workspaceCwd);
-					send({ type: "result", id: cmd.id, data: { tasks } });
-					break;
-				}
-
-				case "tasks_delete": {
-					const deleted = deleteTask(cmd.cwd ?? workspaceCwd, cmd.taskId);
-					send({ type: "result", id: cmd.id, data: { deleted } });
-					break;
-				}
-
-				case "tasks_set_enabled": {
-					const ok = setTaskEnabled(
-						cmd.cwd ?? workspaceCwd,
-						cmd.taskId,
-						cmd.enabled,
-					);
-					send({ type: "result", id: cmd.id, data: { ok } });
-					break;
-				}
-
-				case "tasks_run_now": {
-					const ran = runTaskNow(cmd.cwd ?? workspaceCwd, cmd.taskId);
-					send({ type: "result", id: cmd.id, data: { ran } });
-					break;
-				}
-
-				// ── Tasks bridge: run history (#300) ────────────────────────
-				case "tasks_list_runs": {
-					const runs = listRuns(
-						cmd.cwd ?? workspaceCwd,
-						cmd.taskId,
-						cmd.limit ?? 50,
-					);
-					send({ type: "result", id: cmd.id, data: { runs } });
-					break;
-				}
-
-				case "tasks_get_completed": {
-					const completed = getCompletedTasks(cmd.cwd ?? workspaceCwd);
-					send({ type: "result", id: cmd.id, data: { completed } });
-					break;
-				}
-
-				// ── install_extension ───────────────────────────────────────
-				case "install_extension": {
-					const ext = await installExtension(zosmaDir, cmd.source, cmd.ref, workspaceCwd);
-					send({ type: "result", id: cmd.id, data: { extension: ext } });
-					break;
-				}
-
-				// ── uninstall_extension ─────────────────────────────────────
-				case "uninstall_extension": {
-					await uninstallExtension(zosmaDir, cmd.extensionId, workspaceCwd);
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── set_extension_enabled ───────────────────────────────────
-				case "set_extension_enabled": {
-					setExtensionEnabled(zosmaDir, cmd.extensionId, cmd.enabled);
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── set_extension_config ────────────────────────────────────
-				case "set_extension_config": {
-					setExtensionConfig(zosmaDir, cmd.extensionId, cmd.config);
-					send({ type: "result", id: cmd.id, data: { success: true } });
-					break;
-				}
-
-				// ── get_extension_config_file ───────────────────────────────
-				// Read a whitelisted extension's OWN config file (e.g.
-				// pi-messenger-bridge → ~/.pi/msg-bridge.json), so Cowork can
-				// offer a bespoke setup screen for it.
-				case "get_extension_config_file": {
-					const path = resolveWhitelistedConfigPath(cmd.extensionId);
-					if (!path) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Extension "${cmd.extensionId}" is not whitelisted for file-based config`,
-						});
-						break;
-					}
-					send({ type: "result", id: cmd.id, data: { config: readJsonFile(path), path } });
-					break;
-				}
-
-				// ── save_extension_config_file ──────────────────────────────
-				case "save_extension_config_file": {
-					const path = resolveWhitelistedConfigPath(cmd.extensionId);
-					if (!path) {
-						send({
-							type: "error",
-							id: cmd.id,
-							message: `Extension "${cmd.extensionId}" is not whitelisted for file-based config`,
-						});
-						break;
-					}
-					const config = writeWhitelistedConfig(path, cmd.patch ?? {});
-					send({ type: "result", id: cmd.id, data: { config, path } });
-					break;
-				}
-
-				// ── search_discover ─────────────────────────────────────────
-				case "search_discover": {
-					const results = await searchNpmRegistry(cmd.query || "pi extension");
-					send({ type: "result", id: cmd.id, data: { packages: results } });
-					break;
-				}
-
-				// ── skills: search ────────────────────────────────────────────
-				case "search_skills": {
-					const query = (cmd as unknown as Record<string, string>).query || "";
-					if (!query.trim()) {
-						send({ type: "result", id: cmd.id, data: { results: [] } });
-						break;
-					}
-					try {
-						const url = `https://skills.sh/api/search?q=${encodeURIComponent(query.trim())}&limit=20`;
-						const controller = new AbortController();
-						const timeout = setTimeout(() => controller.abort(), 15000);
-						const res = await fetch(url, { signal: controller.signal });
-						clearTimeout(timeout);
-						if (!res.ok) {
-							log("search_skills: API returned %d", res.status);
-							send({ type: "result", id: cmd.id, data: { results: [] } });
-							break;
-						}
-						const data = (await res.json()) as {
-							skills: Array<{
-								id: string;
-								name: string;
-								installs: number;
-								source: string;
-							}>;
-						};
-						const results = (data.skills || []).map((skill) => {
-							// Construct a proper URL: skill.id is owner/repo/skill-name or owner/repo
-							const path = skill.id || (skill.source ? `${skill.source}/${skill.name}` : skill.name);
-							return {
-								id: path,
-								installCount: skill.installs || 0,
-								url: `https://skills.sh/${path}`,
-								npmData: null,
-							};
-						});
-						send({ type: "result", id: cmd.id, data: { results } });
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						log("search_skills error: %s", message);
-						send({ type: "result", id: cmd.id, data: { results: [] } });
-					}
-					break;
-				}
-
-				// ── skills: list installed ───────────────────────────────────
-				case "list_skills": {
-					try {
-						// Cowork wraps pi, so surface the same skill dirs pi loads:
-						// pi's global skills (~/.pi/agent/skills/), the shared agents
-						// dir (~/.agents/skills/), and project-local (./.agents/skills/).
-						// See #147.
-						const skills: Array<{ name: string; path: string; scope: string; agents: string[] }> = [];
-						const seen = new Set<string>();
-
-						const piSkillsDir = join(homedir(), ".pi", "agent", "skills");
-						const globalDir = join(homedir(), ".agents", "skills");
-						const localDir = join(workspaceCwd, ".agents", "skills");
-
-						for (const [scope, dir] of [
-							["global", piSkillsDir],
-							["global", globalDir],
-							["project", localDir],
-						] as const) {
-							if (existsSync(dir)) {
-								for (const entry of readdirSync(dir)) {
-									const fullPath = join(dir, entry);
-									if (entry.startsWith(".") || entry.startsWith("_") || entry === "node_modules") continue;
-									if (seen.has(entry)) continue;
-									seen.add(entry);
-									skills.push({
-										name: entry,
-										path: fullPath,
-										scope,
-										agents: [],
-									});
-								}
-							}
-						}
-						send({ type: "result", id: cmd.id, data: skills });
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						log("list_skills error: %s", message);
-						send({ type: "result", id: cmd.id, data: [] });
-					}
-					break;
-				}
-
-				// ── start_remote (HTTP/WS remote access server) ────────────────
-				case "start_remote": {
-					const rc = cmd as StartRemoteCommand;
-					try {
-						const port = rc.port || 8765;
-						const host = rc.host || "127.0.0.1";
-						startRemoteServer(zosmaDir, { port, host });
-						send({ type: "result", id: rc.id, data: { port, host, running: true } });
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						log("start_remote error: %s", message);
-						send({ type: "error", id: rc.id, message });
-					}
-					break;
-				}
-
-				// ── stop_remote ────────────────────────────────────────────────
-				case "stop_remote": {
-					const rc = cmd as StopRemoteCommand;
-					try {
-						stopRemoteServer();
-						send({ type: "result", id: rc.id, data: { running: false } });
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						log("stop_remote error: %s", message);
-						send({ type: "error", id: rc.id, message });
-					}
-					break;
-				}
-
-				// ── get_remote_status ────────────────────────────────────────────
-				case "get_remote_status": {
-					const { getRemoteStatus } = await import("./remote-server.js");
-					try {
-						const status = getRemoteStatus();
-						send({ type: "result", id: cmd.id, data: status });
-					} catch {
-						send({ type: "result", id: cmd.id, data: { running: false } });
-					}
-					break;
-				}
-
-				// Skill install/remove handled directly in Rust (lib.rs) — no npx needed.
-				// case "install_skill" and case "remove_skill" removed from sidecar.
-
-				default:
+				} catch (err) {
 					send({
 						type: "error",
-						id: "unknown",
-						message: `Unknown command: ${(cmd as Command).type}`,
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
 					});
+				}
+				break;
 			}
+
+			// ── delete_session ─────────────────────────────────────────
+			case "delete_session": {
+				const deleted = deleteSessionFile(zosmaDir, cmd.sessionFile);
+				send({
+					type: "result",
+					id: cmd.id,
+					data: { deleted },
+				});
+				break;
+			}
+
+			// ── rename_session ─────────────────────────────────────────
+			case "rename_session": {
+				const renamed = renameSession(zosmaDir, cmd.sessionFile, cmd.title);
+				send({ type: "result", id: cmd.id, data: { renamed } });
+				break;
+			}
+
+			// ── set_session_pinned ─────────────────────────────────────
+			case "set_session_pinned": {
+				const ok = setSessionPinned(zosmaDir, cmd.sessionFile, cmd.pinned);
+				send({ type: "result", id: cmd.id, data: { ok, pinned: cmd.pinned } });
+				break;
+			}
+
+			// ── search_sessions (deep content search) ──────────────────
+			case "search_sessions": {
+				const matches = searchSessions(zosmaDir, cmd.query);
+				send({ type: "result", id: cmd.id, data: { matches } });
+				break;
+			}
+
+			// ── get_settings ───────────────────────────────────────────
+			case "get_settings": {
+				try {
+					const settings = loadSettings(zosmaDir);
+					send({
+						type: "result",
+						id: cmd.id,
+						data: { settings },
+					});
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+				break;
+			}
+
+			// ── save_settings ───────────────────────────────────────────
+			case "save_settings": {
+				try {
+					const { id: _sid, type: _t, ...rest } = cmd as Record<string, unknown>;
+					saveSettings(zosmaDir, rest as Record<string, unknown>);
+					send({ type: "result", id: cmd.id, data: { success: true } });
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+				break;
+			}
+
+			// ── get_instructions ────────────────────────────────────────
+			// Read the user's custom instructions Markdown (INSTRUCTIONS.md).
+			case "get_instructions": {
+				try {
+					const content = loadInstructions(zosmaAgentDir(zosmaDir));
+					send({ type: "result", id: cmd.id, data: { content } });
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+				break;
+			}
+
+			// ── save_instructions ───────────────────────────────────────
+			// Persist INSTRUCTIONS.md, then reload the live session so the new
+			// custom instructions take effect immediately — for the active chat
+			// (conversation preserved) AND every subsequent new chat (the shared
+			// resource loader's cached system prompt is refreshed by reload()).
+			case "save_instructions": {
+				try {
+					saveInstructions(zosmaAgentDir(zosmaDir), cmd.content ?? "");
+					try {
+						if (session) await session.reload();
+					} catch (reloadErr) {
+						// Non-fatal: the file is saved and will apply to the next
+						// new chat even if a live reload couldn't run right now.
+						log(
+							"save_instructions: session.reload() failed (applies on next new chat): %s",
+							reloadErr instanceof Error ? reloadErr.message : String(reloadErr),
+						);
+					}
+					send({ type: "result", id: cmd.id, data: { success: true } });
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+				break;
+			}
+
+			// ── list_extensions ─────────────────────────────────────────
+			case "list_extensions": {
+				const extensions = await discoverExtensions(zosmaDir, workspaceCwd);
+				send({ type: "result", id: cmd.id, data: { extensions } });
+				break;
+			}
+
+			// ── Tasks bridge ───────────────────────────────────────────
+			// Read/write pi-routines' per-cwd .pi/scheduled_tasks.json
+			// directly (no LLM round-trip). cwd defaults to the active
+			// session's workspaceCwd. See tasks-store.ts.
+			case "tasks_list": {
+				const tasks = listTasks(cmd.cwd ?? workspaceCwd);
+				send({ type: "result", id: cmd.id, data: { tasks } });
+				break;
+			}
+
+			case "tasks_delete": {
+				const deleted = deleteTask(cmd.cwd ?? workspaceCwd, cmd.taskId);
+				send({ type: "result", id: cmd.id, data: { deleted } });
+				break;
+			}
+
+			case "tasks_set_enabled": {
+				const ok = setTaskEnabled(cmd.cwd ?? workspaceCwd, cmd.taskId, cmd.enabled);
+				send({ type: "result", id: cmd.id, data: { ok } });
+				break;
+			}
+
+			case "tasks_run_now": {
+				const ran = runTaskNow(cmd.cwd ?? workspaceCwd, cmd.taskId);
+				send({ type: "result", id: cmd.id, data: { ran } });
+				break;
+			}
+
+			// ── Tasks bridge: run history (#300) ────────────────────────
+			case "tasks_list_runs": {
+				const runs = listRuns(cmd.cwd ?? workspaceCwd, cmd.taskId, cmd.limit ?? 50);
+				send({ type: "result", id: cmd.id, data: { runs } });
+				break;
+			}
+
+			case "tasks_get_completed": {
+				const completed = getCompletedTasks(cmd.cwd ?? workspaceCwd);
+				send({ type: "result", id: cmd.id, data: { completed } });
+				break;
+			}
+
+			// ── install_extension ───────────────────────────────────────
+			case "install_extension": {
+				const ext = await installExtension(zosmaDir, cmd.source, cmd.ref, workspaceCwd);
+				send({ type: "result", id: cmd.id, data: { extension: ext } });
+				break;
+			}
+
+			// ── uninstall_extension ─────────────────────────────────────
+			case "uninstall_extension": {
+				await uninstallExtension(zosmaDir, cmd.extensionId, workspaceCwd);
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── set_extension_enabled ───────────────────────────────────
+			case "set_extension_enabled": {
+				setExtensionEnabled(zosmaDir, cmd.extensionId, cmd.enabled);
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── set_extension_config ────────────────────────────────────
+			case "set_extension_config": {
+				setExtensionConfig(zosmaDir, cmd.extensionId, cmd.config);
+				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			// ── get_extension_config_file ───────────────────────────────
+			// Read a whitelisted extension's OWN config file (e.g.
+			// pi-messenger-bridge → ~/.pi/msg-bridge.json), so Cowork can
+			// offer a bespoke setup screen for it.
+			case "get_extension_config_file": {
+				const path = resolveWhitelistedConfigPath(cmd.extensionId);
+				if (!path) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Extension "${cmd.extensionId}" is not whitelisted for file-based config`,
+					});
+					break;
+				}
+				send({ type: "result", id: cmd.id, data: { config: readJsonFile(path), path } });
+				break;
+			}
+
+			// ── save_extension_config_file ──────────────────────────────
+			case "save_extension_config_file": {
+				const path = resolveWhitelistedConfigPath(cmd.extensionId);
+				if (!path) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Extension "${cmd.extensionId}" is not whitelisted for file-based config`,
+					});
+					break;
+				}
+				const config = writeWhitelistedConfig(path, cmd.patch ?? {});
+				send({ type: "result", id: cmd.id, data: { config, path } });
+				break;
+			}
+
+			// ── search_discover ─────────────────────────────────────────
+			case "search_discover": {
+				const results = await searchNpmRegistry(cmd.query || "pi extension");
+				send({ type: "result", id: cmd.id, data: { packages: results } });
+				break;
+			}
+
+			// ── skills: search ────────────────────────────────────────────
+			case "search_skills": {
+				const query = (cmd as unknown as Record<string, string>).query || "";
+				if (!query.trim()) {
+					send({ type: "result", id: cmd.id, data: { results: [] } });
+					break;
+				}
+				try {
+					const url = `https://skills.sh/api/search?q=${encodeURIComponent(query.trim())}&limit=20`;
+					const controller = new AbortController();
+					const timeout = setTimeout(() => controller.abort(), 15000);
+					const res = await fetch(url, { signal: controller.signal });
+					clearTimeout(timeout);
+					if (!res.ok) {
+						log("search_skills: API returned %d", res.status);
+						send({ type: "result", id: cmd.id, data: { results: [] } });
+						break;
+					}
+					const data = (await res.json()) as {
+						skills: Array<{
+							id: string;
+							name: string;
+							installs: number;
+							source: string;
+						}>;
+					};
+					const results = (data.skills || []).map((skill) => {
+						// Construct a proper URL: skill.id is owner/repo/skill-name or owner/repo
+						const path = skill.id || (skill.source ? `${skill.source}/${skill.name}` : skill.name);
+						return {
+							id: path,
+							installCount: skill.installs || 0,
+							url: `https://skills.sh/${path}`,
+							npmData: null,
+						};
+					});
+					send({ type: "result", id: cmd.id, data: { results } });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					log("search_skills error: %s", message);
+					send({ type: "result", id: cmd.id, data: { results: [] } });
+				}
+				break;
+			}
+
+			// ── skills: list installed ───────────────────────────────────
+			case "list_skills": {
+				try {
+					// Cowork wraps pi, so surface the same skill dirs pi loads:
+					// pi's global skills (~/.pi/agent/skills/), the shared agents
+					// dir (~/.agents/skills/), and project-local (./.agents/skills/).
+					// See #147.
+					const skills: Array<{ name: string; path: string; scope: string; agents: string[] }> = [];
+					const seen = new Set<string>();
+
+					const piSkillsDir = join(homedir(), ".pi", "agent", "skills");
+					const globalDir = join(homedir(), ".agents", "skills");
+					const localDir = join(workspaceCwd, ".agents", "skills");
+
+					for (const [scope, dir] of [
+						["global", piSkillsDir],
+						["global", globalDir],
+						["project", localDir],
+					] as const) {
+						if (existsSync(dir)) {
+							for (const entry of readdirSync(dir)) {
+								const fullPath = join(dir, entry);
+								if (entry.startsWith(".") || entry.startsWith("_") || entry === "node_modules")
+									continue;
+								if (seen.has(entry)) continue;
+								seen.add(entry);
+								skills.push({
+									name: entry,
+									path: fullPath,
+									scope,
+									agents: [],
+								});
+							}
+						}
+					}
+					send({ type: "result", id: cmd.id, data: skills });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					log("list_skills error: %s", message);
+					send({ type: "result", id: cmd.id, data: [] });
+				}
+				break;
+			}
+
+			// ── start_remote (HTTP/WS remote access server) ────────────────
+			case "start_remote": {
+				const rc = cmd as StartRemoteCommand;
+				try {
+					const port = rc.port || 8765;
+					const host = rc.host || "127.0.0.1";
+					startRemoteServer(zosmaDir, { port, host });
+					send({ type: "result", id: rc.id, data: { port, host, running: true } });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					log("start_remote error: %s", message);
+					send({ type: "error", id: rc.id, message });
+				}
+				break;
+			}
+
+			// ── stop_remote ────────────────────────────────────────────────
+			case "stop_remote": {
+				const rc = cmd as StopRemoteCommand;
+				try {
+					stopRemoteServer();
+					send({ type: "result", id: rc.id, data: { running: false } });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					log("stop_remote error: %s", message);
+					send({ type: "error", id: rc.id, message });
+				}
+				break;
+			}
+
+			// ── get_remote_status ────────────────────────────────────────────
+			case "get_remote_status": {
+				const { getRemoteStatus } = await import("./remote-server.js");
+				try {
+					const status = getRemoteStatus();
+					send({ type: "result", id: cmd.id, data: status });
+				} catch {
+					send({ type: "result", id: cmd.id, data: { running: false } });
+				}
+				break;
+			}
+
+			// Skill install/remove handled directly in Rust (lib.rs) — no npx needed.
+			// case "install_skill" and case "remove_skill" removed from sidecar.
+
+			default:
+				send({
+					type: "error",
+					id: "unknown",
+					message: `Unknown command: ${(cmd as Command).type}`,
+				});
+		}
 	}
 
 	// ── Remote command queue processor ────────────────────────────────

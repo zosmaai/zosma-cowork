@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	appExtensionStatus,
 	GOOGLE_APP_EXTENSIONS,
+	appExtensionStatus,
 	pkgName,
 	requiredExtensions,
 } from "./app-requirements.js";
@@ -27,10 +27,10 @@ describe("pkgName", () => {
 });
 
 describe("requiredExtensions", () => {
-	it("Full access requires both gmail + workspace extensions", () => {
+	it("Full access requires only the gmail extension (workspace is built-in)", () => {
 		const pkgs = requiredExtensions(DEFAULT_PREFS).map((e) => e.pkg);
 		expect(pkgs).toContain("@e9n/pi-gmail");
-		expect(pkgs).toContain("pi-google-workspace");
+		expect(pkgs).not.toContain("pi-google-workspace");
 	});
 
 	it("calendar-only requires NO extension (built-in)", () => {
@@ -43,27 +43,22 @@ describe("requiredExtensions", () => {
 		expect(pkgs).toEqual(["@e9n/pi-gmail"]);
 	});
 
-	it("any of drive/docs/sheets/slides requires the workspace extension", () => {
-		expect(requiredExtensions({ ...off, sheets: "read" }).map((e) => e.pkg)).toEqual([
-			"pi-google-workspace",
-		]);
+	it("drive/docs/sheets/slides require NO extension (built-in google-workspace)", () => {
+		expect(requiredExtensions({ ...off, sheets: "read" }).map((e) => e.pkg)).toEqual([]);
+		expect(requiredExtensions({ ...off, drive: "read" }).map((e) => e.pkg)).toEqual([]);
 	});
 });
 
 describe("appExtensionStatus", () => {
-	it("flags missing extensions and gates allInstalled", () => {
-		const s = appExtensionStatus(DEFAULT_PREFS, ["npm:@e9n/pi-gmail@0.2.1"]);
-		expect(s.requirements.find((r) => r.pkg === "@e9n/pi-gmail")?.installed).toBe(true);
-		expect(s.requirements.find((r) => r.pkg === "pi-google-workspace")?.installed).toBe(false);
-		expect(s.missing).toEqual(["pi-google-workspace"]);
+	it("flags missing gmail extension and gates allInstalled", () => {
+		const s = appExtensionStatus(DEFAULT_PREFS, []);
+		expect(s.requirements.find((r) => r.pkg === "@e9n/pi-gmail")?.installed).toBe(false);
+		expect(s.missing).toEqual(["@e9n/pi-gmail"]);
 		expect(s.allInstalled).toBe(false);
 	});
 
-	it("allInstalled true when every required package is present", () => {
-		const s = appExtensionStatus(DEFAULT_PREFS, [
-			"npm:@e9n/pi-gmail",
-			"npm:pi-google-workspace@1.0.1",
-		]);
+	it("allInstalled true when the gmail package is present (workspace built-in)", () => {
+		const s = appExtensionStatus(DEFAULT_PREFS, ["npm:@e9n/pi-gmail@0.2.1"]);
 		expect(s.allInstalled).toBe(true);
 		expect(s.missing).toEqual([]);
 	});
@@ -74,12 +69,12 @@ describe("appExtensionStatus", () => {
 		expect(s.requirements).toEqual([]);
 	});
 
-	it("the registry lists every Google product across its extensions", () => {
+	it("only Gmail remains an external package; everything else is built-in", () => {
 		const covered = new Set(GOOGLE_APP_EXTENSIONS.flatMap((e) => e.products));
-		// calendar is intentionally NOT in any extension (built-in)
-		for (const p of ["gmail", "drive", "docs", "sheets", "slides"]) {
-			expect(covered.has(p as never)).toBe(true);
+		// calendar + drive/docs/sheets/slides are built into the sidecar.
+		expect(covered.has("gmail" as never)).toBe(true);
+		for (const p of ["calendar", "drive", "docs", "sheets", "slides"]) {
+			expect(covered.has(p as never)).toBe(false);
 		}
-		expect(covered.has("calendar" as never)).toBe(false);
 	});
 });

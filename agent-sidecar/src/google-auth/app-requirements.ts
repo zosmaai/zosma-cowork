@@ -23,17 +23,14 @@ export interface AppExtension {
 }
 
 /**
- * The Google Workspace app's external extensions. Calendar is deliberately
- * absent — the `google_calendar` extension is bundled in the sidecar, so it
- * needs no install.
+ * The Google Workspace app's external extensions. Calendar AND Drive/Docs/
+ * Sheets/Slides are deliberately absent — they are bundled in the sidecar as
+ * owned, broker-aware extensions (google_calendar + google-workspace/), so they
+ * need no install. Only Gmail still comes from an external package until it is
+ * vendored too.
  */
 export const GOOGLE_APP_EXTENSIONS: AppExtension[] = [
 	{ pkg: "@e9n/pi-gmail", label: "Gmail", products: ["gmail"] },
-	{
-		pkg: "pi-google-workspace",
-		label: "Drive, Docs, Sheets & Slides",
-		products: ["drive", "docs", "sheets", "slides"],
-	},
 ];
 
 /** Normalize a pi package source ("npm:@scope/x@1.2.3") to its bare name. */

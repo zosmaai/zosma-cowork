@@ -138,6 +138,13 @@ export async function resolveEnabledExtensionPaths(opts: {
 	cwd: string;
 	agentDir: string;
 	settingsManager: SettingsManager;
+	/**
+	 * npm package names whose disk extension must NOT be loaded because an owned,
+	 * in-sidecar extension supersedes it (e.g. "pi-google-workspace" is replaced
+	 * by the broker-aware google-workspace/ extension). Prevents duplicate
+	 * tool-name registration when a user still has the upstream package installed.
+	 */
+	excludePackages?: string[];
 }): Promise<string[]> {
 	const pm = new DefaultPackageManager({
 		cwd: opts.cwd,
@@ -145,11 +152,15 @@ export async function resolveEnabledExtensionPaths(opts: {
 		settingsManager: opts.settingsManager,
 	});
 	const resolved = await pm.resolve(async () => "skip");
+	const excluded = opts.excludePackages ?? [];
+	const isExcluded = (p: string): boolean =>
+		excluded.some((pkg) => p.includes(`node_modules/${pkg}/`) || p.includes(`/${pkg}/`));
 	const seen = new Set<string>();
 	const paths: string[] = [];
 	for (const res of resolved.extensions) {
 		if (!res.enabled) continue;
 		if (seen.has(res.path)) continue;
+		if (isExcluded(res.path)) continue;
 		seen.add(res.path);
 		paths.push(res.path);
 	}
@@ -174,9 +185,7 @@ export function makeExtensionFactory(entryPath: string): ExtensionFactory {
 			throw new Error(`failed to load extension ${entryPath}: ${message}`);
 		}
 		if (typeof factory !== "function") {
-			throw new Error(
-				`extension ${entryPath} has no default-exported factory function`,
-			);
+			throw new Error(`extension ${entryPath} has no default-exported factory function`);
 		}
 		await (factory as ExtensionFactory)(pi);
 	};
@@ -191,6 +200,8 @@ export async function buildExtensionFactories(opts: {
 	cwd: string;
 	agentDir: string;
 	settingsManager: SettingsManager;
+	/** Packages superseded by an owned in-sidecar extension; see resolveEnabledExtensionPaths. */
+	excludePackages?: string[];
 }): Promise<{ factories: ExtensionFactory[]; paths: string[] }> {
 	const paths = await resolveEnabledExtensionPaths(opts);
 	return { factories: paths.map(makeExtensionFactory), paths };
