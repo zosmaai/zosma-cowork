@@ -2927,15 +2927,24 @@ async function main() {
 
 				// ── gh_auth_status ────────────────────────────────────────
 				// Check if GitHub CLI is authenticated. Returns connected state
-				// and host info (username per host). Used by the GitHub App UI.
+				// and host info. Used by the GitHub App UI.
 				case "gh_auth_status": {
 					try {
-						const status = execFileSync("gh", ["auth", "status", "--show-token", "--json"], {
+						const status = execFileSync("gh", ["auth", "status", "--json", "hosts"], {
 							encoding: "utf-8",
 							timeout: 5000,
 						});
-						const data = JSON.parse(status);
-						send({ type: "result", id: cmd.id, data: { connected: true, hosts: data.hosts } });
+						const raw = JSON.parse(status);
+						// gh returns hosts as arrays per hostname
+						const hosts: Record<string, { user: string }> = {};
+						for (const [hostname, entries] of Object.entries(raw.hosts ?? {})) {
+							const arr = entries as Array<{ login?: string }>;
+							if (arr.length > 0 && arr[0].login) {
+								hosts[hostname] = { user: arr[0].login };
+							}
+						}
+						const connected = Object.keys(hosts).length > 0;
+						send({ type: "result", id: cmd.id, data: { connected, hosts } });
 					} catch {
 						send({ type: "result", id: cmd.id, data: { connected: false } });
 					}
