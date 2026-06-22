@@ -13,6 +13,28 @@
     // breaks our production build (esbuild 0.28 drops down-leveling of certain
     // destructuring to our legacy browser target). REMOVE this entry once the
     // vite 6 -> 8 upgrade lands. See issue #264.
-    "GHSA-gv7w-rqvm-qjhr"
+    "GHSA-gv7w-rqvm-qjhr",
+
+    // GHSA-vmh5-mc38-953g, GHSA-pr7r-676h-xcf6, GHSA-p88m-4jfj-68fv,
+    // GHSA-vxpw-j846-p89q, GHSA-hm92-r4w5-c3mj, GHSA-35p6-xmwp-9g52,
+    // GHSA-g8m3-5g58-fq7m — undici advisories (high/moderate).
+    // undici is Node.js's built-in HTTP client, pulled transitively by
+    // devDependencies (@tauri-apps/api, esbuild, vite, vitest, sentry,
+    // @uiw/react-md-editor). It NEVER ships in the produced app binary.
+    // The root-level undici is managed by the Node.js release cycle;
+    // bumping @tauri-apps/api or vite to pull a patched undici is the
+    // real fix. See issue #330.
+    "GHSA-vmh5-mc38-953g",
+    "GHSA-pr7r-676h-xcf6",
+    "GHSA-p88m-4jfj-68fv",
+    "GHSA-vxpw-j846-p89q",
+    "GHSA-hm92-r4w5-c3mj",
+    "GHSA-35p6-xmwp-9g52",
+    "GHSA-g8m3-5g58-fq7m",
+
+    // GHSA-4x5r-pxfx-6jf8 — @babel/core arbitrary file read via
+    // sourceMappingURL. Transitive devDependency of vite/test infra.
+    // Never shipped in the app binary.
+    "GHSA-4x5r-pxfx-6jf8"
   ]
 }

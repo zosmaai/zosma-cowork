@@ -1,0 +1,15 @@
+#!/bin/sh
+# Zosma Cowork — bundled git wrapper
+# Tries system PATH first, then falls back to a bundled portable binary.
+if command -v git >/dev/null 2>&1; then
+	exec git "$@"
+fi
+# Fallback: sibling or arch-specific bundled binary
+DIR="$(cd "$(dirname "$0")" && pwd)"
+for candidate in "$DIR/git-portable" "$DIR/../git-arm64" "$DIR/../git-x64" "$DIR/git.bin"; do
+	if [ -x "$candidate" ]; then
+		exec "$candidate" "$@"
+	fi
+done
+echo "ERROR: git not found. Install Git (https://git-scm.com/downloads) or ensure it is on PATH." >&2
+exit 1
