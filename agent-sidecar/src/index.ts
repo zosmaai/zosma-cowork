@@ -26,7 +26,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Timeout configuration
@@ -402,10 +402,11 @@ interface GhOrganizationsCommand {
 	id: string;
 }
 
-/** Start GitHub device-code auth flow. */
-interface GhStartAuthCommand {
-	type: "gh_start_auth";
+/** Save a GitHub PAT to gh's credential store. */
+interface GhSaveTokenCommand {
+	type: "gh_save_token";
 	id: string;
+	token: string;
 }
 
 interface GetGoogleAppStatusCommand {
@@ -749,7 +750,7 @@ type Command =
 	| UiResponseCommand
 	| GhAuthStatusCommand
 	| GhOrganizationsCommand
-	| GhStartAuthCommand;
+	| GhSaveTokenCommand;
 
 // ---------------------------------------------------------------------------
 // Logger (stderr — never interferes with stdout protocol)
@@ -2976,46 +2977,27 @@ async function main() {
 					break;
 				}
 
-				// ── gh_start_auth ───────────────────────────────────────
-				// Start the GitHub device-code auth flow. Spawns `gh auth login`,
-				// captures the device code, returns {code, url} for the UI to show.
-				case "gh_start_auth": {
+				// ── gh_save_token ───────────────────────────────────────
+				// Save a GitHub PAT to gh's credential store.
+				// Runs: echo "<token>" | gh auth login --with-token
+				case "gh_save_token": {
+					const token = (cmd as any).token;
+					if (!token) {
+						send({ type: "error", id: cmd.id, message: "token is required" });
+						break;
+					}
 					try {
-						const proc = spawn("gh", ["auth", "login", "--web"], {
-							stdio: ["pipe", "pipe", "pipe"],
+						const result = execFileSync("gh", ["auth", "login", "--with-token"], {
+							input: token,
+							encoding: "utf-8",
+							timeout: 10000,
 						});
-
-						let output = "";
-						proc.stdout?.on("data", (chunk: Buffer) => {
-							output += chunk.toString();
-						});
-						proc.stderr?.on("data", (chunk: Buffer) => {
-							output += chunk.toString();
-						});
-
-						// Try to capture device code from the output
-						const codeMatch = output.match(/code:\s*([A-Z0-9-]+)/i);
-						const urlMatch = output.match(/(https?:\/\/[^\s]+login\/device)/);
-
-						// Don't await — the process stays alive until auth completes.
-						// We poll gh_auth_status from the frontend instead.
-						send({
-							type: "result",
-							id: cmd.id,
-							data: {
-								code: codeMatch?.[1] ?? null,
-								url: urlMatch?.[1] ?? "https://github.com/login/device",
-							},
-						});
-
-						// Wait for completion then notify UI
-						await new Promise<void>((resolve) => {
-							proc.on("exit", () => resolve());
-						});
-						send({ type: "event", event: { kind: "gh_auth_completed" } });
+						log("gh_save_token: PAT saved successfully");
+						send({ type: "result", id: cmd.id, data: { success: true } });
 					} catch (err: unknown) {
 						const errMsg = err instanceof Error ? err.message : String(err);
-						send({ type: "error", id: cmd.id, message: `Auth failed: ${errMsg}` });
+						log("gh_save_token error: %s", errMsg);
+						send({ type: "error", id: cmd.id, message: `Failed to save token: ${errMsg}` });
 					}
 					break;
 				}

@@ -1,9 +1,8 @@
 /**
  * GithubApp — full-page GitHub app setup view.
  *
- * Two states:
- *   1. Not connected — shows Connect with GitHub (device code) or PAT option
- *   2. Connected — shows personal account + organizations with avatars
+ * Uses PAT (Personal Access Token) auth: user creates a token on GitHub,
+ * pastes it here, and the sidecar runs `gh auth login --with-token`.
  *
  * Follows the same pattern as GoogleApp and DiscordApp.
  */
@@ -15,18 +14,13 @@ import {
 	ChevronLeft,
 	Copy,
 	ExternalLink,
+	Eye,
+	EyeOff,
 	Loader2,
-	Trash2,
 	User,
 	Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-
-type Phase =
-	| "idle" // not connected
-	| "waiting_auth" // waiting for user to complete device flow
-	| "connected" // authenticated, showing accounts
-	| "error";
 
 interface Org {
 	login: string;
@@ -40,18 +34,26 @@ interface GitHubOrgs {
 	totalRepos: number;
 }
 
+interface GitHubHost {
+	user: string;
+}
+
+type Phase = "idle" | "saving" | "connected" | "error";
+
 export function GithubApp({ onBack }: { onBack: () => void }) {
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [userInfo, setUserInfo] = useState<GitHubOrgs | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
-	const [deviceCode, setDeviceCode] = useState<string | null>(null);
-	const [deviceUrl, setDeviceUrl] = useState<string>("https://github.com/login/device");
+	const [token, setToken] = useState("");
+	const [showToken, setShowToken] = useState(false);
 
 	// Probe auth status on mount
-	const refreshStatus = useCallback(async () => {
+	const refresh = useCallback(async () => {
 		try {
-			const s = await invoke<{ connected: boolean }>("gh_auth_status");
+			const s = await invoke<{ connected: boolean; hosts?: Record<string, GitHubHost> }>(
+				"gh_auth_status",
+			);
 			if (s.connected) {
 				setPhase("connected");
 				const orgs = await invoke<GitHubOrgs>("gh_organizations");
@@ -66,65 +68,37 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 	}, []);
 
 	useEffect(() => {
-		refreshStatus();
-	}, [refreshStatus]);
+		refresh();
+	}, [refresh]);
 
-	// Start GitHub device-code auth
-	const handleConnect = useCallback(async () => {
+	// Save PAT
+	const handleSaveToken = useCallback(async () => {
+		if (!token.trim()) return;
 		setLoading(true);
 		setError(null);
 		try {
-			const result = await invoke<{ code: string | null; url: string }>("gh_start_auth");
-			setDeviceCode(result.code);
-			setDeviceUrl(result.url);
-			setPhase("waiting_auth");
-
-			// Poll for auth completion
-			const poll = setInterval(async () => {
-				try {
-					const s = await invoke<{ connected: boolean }>("gh_auth_status");
-					if (s.connected) {
-						clearInterval(poll);
-						setPhase("connected");
-						const orgs = await invoke<GitHubOrgs>("gh_organizations");
-						setUserInfo(orgs);
-					}
-				} catch {
-					// keep polling
-				}
-			}, 3000);
-
-			// Safety timeout — stop polling after 5 minutes
-			setTimeout(() => clearInterval(poll), 5 * 60 * 1000);
+			await invoke("gh_save_token", { token: token.trim() });
+			// Re-probe to show connected state
+			await refresh();
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
-			setPhase("idle");
 		} finally {
 			setLoading(false);
 		}
+	}, [token, refresh]);
+
+	// Open GitHub token page
+	const openTokenPage = useCallback(() => {
+		openExternalUrl("https://github.com/settings/tokens?type=beta");
 	}, []);
 
-	// Disconnect — re-probe status (gh auth logout must be done manually)
-	const handleDisconnect = useCallback(async () => {
-		setLoading(true);
-		try {
-			// gh auth handles its own credential management.
-			// Re-probe to refresh the UI state.
-			await refreshStatus();
-		} catch {
-			setError("Failed to refresh status");
-		} finally {
-			setLoading(false);
-		}
-	}, [refreshStatus]);
-
-	const openDeviceUrl = useCallback(() => {
-		openExternalUrl(deviceUrl);
-	}, [deviceUrl]);
-
-	const copyCode = useCallback(() => {
-		if (deviceCode) navigator.clipboard?.writeText(deviceCode);
-	}, [deviceCode]);
+	// Copy token help text
+	const copyHelp = useCallback(() => {
+		navigator.clipboard?.writeText(
+			"GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token\n\n" +
+			"Required scopes: repo, workflow, read:org, read:user, user:email",
+		);
+	}, []);
 
 	// ── Connected state: show accounts & orgs ──
 	if (phase === "connected" && userInfo) {
@@ -144,15 +118,6 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 						<Check className="w-4 h-4 text-primary" />
 						<span className="text-[13px] font-semibold text-foreground">GitHub Connected</span>
 					</div>
-					<button
-						type="button"
-						onClick={handleDisconnect}
-						disabled={loading}
-						className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-					>
-						<Trash2 className="w-3.5 h-3.5" />
-						Disconnect
-					</button>
 				</div>
 
 				{/* Personal account */}
@@ -224,77 +189,12 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					</>
 				)}
 
-				{/* Refresh / usage hint */}
+				{/* Hint */}
 				<div className="mt-6 glass px-4 py-3.5">
 					<p className="text-[12px] text-foreground/80 leading-relaxed">
-						Git and GitHub CLI are bundled with Cowork. The agent can manage issues, PRs,
-						repos, and Actions — just describe what you need in the chat.
+						Git and the GitHub CLI are bundled with Cowork. The agent can manage issues,
+						PRs, repos, and Actions — you can describe what you need in the chat.
 					</p>
-				</div>
-			</section>
-		);
-	}
-
-	// ── Device code auth in progress ──
-	if (phase === "waiting_auth") {
-		return (
-			<section className="max-w-3xl">
-				<button
-					type="button"
-					onClick={() => setPhase("idle")}
-					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-4"
-				>
-					<ChevronLeft className="w-3.5 h-3.5" />
-					Back to Apps
-				</button>
-
-				<div className="glass px-5 py-6 text-center">
-					<div className="text-[13px] font-semibold text-foreground mb-4">
-						Authenticate with GitHub
-					</div>
-
-					<div className="space-y-5">
-						{/* Step 1: Show device code */}
-						<div>
-							<div className="text-[11px] text-muted-foreground mb-2">
-								1. Copy your one-time code:
-							</div>
-							<div className="flex items-center justify-center gap-2">
-								<code className="text-lg font-mono font-bold tracking-widest bg-background px-4 py-2 rounded-lg border border-border select-all">
-									{deviceCode ?? "XXXX-XXXX"}
-								</code>
-								<button
-									type="button"
-									onClick={copyCode}
-									className="p-2 rounded-lg hover:bg-card/60 transition-colors"
-									title="Copy code"
-								>
-									<Copy className="w-4 h-4 text-muted-foreground" />
-								</button>
-							</div>
-						</div>
-
-						{/* Step 2: Open URL */}
-						<div>
-							<div className="text-[11px] text-muted-foreground mb-2">
-								2. Open this URL in your browser:
-							</div>
-							<button
-								type="button"
-								onClick={openDeviceUrl}
-								className="inline-flex items-center gap-1.5 text-[13px] text-primary hover:underline"
-							>
-								{deviceUrl}
-								<ExternalLink className="w-3.5 h-3.5" />
-							</button>
-						</div>
-
-						{/* Step 3: Waiting */}
-						<div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-							<Loader2 className="w-3.5 h-3.5 animate-spin" />
-							3. Waiting for you to complete authentication in your browser...
-						</div>
-					</div>
 				</div>
 			</section>
 		);
@@ -329,29 +229,79 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					<div className="flex-1 min-w-0">
 						<h3 className="text-[15px] font-semibold text-foreground mb-1">GitHub</h3>
 						<p className="text-[12px] text-muted-foreground leading-relaxed mb-4">
-							Connect your GitHub account to unlock issue tracking, pull requests,
-							project management, and Actions — all accessible through your agent.
+							Connect your GitHub account so the agent can manage issues, pull requests,
+							projects, and Actions.
 						</p>
 
-						{/* Connect button */}
+						{/* Step 1: Create token */}
+						<div className="mb-4">
+							<div className="text-[11px] font-semibold text-foreground mb-2">
+								1. Create a GitHub personal access token
+							</div>
+							<button
+								type="button"
+								onClick={openTokenPage}
+								className="inline-flex items-center gap-1.5 text-[12px] text-primary hover:underline"
+							>
+								github.com/settings/tokens
+								<ExternalLink className="w-3 h-3" />
+							</button>
+							<p className="text-[11px] text-muted-foreground mt-1">
+								Create a <strong>Fine-grained token</strong> with repo, workflow,
+								read:org, read:user, and user:email permissions.
+							</p>
+						</div>
+
+						{/* Step 2: Paste token */}
+						<div className="mb-4">
+							<div className="text-[11px] font-semibold text-foreground mb-2">
+								2. Paste your token here
+							</div>
+							<div className="flex items-center gap-2">
+								<div className="relative flex-1">
+									<input
+										type={showToken ? "text" : "password"}
+										value={token}
+										onChange={(e) => setToken(e.target.value)}
+										placeholder="ghp_..."
+										className="w-full text-[13px] bg-background border border-border rounded-lg px-3 py-2 pr-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+									/>
+									<button
+										type="button"
+										onClick={() => setShowToken(!showToken)}
+										className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+									>
+										{showToken ? (
+											<EyeOff className="w-3.5 h-3.5" />
+										) : (
+											<Eye className="w-3.5 h-3.5" />
+										)}
+									</button>
+								</div>
+								<button
+									type="button"
+									onClick={handleSaveToken}
+									disabled={!token.trim() || loading}
+									className="px-4 py-2 rounded-lg text-[13px] font-medium text-primary bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50 whitespace-nowrap"
+								>
+									{loading ? (
+										<Loader2 className="w-4 h-4 animate-spin" />
+									) : (
+										"Connect"
+									)}
+								</button>
+							</div>
+						</div>
+
+						{/* Copy help */}
 						<button
 							type="button"
-							onClick={handleConnect}
-							disabled={loading}
-							className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium text-primary bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50"
+							onClick={copyHelp}
+							className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
 						>
-							{loading ? (
-								<Loader2 className="w-4 h-4 animate-spin" />
-							) : (
-								<ExternalLink className="w-4 h-4" />
-							)}
-							{loading ? "Starting..." : "Connect with GitHub"}
+							<Copy className="w-3 h-3" />
+							Copy instructions to clipboard
 						</button>
-
-						<p className="mt-3 text-[11px] text-muted-foreground">
-							Opens GitHub's device-code flow. You'll enter a code in your browser to authorize.
-							No personal access token needed.
-						</p>
 					</div>
 				</div>
 			</div>
@@ -359,9 +309,8 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 			{/* Prerequisites info */}
 			<div className="mt-4 glass px-4 py-3.5">
 				<p className="text-[12px] text-foreground/80 leading-relaxed">
-					<strong>Prerequisites:</strong> Git and the GitHub CLI (<code>gh</code>)
-					are bundled with Cowork. They're available to the agent on all platforms.
-					No manual installation needed.
+					Git and the GitHub CLI are bundled with Cowork. They're available to the agent
+					on all platforms with no manual installation.
 				</p>
 			</div>
 		</section>
