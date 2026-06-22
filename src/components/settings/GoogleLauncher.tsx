@@ -4,7 +4,7 @@
  * Mirrors the Discord launcher's shape (branded badge + name + status +
  * chevron) so every app in the Apps list looks and behaves consistently:
  * click to open the full-page app. Status reflects pi's source of truth via
- * `google_status` (is an account connected?).
+ * `google_get_status` (is an account connected?).
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -14,15 +14,18 @@ import { useCallback, useEffect, useState } from "react";
 export function GoogleLauncher({ onOpen }: { onOpen: () => void }) {
 	const [connected, setConnected] = useState(false);
 	const [email, setEmail] = useState<string | null>(null);
+	const [loading, setLoading] = useState(true);
 
 	const refresh = useCallback(async () => {
 		try {
-			const res = await invoke<{ connected?: boolean; email?: string | null }>("google_status");
+			const res = await invoke<{ connected?: boolean; email?: string | null }>("google_get_status");
 			setConnected(!!res?.connected);
 			setEmail(res?.email ?? null);
 		} catch {
 			setConnected(false);
 			setEmail(null);
+		} finally {
+			setLoading(false);
 		}
 	}, []);
 
@@ -54,9 +57,13 @@ export function GoogleLauncher({ onOpen }: { onOpen: () => void }) {
 						</span>
 					)}
 				</span>
-				<span className="block text-[11px] text-muted-foreground mt-0.5 truncate">
-					{statusText}
-				</span>
+				{loading ? (
+					<span className="block h-3 w-24 mt-1 rounded bg-muted animate-pulse" />
+				) : (
+					<span className="block text-[11px] text-muted-foreground mt-0.5 truncate">
+						{statusText}
+					</span>
+				)}
 			</span>
 			<ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0" />
 		</button>
