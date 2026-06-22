@@ -93,6 +93,15 @@ jobs:
         # must fetch it before the cargo build runs.
         run: node src-tauri/scripts/fetch-node.mjs
 
+      - name: Ensure bundled gh/git resource paths exist
+        # tauri.conf.json's bundle.resources also declares binaries/gh/* and
+        # binaries/git/* (fetched via fetch-gh/fetch-git in beforeBuildCommand
+        # for real builds). This compile-only check never runs the app, so
+        # lightweight stubs are enough to satisfy build.rs's resource-existence
+        # validation. ensure-dev-resources only writes paths that don't already
+        # exist, so it won't clobber the real index.cjs/node produced above.
+        run: node scripts/ensure-dev-resources.mjs
+
       - name: Install frontend dependencies
         run: npm ci
 
