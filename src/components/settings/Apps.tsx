@@ -12,10 +12,12 @@ import { Puzzle, Zap } from "lucide-react";
 import { useState } from "react";
 import { DiscordApp } from "./DiscordApp";
 import { DiscordIntegration } from "./DiscordIntegration";
+import { GithubApp } from "./GithubApp";
+import { GithubIntegration } from "./GithubIntegration";
 import { GoogleApp } from "./GoogleApp";
 import { GoogleLauncher } from "./GoogleLauncher";
 
-type AppView = "list" | "discord" | "google";
+type AppView = "list" | "discord" | "google" | "github";
 
 export function Apps() {
 	const [view, setView] = useState<AppView>("list");
@@ -25,6 +27,9 @@ export function Apps() {
 	}
 	if (view === "google") {
 		return <GoogleApp onBack={() => setView("list")} />;
+	}
+	if (view === "github") {
+		return <GithubApp onBack={() => setView("list")} />;
 	}
 
 	return (
@@ -39,6 +44,7 @@ export function Apps() {
 			<div className="space-y-2.5">
 				<GoogleLauncher onOpen={() => setView("google")} />
 				<DiscordIntegration onOpen={() => setView("discord")} />
+				<GithubIntegration onOpen={() => setView("github")} />
 			</div>
 
 			{/* ── Pointer to the building blocks ── */}
