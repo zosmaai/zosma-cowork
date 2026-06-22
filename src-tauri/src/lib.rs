@@ -1123,6 +1123,43 @@ async fn google_get_status(s: State<'_, AppState>) -> Result<Value, String> {
     .await
 }
 
+/// GitHub: probe gh auth status.
+#[tauri::command]
+async fn gh_auth_status(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gas-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"gh_auth_status","id":id}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+/// GitHub: list organizations for the authenticated user.
+#[tauri::command]
+async fn gh_organizations(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("go-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"gh_organizations","id":id}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+/// GitHub: start device-code auth flow.
+#[tauri::command]
+async fn gh_start_auth(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gsa-{}", uuid_v4());
+    // Longer timeout — device flow can take minutes.
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"gh_start_auth","id":id}),
+        std::time::Duration::from_secs(300),
+    )
+    .await
+}
+
 /// Google broker: revoke the refresh token and delete all local token files.
 #[tauri::command]
 async fn google_disconnect(s: State<'_, AppState>) -> Result<Value, String> {
@@ -2324,6 +2361,9 @@ pub fn run() {
             get_auth_status,
             has_credentials,
             google_connect,
+            gh_auth_status,
+            gh_organizations,
+            gh_start_auth,
             google_get_status,
             google_disconnect,
             google_get_prefs,
