@@ -220,18 +220,54 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					Back to Apps
 				</button>
 
-				<div className="glass px-5 py-6 text-center">
-					<ExternalLink className="w-8 h-8 text-primary mx-auto mb-3" />
-					<p className="text-[13px] font-semibold text-foreground mb-2">
-						GitHub Authorization in Progress
-					</p>
-					<p className="text-[11px] text-muted-foreground leading-relaxed mb-5">
-						A browser window should have opened to GitHub.
-						If it didn't, run <code className="text-foreground">gh auth login --web</code> in your terminal.
-					</p>
-					<div className="flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+				<div className="glass px-5 py-6">
+					<div className="text-center mb-5">
+						<ExternalLink className="w-8 h-8 text-primary mx-auto mb-3" />
+						<p className="text-[13px] font-semibold text-foreground mb-2">
+							GitHub Authorization in Progress
+						</p>
+					</div>
+
+					{/* Steps */}
+					<div className="space-y-3 text-[12px]">
+						<div className="flex gap-3">
+							<span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
+							<div>
+								<p className="text-foreground font-medium">Authorize in your browser</p>
+								<p className="text-muted-foreground mt-0.5">
+									A browser window should open to GitHub. Sign in and authorize the
+									<code className="text-foreground"> gh</code> CLI when prompted.
+								</p>
+							</div>
+						</div>
+
+						<div className="flex gap-3">
+							<span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
+							<div>
+								<p className="text-foreground font-medium">If no browser opens</p>
+								<p className="text-muted-foreground mt-0.5">
+									Run this in your terminal:
+								</p>
+								<code className="block mt-1 px-3 py-2 bg-background border border-border rounded-lg text-[11px] font-mono select-all">
+									gh auth login --web
+								</code>
+							</div>
+						</div>
+
+						<div className="flex gap-3">
+							<span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">3</span>
+							<div>
+								<p className="text-foreground font-medium">Come back here when done</p>
+								<p className="text-muted-foreground mt-0.5">
+									This screen will detect the connection automatically.
+								</p>
+							</div>
+						</div>
+					</div>
+
+					<div className="flex items-center justify-center gap-2 mt-5 text-[11px] text-muted-foreground">
 						<Loader2 className="w-3.5 h-3.5 animate-spin" />
-						Waiting for you to complete authorization in your browser...
+						Polling for authorization...
 					</div>
 				</div>
 			</section>

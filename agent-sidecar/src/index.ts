@@ -2978,16 +2978,28 @@ async function main() {
 
 				// ── gh_auth_login ───────────────────────────────────────
 				// Launch `gh auth login --web` which opens the browser and handles
-				// the full OAuth flow. gh saves the token and configures git's
-				// credential helper automatically. The frontend polls
-				// gh_auth_status to detect when auth completes.
+				// the full OAuth flow. Uses execFile (not detached) so the child
+				// inherits the sidecar's environment (DISPLAY, PATH, etc.) and
+				// can open the browser window. Returns `launched` status and any
+				// stderr output. The frontend polls gh_auth_status until done.
 				case "gh_auth_login": {
 					try {
 						const child = spawn("gh", ["auth", "login", "--web"], {
-							stdio: "ignore",
-							detached: true,
+							stdio: ["ignore", "ignore", "pipe"],
+							env: { ...process.env },
 						});
-						child.unref();
+						let stderr = "";
+						child.stderr?.on("data", (chunk: Buffer) => {
+							stderr += chunk.toString();
+						});
+						child.on("error", (err: Error) => {
+							log("gh_auth_login spawn error: %s", err.message);
+						});
+						child.on("exit", (code) => {
+							if (code !== 0 && stderr) {
+								log("gh_auth_login exit code %d: %s", code, stderr);
+							}
+						});
 						log("gh_auth_login: spawned, browser should open");
 						send({ type: "result", id: cmd.id, data: { launched: true } });
 					} catch (err: unknown) {
