@@ -22,7 +22,7 @@ src-tauri/agent-sidecar
 src-tauri/.pi/
 SHOW_HN.md
 .worktrees/
-pnpm-lock.yaml
+/pnpm-lock.yaml
 .llm-wiki/
 .obsidian/
 .pi/
