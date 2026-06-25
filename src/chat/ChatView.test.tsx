@@ -3,6 +3,7 @@ import { render, screen, waitForElementToBeRemoved } from "@testing-library/reac
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ThinkingState } from "@/lib/sessionStats";
 import { ChatView } from "./ChatView";
 
 describe("ChatView empty state", () => {
@@ -21,37 +22,44 @@ describe("ChatView empty state", () => {
 		toolPhase: null,
 	};
 
-	it("shows suggested actions when no messages exist", () => {
-		render(<ChatView {...defaultProps} />);
-		expect(screen.getByText("What are you working on?")).toBeInTheDocument();
-		expect(screen.getByText("Write a document")).toBeInTheDocument();
-		expect(screen.getByText("Write code")).toBeInTheDocument();
-	});
+	const thinking: ThinkingState = {
+		level: "high",
+		available: ["off", "minimal", "low", "medium", "high", "xhigh"],
+		supported: true,
+	};
 
-	it("does not show suggested actions when messages exist", () => {
-		render(
-			<ChatView
-				{...defaultProps}
-				messages={[{ id: "1", role: "user", content: "Hello", timestamp: Date.now() }]}
-			/>,
-		);
+	it("empty state: centered greeting + input, no statusbar, no suggested actions", () => {
+		render(<ChatView {...defaultProps} thinking={thinking} />);
+		// Static greeting fallback renders immediately above the input.
+		expect(screen.getByTestId("greeting")).toBeInTheDocument();
+		expect(screen.getByText("What are you working on?")).toBeInTheDocument();
+		// Ultra-clean empty screen: no statusbar (decision C).
+		expect(
+			screen.queryByRole("button", { name: /reasoning effort/i }),
+		).not.toBeInTheDocument();
+		// SuggestedActions block is gone for good.
 		expect(screen.queryByText("Write a document")).not.toBeInTheDocument();
 	});
 
-	it("calls onSend with prompt when a suggested action is clicked", async () => {
-		const onSend = vi.fn();
-		const user = userEvent.setup();
-		render(<ChatView {...defaultProps} onSend={onSend} />);
-
-		await user.click(screen.getByText("Write a document"));
-		expect(onSend).toHaveBeenCalledTimes(1);
-		expect(onSend).toHaveBeenCalledWith(expect.stringMatching(/document/i));
-	});
-
-	it("does not show suggested actions when streaming is active", () => {
+	it("active state: statusbar renders at top, greeting is gone", () => {
 		render(
 			<ChatView
 				{...defaultProps}
+				thinking={thinking}
+				messages={[{ id: "1", role: "user", content: "Hello", timestamp: Date.now() }]}
+			/>,
+		);
+		expect(
+			screen.getByRole("button", { name: /reasoning effort/i }),
+		).toBeInTheDocument();
+		expect(screen.queryByTestId("greeting")).not.toBeInTheDocument();
+	});
+
+	it("streaming counts as active: no greeting", () => {
+		render(
+			<ChatView
+				{...defaultProps}
+				thinking={thinking}
 				isRunning={true}
 				status="thinking"
 				streamingMessage={{
@@ -62,7 +70,7 @@ describe("ChatView empty state", () => {
 				}}
 			/>,
 		);
-		expect(screen.queryByText("Write a document")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("greeting")).not.toBeInTheDocument();
 	});
 });
 
