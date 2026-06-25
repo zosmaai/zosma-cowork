@@ -1,0 +1,16 @@
+# Next.js
+.next/
+out/
+
+# Fumadocs generated
+.source/
+
+# Dependencies
+node_modules/
+
+# npm (not used — project uses pnpm)
+package-lock.json
+
+# Build output
+*.tsbuildinfo
+next-env.d.ts
