@@ -1,0 +1,95 @@
+---
+title: Settings
+description: Authentication, appearance, custom instructions, extensions, telemetry, and remote access.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Settings
+
+Open Settings from the sidebar activity bar (gear icon) or press `Escape` to close it. Settings are grouped into four categories in the left rail.
+
+## Account
+
+### Authentication
+
+![Authentication settings showing connected providers — Claude Pro/Max, GitHub Copilot, ChatGPT, API key, and Custom Local LLM](/screenshots/settings-authentication.png)
+
+Lists every configured provider and its connection status. Actions:
+
+- **Add provider** — enter an API key or sign in via OAuth
+- **Remove** — delete a saved key or sign out of an OAuth session
+- **Change API key** — replace a key without removing the provider
+
+Credentials are saved to `~/.zosmaai/cowork/auth.json`.
+
+### Remote access
+
+Zosma Cowork can expose its agent session over a local WebSocket server so you can connect to it from a browser, a remote machine, or another tool. Enable **Remote access** here and the app will start listening on a configurable port.
+
+<Callout type="warning" title="Security">
+Remote access is intended for local network use. Do not expose the port to the internet without adding authentication.
+</Callout>
+
+## Capabilities
+
+### Apps
+
+Install and manage **Apps** — packaged integrations that add new capabilities to the agent (for example, a browser tool, a GitHub integration, or a file-search index). Apps appear in the tool-call timeline when they are invoked.
+
+### Extensions
+
+![Extensions marketplace showing featured pi extensions — Web Access, LLM Wiki, Memex, Context Mode, Superpowers Plus, and more](/screenshots/settings-extensions.png)
+
+Lists all pi-compatible extensions discovered in `~/.zosmaai/cowork/extensions/`. Each extension can be enabled or disabled individually. See [Extensions](/docs/guides/extensions) for how to install and write your own.
+
+### Skills
+
+![Skills marketplace showing featured agent skills — Frontend Design, Vercel React Best Practices, Azure Kubernetes, and more](/screenshots/settings-skills.png)
+
+**Skills** are prompt-level instructions packaged as installable units. When a skill is active, its instructions are included in the system prompt automatically. You can enable or disable individual skills here without removing them from disk.
+
+### Custom Instructions
+
+![Custom Instructions editor — a rich markdown editor with formatting toolbar for persistent system prompt context](/screenshots/settings-custom-instructions.png)
+
+A freeform Markdown editor for persistent context that applies to every session. Write anything the agent should always know — your preferred coding style, project conventions, persona, or standing constraints.
+
+Custom instructions live in `~/.zosmaai/cowork/INSTRUCTIONS.md`. They are injected into the system prompt by the sidecar at the start of every session and every new turn. Changes take effect immediately without restarting.
+
+Examples of what to put here:
+- "Always respond in TypeScript, not JavaScript."
+- "I work in the zosma-cowork repo. The tech stack is React 19, Tauri v2, Rust, and Node.js."
+- "When editing files, always show a diff summary after the edit."
+
+## Preferences
+
+### Appearance
+
+![Appearance settings showing Dark mode toggle, Font Size options, and Background choices](/screenshots/settings-appearance-v2.png)
+
+Controls the visual theme and text density of the app.
+
+**Theme:**
+- **Dark** — warm charcoal background with brand-blue glass accents (default)
+- **Light** — cool near-white surface with the same glass panel system
+
+![Dark mode — floating glass panels on a deep charcoal background with brand-blue aurora accents](/screenshots/chat-dark.png)
+
+![Light mode — the same layout with a cool near-white surface and subtle blue tinting on the glass panels](/screenshots/chat-light.png)
+
+**Font scale (zoom):** Drag the slider to scale all UI text from 80% to 140%. This adjusts the app-level `zoom` CSS property and persists between launches.
+
+**Background:** Choose from preset backdrop styles for the aurora behind the main panels.
+
+### Telemetry
+
+Zosma Cowork sends optional anonymous usage events (session created, model selected, feature used). No message content, file paths, or personal data is included.
+
+Toggle telemetry on or off here. The current state is shown alongside a brief description of what is collected. If telemetry is enabled, an event is sent on app launch.
+
+## Help
+
+### About
+
+Shows the app version, commit hash, build date, and links to the GitHub repo, Discord server, and license. Also includes a **Send feedback** button that opens a short form.

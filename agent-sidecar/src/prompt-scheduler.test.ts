@@ -134,4 +134,50 @@ describe("createPromptScheduler", () => {
 			"second:end",
 		]);
 	});
+
+	it("REGRESSION: a hung task (no events) is aborted by startup timeout and subsequent tasks still run", async () => {
+		// Models: local model fails to load (llama-swap hang), so
+		// session.prompt() never settles. The startup watchdog (60s in
+		// runPromptTask) calls session.abort() which causes the hung
+		// prompt to reject. The scheduler must then run the next task.
+		const s = createPromptScheduler();
+		const order: string[] = [];
+
+		let rejectFirst!: () => void;
+		let firstRejected = false;
+		s.schedule(async () => {
+			order.push("first:start");
+			try {
+				await new Promise<void>((_, reject) => {
+					rejectFirst = () => {
+						firstRejected = true;
+						reject(new Error("startup timeout"));
+					};
+				});
+			} finally {
+				order.push("first:end");
+			}
+		});
+
+		// Second task: queued after the first — must run even if first hangs
+		s.schedule(async () => {
+			order.push("second:start");
+			order.push("second:end");
+		});
+
+		await tick();
+		expect(order).toEqual(["first:start"]);
+
+		// Simulate startup watchdog firing (model didn't respond in 60s)
+		rejectFirst();
+
+		await s.idle();
+		expect(firstRejected).toBe(true);
+		expect(order).toEqual([
+			"first:start",
+			"first:end",
+			"second:start",
+			"second:end",
+		]);
+	});
 });

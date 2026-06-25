@@ -22,6 +22,7 @@ const baseProps = {
 	sessions: [{ id: "1", title: "Hello", lastMessage: "hi", timestamp: 1000 }],
 	onSessionSelect: noop,
 	onNewSession: noop,
+	onOpenSession: noop,
 	onDeleteSession: noop,
 };
 

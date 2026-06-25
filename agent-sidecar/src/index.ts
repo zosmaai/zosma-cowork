@@ -1174,8 +1174,37 @@ function zosmaAgentDir(zosmaDir: string): string {
  * Linux .desktop launch, the app bundle dir on macOS, system32-ish on Windows.
  * Home is predictable and always exists.
  */
-function defaultWorkspaceDir(): string {
-	return homedir();
+/**
+ * The built-in default ZosmaCowork home folder: `~/Documents/ZosmaCowork`.
+ *
+ * Cross-platform by construction — `homedir()` resolves to `C:\Users\<name>`
+ * on Windows, `/Users/<name>` on macOS, `/home/<name>` on Linux. We never
+ * interpolate `$USER`/`%USERNAME%` (which can be empty or wrong under a GUI
+ * launch); `homedir()` reads the OS account dir directly. `Documents` is the
+ * conventional user docs folder on all three platforms.
+ */
+function coworkDefaultHome(): string {
+	return join(homedir(), "Documents", "ZosmaCowork");
+}
+
+/**
+ * The default working directory for NEW sessions.
+ *
+ * Read fresh from settings (`coworkHomeDir`) on every call so that changing
+ * the folder in Settings takes effect on the next "New" without a restart.
+ * Falls back to {@link coworkDefaultHome} when unset/blank. A leading `~` is
+ * expanded so a hand-edited settings value still resolves.
+ */
+function defaultWorkspaceDir(zosmaDir: string): string {
+	const configured = loadSettings(zosmaDir).coworkHomeDir;
+	let target =
+		typeof configured === "string" && configured.trim() ? configured.trim() : coworkDefaultHome();
+	if (target === "~") {
+		target = homedir();
+	} else if (target.startsWith("~/") || target.startsWith("~\\")) {
+		target = join(homedir(), target.slice(2));
+	}
+	return target;
 }
 
 /**
@@ -1188,8 +1217,8 @@ function defaultWorkspaceDir(): string {
  *   falls back to the default workspace dir so the agent never ends up with an
  *   invalid cwd (which would make every file tool call fail).
  */
-function resolveWorkspace(requested?: string): string {
-	let target = requested?.trim() ? requested.trim() : defaultWorkspaceDir();
+function resolveWorkspace(requested: string | undefined, zosmaDir: string): string {
+	let target = requested?.trim() ? requested.trim() : defaultWorkspaceDir(zosmaDir);
 	if (target === "~") {
 		target = homedir();
 	} else if (target.startsWith("~/") || target.startsWith("~\\")) {
@@ -1207,7 +1236,7 @@ function resolveWorkspace(requested?: string): string {
 			target,
 			err instanceof Error ? err.message : String(err),
 		);
-		const fallback = defaultWorkspaceDir();
+		const fallback = defaultWorkspaceDir(zosmaDir);
 		ensureDir(fallback);
 		return fallback;
 	}
@@ -1268,6 +1297,12 @@ function cleanStaleLocks(dir: string): void {
  */
 let remoteSessionFile: string | null = null;
 let remoteSessionFirstTs = 0;
+
+/** Tracks whether the current prompt has emitted ANY agent event.
+ * Used by the startup watchdog in runPromptTask to determine if the
+ * model loaded and started responding (#307). Reset on each prompt. */
+let currentPromptStartedAt = 0;
+let promptHasEmitted = false;
 
 // ---------------------------------------------------------------------------
 // Session persistence helpers
@@ -1462,7 +1497,7 @@ async function main() {
 	// explicitly selects a folder (see resolveWorkspace + new_session.cwd).
 	// Deliberately NOT process.cwd(): a GUI-launched sidecar inherits an
 	// arbitrary cwd the user never chose.
-	let workspaceCwd = resolveWorkspace();
+	let workspaceCwd = resolveWorkspace(undefined, zosmaDir);
 	let activePromptId: string | null = null;
 
 	// Tasks-bridge file watcher: pushes a `tasks_changed` event whenever the
@@ -1674,7 +1709,7 @@ async function main() {
 		// A caller-supplied workspace folder overrides the default. Resolved &
 		// created here so the rest of init binds tools/sessions to a real dir.
 		if (workspace !== undefined) {
-			workspaceCwd = resolveWorkspace(workspace);
+			workspaceCwd = resolveWorkspace(workspace, zosmaDir);
 			retargetTasksWatcher(workspaceCwd);
 		}
 		log("Workspace cwd: %s", workspaceCwd);
@@ -1859,8 +1894,13 @@ async function main() {
 			// to checking coworok_tasks.lock as a secondary signal.
 		}
 
-		// Subscribe to all agent events and forward to stdout
+		// Subscribe to all agent events and forward to stdout. Also updates
+		// a module-level flag so runPromptTask can detect if the model ever
+		// started responding and clear its startup watchdog (#307).
 		session.subscribe((event) => {
+			if (currentPromptStartedAt > 0) {
+				promptHasEmitted = true;
+			}
 			send({ type: "event", event });
 		});
 
@@ -1933,6 +1973,29 @@ async function main() {
 		log("prompt: using model %s/%s", promptModel?.provider, promptModel?.id);
 		activePromptId = cmd.id;
 
+		// Startup timeout (20s): if the model doesn't produce ANY agent events
+		// within 20 seconds, abort the prompt. This handles the case where a
+		// local model (via llama-swap) fails to load — without this,
+		// `session.prompt()` hangs forever because pi's SDK never returns an
+		// error for a failed model load (#307). The global subscriber in
+		// initAgent sets `promptHasEmitted` on the first event; we just check
+		// it once when the timer fires.
+		const STARTUP_TIMEOUT_MS = 20_000;
+		currentPromptStartedAt = Date.now();
+		promptHasEmitted = false;
+		const startupTimer = setTimeout(() => {
+			if (promptHasEmitted) return;
+			log(
+				"prompt: no events within %dms — aborting (model may have failed to load)",
+				STARTUP_TIMEOUT_MS,
+			);
+			try {
+				activeSession.abort();
+			} catch {
+				// ignore if session already completed
+			}
+		}, STARTUP_TIMEOUT_MS);
+
 		// Auto-abort timeout: prevents the UI from staying in "thinking" state
 		// indefinitely when a prompt hangs (e.g. streaming request interrupted,
 		// API unresponsive, tool loop stuck). The timeout calls
@@ -1957,10 +2020,22 @@ async function main() {
 			// Surface SDK errors back to the UI instead of swallowing them
 			// silently with just a "done" event.
 			const msg = err instanceof Error ? err.message : String(err);
-			log("prompt error: %s", msg);
-			send({ type: "error", id: cmd.id, message: msg });
+			if (promptHasEmitted || Date.now() - currentPromptStartedAt <= STARTUP_TIMEOUT_MS) {
+				log("prompt error: %s", msg);
+				send({ type: "error", id: cmd.id, message: msg });
+			} else {
+				log("prompt: aborted (startup timeout) — %s", msg);
+				send({
+					type: "error",
+					id: cmd.id,
+					message: "Model failed to load or is unresponsive. Check model availability and try again.",
+				});
+			}
 		} finally {
 			clearTimeout(abortTimeout);
+			clearTimeout(startupTimer);
+			currentPromptStartedAt = 0;
+			promptHasEmitted = false;
 			send({ type: "done", id: cmd.id });
 			activePromptId = null;
 
@@ -3247,7 +3322,7 @@ async function main() {
 				// also rebinds the resource loader so a `.agents/` folder inside
 				// the chosen project is discovered (pi's "open from any folder").
 				// Same folder → reuse the cached loader (avoids a disk re-scan).
-				const requestedCwd = resolveWorkspace(cmd.cwd);
+				const requestedCwd = resolveWorkspace(cmd.cwd, zosmaDir);
 				if (requestedCwd !== workspaceCwd) {
 					workspaceCwd = requestedCwd;
 					retargetTasksWatcher(workspaceCwd);
@@ -3287,7 +3362,7 @@ async function main() {
 				send({
 					type: "result",
 					id: cmd.id,
-					data: { cwd: workspaceCwd, default: defaultWorkspaceDir() },
+					data: { cwd: workspaceCwd, default: defaultWorkspaceDir(zosmaDir) },
 				});
 				break;
 			}
@@ -3392,6 +3467,7 @@ async function main() {
 						//    falls back to the default (home).
 						const sessionCwd = resolveWorkspace(
 							typeof header.cwd === "string" ? header.cwd : undefined,
+							zosmaDir,
 						);
 						if (sessionCwd !== workspaceCwd) {
 							// Folder changed: rebuild the loader bound to the restored

@@ -1,0 +1,113 @@
+---
+title: Extensions
+description: Install pi-compatible extensions, skills, and tools to extend what the agent can do.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Extensions
+
+Zosma Cowork runs the pi-mono SDK as a Node.js sidecar process. Because the sidecar speaks the standard pi extension protocol, every extension, skill, tool, and theme built for pi works in Zosma Cowork without modification.
+
+## What extensions can do
+
+| Extension type | What it adds |
+|---------------|-------------|
+| **Tools** | New tool-call implementations (browser automation, file indexing, database queries, web search, etc.) |
+| **Skills** | Prompt-level instruction sets injected into the system prompt (coding guidelines, domain-specific context, persona rules) |
+| **Prompt templates** | Pre-written starting points that appear in the Templates tab of the sidebar |
+| **Providers** | Custom LLM endpoints beyond the built-in list |
+| **Themes** | Visual overrides for the Zosma Cowork UI |
+
+## Extension directory
+
+Extensions are discovered from:
+
+```
+~/.zosmaai/cowork/extensions/
+```
+
+Each extension is a directory containing at minimum an `index.cjs` (or `index.js`) entry point and a `package.json` with a `pi` field declaring its type and capabilities.
+
+The sidecar scans this directory on launch and on every **Settings → Extensions → Reload** action. No app restart is required to pick up newly installed extensions.
+
+## Installing an extension
+
+### From npm
+
+The pi ecosystem publishes extensions as npm packages. Install them directly into the extensions directory:
+
+```bash
+cd ~/.zosmaai/cowork/extensions
+npm install @earendil-works/pi-browser-agent
+```
+
+Or copy a built extension directory manually:
+
+```bash
+cp -r ./my-extension ~/.zosmaai/cowork/extensions/my-extension
+```
+
+### Enabling / disabling
+
+Go to **Settings → Extensions**. Every discovered extension is listed with its name, version, and a toggle. Disabling an extension removes it from the next sidecar reload without deleting it from disk.
+
+<Callout type="info" title="Reload">
+After installing a new extension, click **Reload** in the Extensions settings panel. The sidecar reinitialises and picks up the new extension within a few seconds.
+</Callout>
+
+## Writing an extension
+
+An extension is a CommonJS module that exports a factory function matching the pi SDK interface:
+
+```ts
+// ~/.zosmaai/cowork/extensions/my-tool/index.cjs
+module.exports = {
+  name: "my-tool",
+  version: "1.0.0",
+  tools: [
+    {
+      name: "fetch_url",
+      description: "Fetch the contents of a URL",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "The URL to fetch" },
+        },
+        required: ["url"],
+      },
+      async run({ url }) {
+        const res = await fetch(url);
+        return await res.text();
+      },
+    },
+  ],
+};
+```
+
+The full extension API is documented in the [pi-mono SDK README](https://github.com/earendil-works/pi-coding-agent).
+
+## Skills
+
+Skills are a lightweight extension type — a directory containing a `SKILL.md` file and optional scripts. When a skill is active, its `SKILL.md` is prepended to the system prompt as always-on context.
+
+Install a skill the same way as an extension:
+
+```bash
+cp -r ./my-skill ~/.zosmaai/cowork/extensions/my-skill
+```
+
+Enable it in **Settings → Skills**. Skills are listed separately from tool extensions so you can toggle prompt context independently of tool availability.
+
+## Built-in skills
+
+Zosma Cowork ships with the **pi-routines** extension vendored into the sidecar. pi-routines provides scheduled task support (the Tasks tab in the sidebar) without any installation step.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Extension not showing in list | Directory missing `package.json` or `index.cjs` | Add the required files |
+| Tool not appearing in agent | Extension disabled | Enable it in Settings → Extensions and reload |
+| Extension crashes on load | CommonJS syntax error or missing dependency | Check stderr in the sidecar log (`~/.zosmaai/cowork/sidecar.log`) |
+| Skill not applied | Skill disabled | Enable it in Settings → Skills |

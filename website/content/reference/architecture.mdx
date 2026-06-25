@@ -1,0 +1,125 @@
+---
+title: Architecture
+description: How the React frontend, Tauri relay, and Node.js agent sidecar fit together.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Architecture
+
+Zosma Cowork is built from three distinct layers. Each layer has a single responsibility — the Tauri relay is intentionally thin so that the agent logic is portable and testable outside the desktop shell.
+
+```
+┌─────────────────────────────────────┐
+│         React frontend (UI)         │
+│  React 19 · Tailwind v4 · Radix UI  │
+└──────────────┬──────────────────────┘
+               │  Tauri invoke / events
+               ▼
+┌─────────────────────────────────────┐
+│    Tauri relay (thin Rust shell)    │
+│  Spawns sidecar · forwards JSON-RPC │
+└──────────────┬──────────────────────┘
+               │  stdin/stdout JSON lines
+               ▼
+┌─────────────────────────────────────┐
+│  Node.js agent sidecar              │
+│  pi-mono SDK · extensions · models  │
+└─────────────────────────────────────┘
+```
+
+## Layer 1: React frontend
+
+**Tech:** React 19, TypeScript, Tailwind CSS v4, Radix UI, Vite
+
+The frontend handles all user interaction. Key responsibilities:
+
+- Rendering the 3-column app shell (sidebar, chat, info panel)
+- Managing session list state and active session selection
+- Streaming UI: buffering token events and updating the message thread
+- Tool-call timeline: rendering each tool invocation and result
+- Model selector: listing available models, dispatching selection changes
+- Settings: reading and writing app preferences via Tauri commands
+
+The frontend communicates with the Tauri relay exclusively through `@tauri-apps/api/core` `invoke()` calls and Tauri event listeners (`listen()`). It never touches the sidecar directly.
+
+### Key source files
+
+| File | Responsibility |
+|------|---------------|
+| `src/App.tsx` | Root component: session state machine, routing, layout |
+| `src/chat/ChatView.tsx` | Message thread, composer, tool timeline |
+| `src/components/Sidebar.tsx` | Session list, folder groups, search |
+| `src/hooks/usePiStream.ts` | Streaming state machine (`useReducer`) |
+| `src/components/SettingsPage.tsx` | Settings shell and navigation rail |
+| `src/types/pi-events.ts` | TypeScript types for all sidecar events |
+
+## Layer 2: Tauri relay (Rust)
+
+**Tech:** Tauri v2, Rust, Tokio
+
+The Tauri relay is intentionally thin. It does three things:
+
+1. **Spawns the Node.js sidecar** as a child process at startup, binding its stdin and stdout to the relay.
+2. **Forwards commands** from the frontend to the sidecar as JSON-line messages on stdin.
+3. **Forwards events** from the sidecar stdout back to the frontend as Tauri events.
+
+The relay itself contains no agent logic, no model configuration, and no session management. All of that lives in the sidecar.
+
+```
+Frontend → invoke("prompt", {...})
+         → Tauri command handler
+         → sidecar stdin: {"cmd":"prompt","args":{...}}
+         → sidecar stdout: {"event":"text","delta":"..."}
+         → Tauri event: listen("event", handler)
+         → React state update → re-render
+```
+
+### Key source files
+
+| File | Responsibility |
+|------|---------------|
+| `src-tauri/src/lib.rs` | All Tauri commands, sidecar process management |
+| `src-tauri/src/main.rs` | Entry point only |
+
+## Layer 3: Node.js agent sidecar
+
+**Tech:** Node.js 22, TypeScript, `@earendil-works/pi-coding-agent` (pi-mono SDK)
+
+The sidecar is the intelligence layer. It runs as a long-lived child process managed by the Tauri relay. It communicates via newline-delimited JSON on stdin/stdout — one JSON object per line.
+
+Responsibilities:
+- Loading and initialising all pi extensions from `~/.zosmaai/cowork/extensions/`
+- Authenticating with LLM providers using credentials from `~/.zosmaai/cowork/auth.json`
+- Running multi-turn agent sessions with tool execution
+- Streaming token events, thinking blocks, and tool-call results back to the relay
+- Managing workspace context (which folder the agent is currently bound to)
+- Session save/load, model switching, and settings persistence
+
+<Callout type="info" title="Why a Node.js sidecar?">
+Keeping agent logic in Node.js (rather than Rust) means the full pi ecosystem of extensions, skills, and providers is available without porting or wrapping. The Rust relay stays as a thin cross-platform native shell.
+</Callout>
+
+### Key source files
+
+| File | Responsibility |
+|------|---------------|
+| `agent-sidecar/src/index.ts` | Entry point: stdin protocol, session loops, extension loading |
+
+## Data flow: a streaming prompt
+
+1. User types a message and presses Enter.
+2. `App.tsx` calls `startStream(text)` via `usePiStream`.
+3. `usePiStream` calls `invoke("prompt", { text, sessionFile })`.
+4. The Tauri relay sends `{"cmd":"prompt","args":{...}}` on sidecar stdin.
+5. The sidecar begins an agent turn: sends the message to the LLM, streams tokens.
+6. For each token the sidecar writes `{"event":"event","data":{"type":"text","delta":"..."}}` on stdout.
+7. The relay emits a Tauri event; the frontend listener appends the delta to the streaming message.
+8. When the turn completes the sidecar writes `{"event":"done"}`.
+9. The frontend merges the streamed messages with session history and saves via `invoke("save_session")`.
+
+## Development builds
+
+In development (`npm run dev`), the sidecar runs from TypeScript source via `tsx` — no build step. The Tauri relay resolves the sidecar binary path from the `SIDECAR_DEV` environment variable set by the dev script.
+
+On production build (`npm run build`), the sidecar is compiled to CommonJS (`agent-sidecar/dist/index.cjs`) and a Node.js binary is downloaded and bundled into `src-tauri/binaries/`. The Tauri app ships a fully self-contained binary with no external runtime dependency.

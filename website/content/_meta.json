@@ -1,0 +1,9 @@
+{
+  "getting-started": "Getting Started",
+  "--- Features": { "type": "separator" },
+  "features": "Features",
+  "--- Guides": { "type": "separator" },
+  "guides": "Guides",
+  "--- Reference": { "type": "separator" },
+  "reference": "Reference"
+}

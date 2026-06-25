@@ -1,0 +1,201 @@
+---
+title: IPC Protocol
+description: The JSON-line protocol between the Tauri relay and the Node.js agent sidecar.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# IPC Protocol
+
+The Tauri relay and the Node.js sidecar communicate via **newline-delimited JSON** on stdin (relay → sidecar) and stdout (sidecar → relay). Each message is one JSON object followed by a newline (`\n`). The relay never sends on sidecar stdout, and the sidecar never reads from relay stdout.
+
+<Callout type="info" title="Log output">
+The sidecar writes all debug and diagnostic output to **stderr**, not stdout. The protocol channel (stdout) carries only JSON messages.
+</Callout>
+
+## Commands (relay → sidecar)
+
+Each command is a JSON object with a `cmd` field and an optional `args` object.
+
+```json
+{ "cmd": "prompt", "args": { "text": "Refactor this function", "sessionFile": "session-1234.jsonl" } }
+```
+
+### `init`
+
+Initialise the sidecar with configuration. Called once after the sidecar process starts.
+
+```json
+{ "cmd": "init", "args": { "zosmaDir": "/Users/alice/.zosmaai/cowork" } }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `zosmaDir` | string | Absolute path to the Zosma Cowork data directory |
+
+### `get_models`
+
+Request the list of available models from all configured providers.
+
+```json
+{ "cmd": "get_models" }
+```
+
+Returns a `result` event with a `models` array.
+
+### `prompt`
+
+Start an agent turn with the given user message.
+
+```json
+{
+  "cmd": "prompt",
+  "args": {
+    "text": "Add retry logic to the fetchData function",
+    "sessionFile": "session-1719300000000.jsonl"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | string | The user's message |
+| `sessionFile` | string | Session filename (relative to `zosmaDir`) |
+
+The sidecar responds with a stream of `event` messages followed by a `done` message.
+
+### `abort`
+
+Cancel the currently running prompt. The sidecar stops the LLM stream and emits `done`.
+
+```json
+{ "cmd": "abort" }
+```
+
+### `set_model`
+
+Switch the active model. Takes effect on the next `prompt` call.
+
+```json
+{ "cmd": "set_model", "args": { "provider": "anthropic", "model": "claude-opus-4-5" } }
+```
+
+### `get_active_model`
+
+Query the sidecar for the currently active model.
+
+```json
+{ "cmd": "get_active_model" }
+```
+
+Returns a `result` event with `{ "provider": "...", "id": "..." }`.
+
+### `save_auth`
+
+Persist an API key for a provider.
+
+```json
+{ "cmd": "save_auth", "args": { "provider": "openai", "apiKey": "sk-..." } }
+```
+
+### `new_session`
+
+Create a new agent session bound to the given workspace folder.
+
+```json
+{ "cmd": "new_session", "args": { "cwd": "/Users/alice/code/my-project" } }
+```
+
+Returns a `result` event with `{ "cwd": "/Users/alice/code/my-project" }` (resolved path).
+
+### `reload`
+
+Reinitialise the sidecar: re-read extensions, auth, and model configuration from disk. Used after installing a new extension or changing credentials.
+
+```json
+{ "cmd": "reload" }
+```
+
+### `get_settings` / `save_settings`
+
+Read or write app-level settings from `settings.json`.
+
+```json
+{ "cmd": "get_settings" }
+{ "cmd": "save_settings", "args": { "settings": { "defaultModel": "gpt-4o", "defaultProvider": "openai" } } }
+```
+
+### `save_instructions`
+
+Persist the custom instructions Markdown to `INSTRUCTIONS.md`.
+
+```json
+{ "cmd": "save_instructions", "args": { "content": "Always use TypeScript." } }
+```
+
+## Events (sidecar → relay)
+
+Each event is a JSON object with an `event` field and a `data` object.
+
+```json
+{ "event": "text", "data": { "delta": "Here's the retry implementation:" } }
+```
+
+### `ready`
+
+Emitted once after initialisation completes. The relay re-emits this as a Tauri window event so the frontend can show the main UI.
+
+```json
+{ "event": "ready", "data": { "models": [...] } }
+```
+
+### `event`
+
+A streaming agent event. The `data.type` field distinguishes sub-types:
+
+| `data.type` | Description |
+|-------------|-------------|
+| `text` | A text delta. `data.delta` contains the new characters. |
+| `thinking` | A thinking/reasoning delta. `data.delta` contains the reasoning text. |
+| `tool_start` | A tool call is starting. `data.name` and `data.args` describe it. |
+| `tool_result` | A tool call completed. `data.name` and `data.result` contain the output. |
+| `error` | A recoverable error within the stream. `data.message` is user-readable. |
+
+```json
+{ "event": "event", "data": { "type": "tool_start", "name": "bash", "args": { "command": "ls -la" } } }
+{ "event": "event", "data": { "type": "tool_result", "name": "bash", "result": "total 48\n..." } }
+```
+
+### `done`
+
+The current agent turn has completed (or was aborted).
+
+```json
+{ "event": "done" }
+```
+
+### `result`
+
+Response to a request command (`get_models`, `get_active_model`, `get_settings`, etc.).
+
+```json
+{ "event": "result", "data": { "models": [ { "id": "gpt-4o", "provider": "openai", "name": "GPT-4o" } ] } }
+```
+
+### `error`
+
+A fatal error that terminates the current operation.
+
+```json
+{ "event": "error", "data": { "message": "API key invalid for provider anthropic" } }
+```
+
+## Adding a custom command
+
+The sidecar's `index.ts` contains a `switch` on `msg.cmd`. To add a new command:
+
+1. Add a case to the switch in `agent-sidecar/src/index.ts`.
+2. Add a corresponding Tauri command in `src-tauri/src/lib.rs` that serialises the args and writes to sidecar stdin.
+3. Call the new command from the frontend with `invoke("your_command_name", args)`.
+
+See [Architecture](/docs/reference/architecture) for the full data-flow diagram.

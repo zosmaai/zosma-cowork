@@ -25,6 +25,8 @@ interface SidebarProps {
 	activeSessionId?: string;
 	onSessionSelect: (id: string) => void;
 	onNewSession: () => void;
+	/** Open an existing folder as a new session (folder picker). */
+	onOpenSession: () => void;
 	onDeleteSession: (id: string) => void;
 	/** Open the rename popup for a session. */
 	onRequestRename?: (id: string) => void;
@@ -66,6 +68,7 @@ export function Sidebar({
 	activeSessionId,
 	onSessionSelect,
 	onNewSession,
+	onOpenSession,
 	onDeleteSession,
 	onRequestRename,
 	onPinSession,
@@ -171,6 +174,7 @@ export function Sidebar({
 								activeSessionId={activeSessionId}
 								onSelect={onSessionSelect}
 								onNewSession={onNewSession}
+								onOpenSession={onOpenSession}
 								onDeleteSession={onDeleteSession}
 								onRequestRename={onRequestRename}
 								onPinSession={onPinSession}

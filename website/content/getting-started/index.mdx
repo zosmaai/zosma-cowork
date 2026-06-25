@@ -1,0 +1,38 @@
+---
+title: Overview
+description: What Zosma Cowork is, who it's for, and what's in the docs.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Overview
+
+Zosma Cowork is a **desktop AI coworker** — a native Tauri app that wraps the [pi-mono SDK](https://github.com/earendil-works/pi-coding-agent) in a first-class UI. It handles streaming chat, thinking blocks, tool-call timelines, multi-turn sessions, and model selection so you can direct agentic work without touching a terminal.
+
+Every pi extension, skill, and prompt template works out of the box. Bring your own API key or sign in with an existing subscription — no Zosma account required.
+
+## Who it's for
+
+Zosma Cowork is built for developers and technical users who run agentic tasks on their desktop: writing code, processing files, directing multi-step agent runs. Sessions are bound to folders on your machine, so the agent always knows where it's working.
+
+## What's in these docs
+
+| Section | What you'll find |
+|---------|-----------------|
+| [Getting Started → Installation](/docs/getting-started/installation) | Download, platform requirements, and first-launch setup |
+| [Getting Started → Quick Start](/docs/getting-started/quick-start) | Connect a model, pick a folder, and send your first message |
+| [Features](/docs/features/chat) | Deep reference for chat, sessions, models, and settings |
+| [Guides](/docs/guides/extensions) | Extensions, skills, and keyboard shortcuts |
+| [Reference](/docs/reference/architecture) | Architecture and IPC protocol internals |
+
+## Key facts
+
+- **100% free and open source** (MIT) — [github.com/zosmaai/zosma-cowork](https://github.com/zosmaai/zosma-cowork)
+- **No cloud account** — all data lives in `~/.zosmaai/cowork/` on your machine
+- **20+ model providers** — OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, xAI, GitHub Copilot, and any OpenAI-compatible endpoint
+- **pi extension ecosystem** — install community extensions or write your own; they are discovered automatically from `~/.zosmaai/cowork/extensions/`
+- **macOS, Windows, Linux** — native Tauri binary, no runtime dependencies
+
+<Callout type="info" title="Built on pi">
+Zosma Cowork is a desktop shell around the [pi](https://github.com/earendil-works/pi-coding-agent) agent harness. The pi philosophy of simplicity and composability carries directly into the app — every pi extension works without wrappers or adapters.
+</Callout>

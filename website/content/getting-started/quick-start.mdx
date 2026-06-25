@@ -1,0 +1,92 @@
+---
+title: Quick Start
+description: Connect a model, pick a workspace folder, and run your first agentic session in under two minutes.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Quick Start
+
+This page walks you from a fresh install to your first completed agent session. The whole flow takes under two minutes.
+
+## Step 1 — Telemetry consent
+
+On first launch, Zosma Cowork shows a consent prompt before anything else. It asks whether to send anonymous usage events (session count, model used, feature clicks). No message content or file paths are ever included.
+
+Choose **Enable** or **No thanks** — either way you land on the same onboarding screen. You can change this decision at any time under **Settings → Telemetry**.
+
+## Step 2 — Connect a model
+
+The onboarding screen asks how you want to connect to an AI provider.
+
+### Option A — API key
+
+Select a provider from the dropdown and paste your API key. Press **Connect**.
+
+| Provider | Where to get a key |
+|----------|-------------------|
+| Anthropic (Claude) | [console.anthropic.com](https://console.anthropic.com) |
+| OpenAI (GPT / o-series) | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Google (Gemini) | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| Groq | [console.groq.com](https://console.groq.com/keys) |
+| Mistral | [console.mistral.ai](https://console.mistral.ai) |
+| DeepSeek | [platform.deepseek.com](https://platform.deepseek.com) |
+| xAI (Grok) | [console.x.ai](https://console.x.ai) |
+
+Your key is saved to `~/.zosmaai/cowork/auth.json` on your local machine. It is never sent anywhere except the provider's own API endpoint.
+
+### Option B — OAuth (existing subscription)
+
+If you already pay for **Claude Pro**, **ChatGPT Plus**, or **GitHub Copilot**, click **Sign in with [Provider]**. A browser window opens for OAuth — sign in, approve access, and return to the app. No API key is needed.
+
+<Callout type="info">
+You can connect multiple providers. Add more under **Settings → Authentication** after the initial setup.
+</Callout>
+
+If you want to configure everything in Settings first, choose **Configure in Settings** to dismiss the onboarding screen without connecting immediately.
+
+## Step 3 — Pick a folder and start a session
+
+Click **New** in the sidebar, or press `Cmd + N` (macOS) / `Ctrl + N` (Windows, Linux).
+
+A native **folder picker** opens. Choose the directory where you want the agent to work — a code project, a notes folder, anywhere. This becomes the **workspace folder** for the session.
+
+Every tool call the agent makes (reading files, writing files, running bash commands) runs inside this folder. The agent cannot touch files outside it unless you explicitly provide an absolute path in a message.
+
+<Callout type="info" title="Cancelling the picker">
+If you close the folder picker without selecting a folder, nothing happens. Your current session is untouched.
+</Callout>
+
+## Step 4 — Send your first message
+
+![Zosma Cowork after a completed session — sidebar shows four past sessions with folder paths, the main panel shows a user request and an assistant response with a TypeScript code block, and the composer sits at the bottom with a model selector](/screenshots/chat-dark.png)
+
+The composer is the text box at the bottom of the chat view. Type your request and press `Enter` to send.
+
+The agent begins streaming its response immediately. Depending on your request, you may see:
+
+- **Text** — streamed token by token as the model generates it
+- **Thinking block** — a collapsible section showing the model's internal reasoning (Claude extended thinking, o-series reasoning)
+- **Tool-call timeline** — live entries for each file read, file write, or bash command the agent runs, with arguments and results shown inline
+
+While the agent is running, you can:
+- Press **Stop** or `Escape` to abort the current turn
+- Type a new message and press `Enter` to steer the agent mid-turn
+- Press `Alt + Enter` to queue a follow-up that runs after the current turn finishes
+
+## Step 5 — Switch models (optional)
+
+Click the **model label** in the bottom bar of the composer to open the model picker. Search by name or provider, then click to switch. The change takes effect on the next message.
+
+You can also type `/model` in the composer to open the picker from the keyboard, or `/model claude-opus-4-5` to switch directly by ID.
+
+## What happens to the session
+
+When the agent finishes a turn, Zosma Cowork automatically saves the conversation to a `.jsonl` file in `~/.zosmaai/cowork/`. The session appears in the sidebar under the folder group matching your workspace. You can close the app and reopen it — your session is still there.
+
+## Next steps
+
+- **[Chat interface](/docs/features/chat)** — steering, follow-up, in-thread search, retry, and exporting
+- **[Sessions](/docs/features/sessions)** — pinning, renaming, deep search, and folder groups
+- **[Models](/docs/features/models)** — adding providers, switching mid-session, and reading cost stats
+- **[Extensions](/docs/guides/extensions)** — installing pi extensions to give the agent new tools

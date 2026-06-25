@@ -1,0 +1,76 @@
+---
+title: Session Management
+description: Folder-grouped sessions, search, pin, rename, and delete from the sidebar.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Session Management
+
+![Zosma Cowork sidebar showing four sessions grouped under their workspace folders (~/code/acme-api, ~/code/acme-web, ~/notes, ~/code/cowork). Each entry shows the session title, message count, and time. A search box sits above the list and a New button is in the top-right.](/screenshots/chat-dark.png)
+
+Every conversation is a **session** — a JSONL file saved to `~/.zosmaai/cowork/`. Sessions are grouped by workspace folder in the sidebar, so switching between projects keeps your conversations organised without manual tagging.
+
+## The sidebar
+
+The left panel has three top-level views selectable from the activity bar:
+
+| View | Contents |
+|------|----------|
+| **Chats** | All sessions, grouped by workspace folder |
+| **Templates** | Prompt templates (saved starting points for common tasks) |
+| **Tasks** | Scheduled agent tasks via pi-routines |
+
+The **Chats** view is the default. Each session entry shows its title, a one-line preview of the most recent message, the timestamp, and the model used.
+
+## Folder groups
+
+Sessions are automatically grouped under their **workspace folder** — the directory you selected when starting the session. If you frequently work in `~/code/acme-api` and `~/code/frontend`, each folder gets its own collapsible group in the sidebar.
+
+Sessions created before folder support was added (or those whose folder is no longer available) are grouped under **Home**.
+
+## Creating a session
+
+Click **New** in the sidebar header or press `Cmd/Ctrl + N`. A native folder picker opens. Select the directory where you want the agent to work and the session starts immediately bound to that folder.
+
+<Callout type="info">
+Cancelling the folder picker is a no-op. The currently active session is never affected.
+</Callout>
+
+Alternatively, type `/new [folder]` in the composer to start a new session, optionally passing a path directly.
+
+## Selecting a session
+
+Click any session in the sidebar to load it. The full conversation history is restored and the agent's workspace is rebound to the session's folder. The model that was active when the session was last used is also restored automatically.
+
+## Pinning a session
+
+Right-click (or hover to reveal the context menu on) a session entry and choose **Pin**. Pinned sessions float to the top of their folder group. Pin again to unpin.
+
+## Renaming a session
+
+By default, the session title is derived from the first message you send. To set a custom title, right-click the session and choose **Rename**, or select the session and use the rename menu. A custom title is "locked" — it will not be overwritten by auto-derive logic on subsequent saves.
+
+## Deleting a session
+
+Right-click the session and choose **Delete**. A confirmation dialog shows the session title before removing the JSONL file from disk. This cannot be undone.
+
+## Searching sessions
+
+### Title search
+
+The search box at the top of the Chats sidebar filters sessions by title in real time.
+
+### Deep content search
+
+Click the **search icon** in the sidebar header to run a **deep search** — a full-text scan across all session JSONL files on disk. Results show the matching session title, a snippet of the matching content, and the number of matches. Clicking a result opens that session.
+
+<Callout type="info" title="Performance">
+Deep search reads all sessions from disk on each query. For large session archives (&gt;500 files) it may take a moment. Search is debounced to avoid repeated reads while typing.
+</Callout>
+
+## Session data format
+
+Each session is stored as a `.jsonl` file (one JSON object per line) in `~/.zosmaai/cowork/`. The first line of a JSONL file is a metadata header containing the title, model, provider, workspace folder, timestamps, and message count. Subsequent lines are individual chat messages.
+
+You can inspect, back up, or move sessions by copying these files. The sidebar reloads the list on every session save.

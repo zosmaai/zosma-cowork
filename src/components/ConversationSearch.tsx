@@ -1,4 +1,13 @@
-import { Folder, FolderPlus, MessagesSquare, Pencil, Pin, Search, Trash2 } from "lucide-react";
+import {
+	Folder,
+	FolderOpen,
+	FolderPlus,
+	MessagesSquare,
+	Pencil,
+	Pin,
+	Search,
+	Trash2,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -43,7 +52,10 @@ function displayPath(folder: string | undefined, homeDir: string | undefined): s
 interface ConversationSearchProps {
 	sessions: Session[];
 	onSelect: (id: string) => void;
+	/** Start a fresh session in the default ZosmaCowork folder (no prompt). */
 	onNewSession: () => void;
+	/** Pick a folder for the agent to work in, then start a session there. */
+	onOpenSession: () => void;
 	onDeleteSession: (id: string) => void;
 	/** Open the rename popup for a session (mirrors the delete confirm flow). */
 	onRequestRename?: (id: string) => void;
@@ -86,6 +98,7 @@ export function ConversationSearch({
 	sessions,
 	onSelect,
 	onNewSession,
+	onOpenSession,
 	onDeleteSession,
 	onRequestRename,
 	onPinSession,
@@ -225,20 +238,35 @@ export function ConversationSearch({
 				>
 					Sessions
 				</span>
-				<motion.button
-					type="button"
-					onClick={onNewSession}
-					aria-label="New session"
-					title="New session — pick a folder for the agent to work in"
-					className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium"
-					style={{ color: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.08)" }}
-					whileHover={reduced ? {} : { scale: 1.04, background: "hsl(var(--primary) / 0.15)" }}
-					whileTap={reduced ? {} : { scale: 0.96 }}
-					transition={{ duration: 0.15, ease: easeOutExpo }}
-				>
-					<FolderPlus className="w-3.5 h-3.5" />
-					New
-				</motion.button>
+				<div className="flex items-center gap-1.5">
+					<motion.button
+						type="button"
+						onClick={onNewSession}
+						aria-label="New session"
+						title="New session in your ZosmaCowork folder"
+						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium"
+						style={{ color: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.08)" }}
+						whileHover={reduced ? {} : { scale: 1.04, background: "hsl(var(--primary) / 0.15)" }}
+						whileTap={reduced ? {} : { scale: 0.96 }}
+						transition={{ duration: 0.15, ease: easeOutExpo }}
+					>
+						<FolderPlus className="w-3.5 h-3.5" />
+						New
+					</motion.button>
+					<motion.button
+						type="button"
+						onClick={onOpenSession}
+						aria-label="Open folder as session"
+						title="Open a folder for the agent to work in"
+						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground bg-muted hover:bg-muted/70 hover:text-foreground transition-colors"
+						whileHover={reduced ? {} : { scale: 1.04 }}
+						whileTap={reduced ? {} : { scale: 0.96 }}
+						transition={{ duration: 0.15, ease: easeOutExpo }}
+					>
+						<FolderOpen className="w-3.5 h-3.5" />
+						Open
+					</motion.button>
+				</div>
 			</div>
 
 			{/* ── Search ── */}

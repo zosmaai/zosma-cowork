@@ -2,6 +2,7 @@ import {
 	BarChart2,
 	ChevronLeft,
 	FileText,
+	FolderCog,
 	Globe,
 	Info,
 	KeyRound,
@@ -23,6 +24,7 @@ import { Instructions } from "./settings/Instructions";
 import { RemoteAccess } from "./settings/RemoteAccess";
 import { Skills } from "./settings/Skills";
 import { Telemetry } from "./settings/Telemetry";
+import { Workspace } from "./settings/Workspace";
 
 interface SettingsPageProps {
 	onClose: () => void;
@@ -41,6 +43,7 @@ type SectionId =
 	| "skills"
 	| "custom-instructions"
 	| "appearance"
+	| "workspace"
 	| "telemetry"
 	| "about";
 
@@ -73,6 +76,7 @@ const GROUPS: { label: string; items: Section[] }[] = [
 		label: "Preferences",
 		items: [
 			{ id: "appearance", label: "Appearance", Icon: Palette },
+			{ id: "workspace", label: "Workspace", Icon: FolderCog },
 			{ id: "telemetry", label: "Telemetry", Icon: BarChart2 },
 		],
 	},
@@ -329,6 +333,7 @@ function SectionContent({
 			{activeSection === "appearance" && (
 				<Appearance fontScale={fontScale} onFontScaleChange={onFontScaleChange} />
 			)}
+			{activeSection === "workspace" && <Workspace />}
 			{activeSection === "telemetry" && (
 				<Telemetry enabled={telemetryEnabled} onToggle={onTelemetryToggle} />
 			)}

@@ -219,3 +219,222 @@ describe("streamReducer — queue slice (#201 PR 3)", () => {
 		expect(s.queue).toEqual({ steering: [], followUp: [] });
 	});
 });
+
+/**
+ * Text-end correction — issue #307.
+ *
+ * pi's streaming can replay text_delta events (e.g. after noheadroom
+ * compaction), causing every word to appear doubled in the live bubble:
+ *   "The" → "TheThe", "wiki" → "wikiwiki"
+ *
+ * The `text_end` event carries the authoritative final text for that
+ * content block. The reducer uses it to snap the accumulated content
+ * to the correct value, discarding any accumulated duplicates.
+ */
+describe("streamReducer — text_end correction (#307)", () => {
+	it("TEXT_END replaces accumulated delta content with authoritative text", () => {
+		// Simulate: deltas accumulate normally, then text_end gives the
+		// authoritative final text (e.g. if deltas were replayed).
+		const s = run([
+			{ type: "START_STREAM", prompt: "check wiki" },
+			{ type: "TEXT_DELTA", delta: "The" },
+			{ type: "TEXT_DELTA", delta: " wiki" },
+			{ type: "TEXT_DELTA", delta: " has" },
+			// text_end fires with the correct final text
+			{ type: "TEXT_END", content: "The wiki has 196 pages" },
+		]);
+		expect(s.streamingMessage?.content).toBe("The wiki has 196 pages");
+	});
+
+	it("TEXT_END corrects word duplication from replayed deltas", () => {
+		// The exact bug from session-1782255056145.jsonl:
+		// text_deltas replay the same content, doubling every word.
+		const s = run([
+			{ type: "START_STREAM", prompt: "check wiki" },
+			// First pass — normal deltas
+			{ type: "TEXT_DELTA", delta: "Interesting" },
+			{ type: "TEXT_DELTA", delta: "!! " },
+			{ type: "TEXT_DELTA", delta: "The" },
+			{ type: "TEXT_DELTA", delta: " wiki" },
+			{ type: "TEXT_DELTA", delta: " has" },
+			// Second pass — same deltas replayed (causing doubling)
+			{ type: "TEXT_DELTA", delta: "Interesting" },
+			{ type: "TEXT_DELTA", delta: "!! " },
+			{ type: "TEXT_DELTA", delta: "The" },
+			{ type: "TEXT_DELTA", delta: " wiki" },
+			{ type: "TEXT_DELTA", delta: " has" },
+			// text_end corrects to authoritative text
+			{ type: "TEXT_END", content: "Interesting!! The wiki has" },
+		]);
+		expect(s.streamingMessage?.content).toBe("Interesting!! The wiki has");
+	});
+
+	it("TEXT_END only replaces the current sub-turn's text, preserving previous turns", () => {
+		// Multi-turn scenario: first sub-turn finalizes, then second
+		// sub-turn's text_end must not overwrite the first turn's content.
+		const s = run([
+			{ type: "START_STREAM", prompt: "analyze" },
+			// Sub-turn 1: thinking + tools
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Checking" },
+			{ type: "TEXT_DELTA", delta: " data..." },
+			{ type: "TEXT_END", content: "Checking data..." },
+			{ type: "MESSAGE_END" },
+			// Sub-turn 2: final answer
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Found" },
+			{ type: "TEXT_DELTA", delta: " 3 issues" },
+			{ type: "TEXT_END", content: "Found 3 issues" },
+		]);
+		// Both sub-turns' content preserved with separator
+		expect(s.streamingMessage?.content).toContain("Checking data...");
+		expect(s.streamingMessage?.content).toContain("Found 3 issues");
+		// The accumulated content should be correct, not doubled
+		expect(s.streamingMessage?.content).not.toContain("Checking data...Checking");
+	});
+
+	it("TEXT_END after replayed deltas with multiple sub-turns preserves all content", () => {
+		// Regression: the first sub-turn's text_end corrects correctly,
+		// then second sub-turn's deltas replay, text_end must correct
+		// only the second sub-turn's text, keeping the first intact.
+		const s = run([
+			{ type: "START_STREAM", prompt: "analyze wiki" },
+			// Sub-turn 1: initial analysis
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Let me" },
+			{ type: "TEXT_DELTA", delta: " check the" },
+			{ type: "TEXT_DELTA", delta: " wiki" },
+			// Replay (duplication)
+			{ type: "TEXT_DELTA", delta: "Let me" },
+			{ type: "TEXT_DELTA", delta: " check the" },
+			{ type: "TEXT_DELTA", delta: " wiki" },
+			{ type: "TEXT_END", content: "Let me check the wiki" },
+			{ type: "MESSAGE_END" },
+			// Sub-turn 2: final answer
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "It has" },
+			{ type: "TEXT_DELTA", delta: " 196 pages" },
+			// Replay
+			{ type: "TEXT_DELTA", delta: "It has" },
+			{ type: "TEXT_DELTA", delta: " 196 pages" },
+			{ type: "TEXT_END", content: "It has 196 pages" },
+		]);
+		expect(s.streamingMessage?.content).toBe("Let me check the wiki\n\nIt has 196 pages");
+	});
+});
+
+/**
+ * Sub-turn duplication (#307) — the opencode-go / deepseek bridge re-emits
+ * some completed text blocks as a SECOND `message_start → text → text_end`
+ * sub-turn. The single-bubble model used to keep both copies (separated by
+ * the TURN_RESET `\n\n`), producing the doubled paragraphs seen in
+ * session-1782420114625.jsonl. Adjacent byte-identical sub-turns must
+ * collapse to one.
+ */
+describe("streamReducer — duplicate sub-turn collapse (#307)", () => {
+	it("reproduces the welcome-message trace: doubled blocks collapse, single blocks survive", () => {
+		const s = run([
+			{ type: "START_STREAM", prompt: "Hey" },
+			// Sub-turn 1: greeting
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Hey! Welcome back. 👋" },
+			{ type: "TEXT_END", content: "Hey! Welcome back. 👋" },
+			{ type: "MESSAGE_END" },
+			// Sub-turn 2: SAME greeting re-emitted (the bug) — must collapse
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Hey! Welcome back. 👋" },
+			{ type: "TEXT_END", content: "Hey! Welcome back. 👋" },
+			{ type: "MESSAGE_END" },
+			// Sub-turn 3: emitted ONCE — must survive
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Let me load context on what we've been up to." },
+			{ type: "TEXT_END", content: "Let me load context on what we've been up to." },
+			{ type: "MESSAGE_END" },
+			// Sub-turn 4 + 5: same closing paragraph twice — must collapse
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Good to see you. We're in the middle of pi-llm-wiki." },
+			{ type: "TEXT_END", content: "Good to see you. We're in the middle of pi-llm-wiki." },
+			{ type: "MESSAGE_END" },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Good to see you. We're in the middle of pi-llm-wiki." },
+			{ type: "TEXT_END", content: "Good to see you. We're in the middle of pi-llm-wiki." },
+		]);
+		expect(s.streamingMessage?.content).toBe(
+			"Hey! Welcome back. 👋\n\nLet me load context on what we've been up to.\n\nGood to see you. We're in the middle of pi-llm-wiki.",
+		);
+	});
+
+	it("collapses a duplicate sub-turn even when the provider sends no text_end", () => {
+		// Delta-only replay finalized by the next TURN_RESET.
+		const s = run([
+			{ type: "START_STREAM", prompt: "hi" },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Done." },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Done." },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Bye." },
+		]);
+		expect(s.streamingMessage?.content).toBe("Done.\n\nBye.");
+	});
+
+	it("does NOT collapse two different sub-turns that happen to share a prefix", () => {
+		const s = run([
+			{ type: "START_STREAM", prompt: "x" },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_END", content: "Checking the repo." },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_END", content: "Checking the repo now." },
+		]);
+		expect(s.streamingMessage?.content).toBe("Checking the repo.\n\nChecking the repo now.");
+	});
+
+	it("preserves a sub-turn whose own text contains a blank line", () => {
+		// The flat-string model would have mis-split this on \n\n; the segment
+		// model keeps it intact.
+		const s = run([
+			{ type: "START_STREAM", prompt: "x" },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_END", content: "Para one.\n\nPara two." },
+		]);
+		expect(s.streamingMessage?.content).toBe("Para one.\n\nPara two.");
+	});
+});
+
+/**
+ * Error handling — a mid-stream failure must not leave a frozen, half-streamed
+ * bubble stuck in the streaming state (the "stops mid" symptom). The partial
+ * output is preserved into the transcript, the streaming bubble is cleared,
+ * and the status flips to "error" so the ErrorBanner + retry surface.
+ */
+describe("streamReducer — mid-stream error finalization", () => {
+	it("preserves partial output, clears the bubble, and sets error status", () => {
+		const s = run([
+			{ type: "START_STREAM", prompt: "do a thing" },
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "Working on it" },
+			{ type: "STREAM_ERROR", error: "The provided client secret is invalid (google)" },
+		]);
+		expect(s.status).toBe("error");
+		expect(s.isRunning).toBe(false);
+		expect(s.error).toContain("client secret is invalid");
+		// no orphaned streaming bubble
+		expect(s.streamingMessage).toBeNull();
+		// partial text kept in the transcript (user + finalized assistant)
+		const assistant = s.messages[s.messages.length - 1];
+		expect(assistant.role).toBe("assistant");
+		expect(assistant.content).toBe("Working on it");
+		expect(assistant.isStreaming).toBe(false);
+	});
+
+	it("does not add a ghost assistant bubble when nothing was streamed yet", () => {
+		const s = run([
+			{ type: "START_STREAM", prompt: "hi" },
+			{ type: "STREAM_ERROR", error: "Model failed to load" },
+		]);
+		expect(s.status).toBe("error");
+		expect(s.streamingMessage).toBeNull();
+		// only the user message remains; no empty assistant bubble
+		expect(s.messages.filter((m) => m.role === "assistant")).toHaveLength(0);
+	});
+});

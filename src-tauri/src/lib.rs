@@ -2350,28 +2350,63 @@ pub fn run() {
             let rd = Arc::clone(&st.sidecar.ready);
             app.manage(st);
             tauri::async_runtime::spawn(async move {
-                match spawn_sidecar(h.clone(), &zd).await {
-                    Ok((mut c, o, i)) => {
-                        let s: State<AppState> = h.state();
-                        let pid = c.id();
-                        *s.sidecar.stdin.lock().await = Some(i);
-                        // Watch the sidecar's exit so unexpected deaths are
-                        // diagnosable. Owns the Child for its lifetime;
-                        // tokio kill_on_drop ensures cleanup if this task
-                        // is aborted (app shutdown).
-                        tauri::async_runtime::spawn(async move {
-                            match c.wait().await {
-                                Ok(status) => log::error!(
-                                    "Sidecar pid={pid:?} EXITED: status={status:?} code={:?}",
-                                    status.code()
-                                ),
-                                Err(e) => log::error!("Sidecar pid={pid:?} wait error: {e}"),
+                // Retry loop: if the sidecar crashes (OOM, unhandled error,
+                // model-load failure) we restart it up to 3 times so the
+                // app keeps working without user intervention (#307).
+                let max_retries = 3;
+                for attempt in 0..max_retries {
+                    match spawn_sidecar(h.clone(), &zd).await {
+                        Ok((mut c, o, i)) => {
+                            let s: State<AppState> = h.state();
+                            let pid = c.id();
+                            *s.sidecar.stdin.lock().await = Some(i);
+                            rd.store(true, Ordering::Release);
+                            let _ = h.emit(
+                                "ready",
+                                serde_json::json!({
+                                    "sidecarRestarted": attempt > 0
+                                }),
+                            );
+                            // Watch the sidecar's exit so unexpected deaths are
+                            // diagnosable. Owns the Child for its lifetime;
+                            // tokio kill_on_drop ensures cleanup if this task
+                            // is aborted (app shutdown).
+                            let pid_watch = pid;
+                            tauri::async_runtime::spawn(async move {
+                                match c.wait().await {
+                                    Ok(status) => log::error!(
+                                        "Sidecar pid={pid_watch:?} EXITED: status={status:?} code={:?}",
+                                        status.code()
+                                    ),
+                                    Err(e) => log::error!("Sidecar pid={pid_watch:?} wait error: {e}"),
+                                }
+                            });
+                            read_stdout(o, pp.clone(), pr.clone(), rd.clone(), h.clone()).await;
+                            // Sidecar died — mark not ready so commands fail
+                            // fast with "not ready" instead of hanging.
+                            rd.store(false, Ordering::Release);
+                            let _ = h.emit("sidecar_lost", ());
+                            if attempt < max_retries - 1 {
+                                let delay = std::time::Duration::from_millis(
+                                    500 * (attempt as u64 + 1),
+                                );
+                                log::warn!(
+                                    "Sidecar: restarting (attempt {}) in {}ms",
+                                    attempt + 2,
+                                    delay.as_millis(),
+                                );
+                                tokio::time::sleep(delay).await;
                             }
-                        });
-                        read_stdout(o, pp, pr, rd, h.clone()).await;
+                        }
+                        Err(e) => {
+                            log::error!("Sidecar: spawn failed (attempt {}): {}", attempt + 1, e);
+                            if attempt < max_retries - 1 {
+                                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                            }
+                        }
                     }
-                    Err(e) => log::error!("Sidecar: {e}"),
                 }
+                log::error!("Sidecar: all {} restart attempts exhausted — app restart needed", max_retries);
             });
             Ok(())
         })

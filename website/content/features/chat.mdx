@@ -1,0 +1,81 @@
+---
+title: Chat Interface
+description: Streaming responses, thinking blocks, tool-call timelines, mid-turn steering, and in-thread search.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Chat Interface
+
+![Zosma Cowork chat interface — dark mode. Left sidebar shows session list with folder groups and a search box. Main panel shows a user message, an assistant reply with a code block, and the composer at the bottom.](/screenshots/chat-dark.png)
+
+The chat view is the main work surface. It streams the agent's response token-by-token, surfaces reasoning in collapsible thinking blocks, and shows every tool invocation — file reads, writes, bash commands — in a live timeline as they happen.
+
+## Streaming responses
+
+When you send a message the agent begins streaming immediately. Text arrives incrementally; you do not wait for a complete response. The composer is disabled while a stream is in flight and re-enables as soon as the turn completes or is aborted.
+
+Each message in the thread shows:
+- **Role badge** — "You" for user messages, "Zosma" for assistant messages
+- **Model label** — the provider and model that produced this response (e.g., `claude-sonnet`)
+- **Timestamp**
+
+## Thinking blocks
+
+When a model returns extended reasoning (Claude extended thinking, o3-style reasoning chains), Zosma Cowork shows a collapsible **Thinking** block above the response text. Click the block to expand or collapse the full reasoning chain.
+
+Press `Ctrl + O` to toggle expanded detail view (thinking blocks and tool-call timelines) for the current session.
+
+<Callout type="info" title="Cycling reasoning effort">
+Use the **thinking control** in the status bar at the bottom of the chat to cycle between `auto`, `none`, and extended thinking modes. This sends a hint to the model about how much reasoning to apply.
+</Callout>
+
+## Tool-call timeline
+
+When the agent calls a tool, a timeline entry appears in real time:
+
+1. **Running** — tool name and arguments are shown as the call is dispatched
+2. **Complete** — the result (stdout, file content, or error) collapses under the entry
+
+Tools include:
+
+| Tool | What it does |
+|------|-------------|
+| `bash` | Runs a shell command in the workspace folder |
+| `read` | Reads a file relative to the workspace |
+| `write` | Creates or overwrites a file |
+| `edit` | Makes a targeted text replacement in a file |
+| Extension tools | Anything installed via pi extensions (search, browser, etc.) |
+
+The workspace folder is shown in the session header. Every tool runs there unless an absolute path is provided.
+
+## Aborting a run
+
+Click **Stop** (or press `Escape` while the stream is running) to cancel the current turn. The partial response up to that point is kept in the thread. You can send a new message immediately after aborting.
+
+## Mid-turn steering and follow-up
+
+While the agent is running you can queue additional messages without waiting for the turn to finish:
+
+- **Steer** — type in the composer and press `Enter` while the agent is streaming. The message is queued as a steering input; the agent processes it before producing its next output.
+- **Follow-up** — press `Alt + Enter` to queue a follow-up message that runs after the current turn completes rather than interrupting it.
+
+A small banner above the composer shows "N queued" when messages are waiting. Press `Ctrl + ↑` to pull the queued messages back into the composer for editing before they fire.
+
+## In-thread search
+
+Press `Cmd/Ctrl + F` to open an in-thread search bar. Type to filter messages by content. Results are highlighted in the thread; press `Escape` to close.
+
+## Retrying a message
+
+If a response is unsatisfactory or an error occurs, the **Retry** button replays the last user message through a fresh stream.
+
+## Exporting and sharing
+
+The **Share / Export** button (top-right of the chat, desktop only) lets you copy the conversation to the clipboard or download it as a text file.
+
+## Light and dark mode
+
+The chat view adapts to your theme choice in **Settings → Appearance**. Dark mode uses a warm charcoal background with a soft brand-blue aurora. Light mode uses a cool near-white surface with the same blue glass accents.
+
+Both themes maintain WCAG 2.1 AA contrast on all text.

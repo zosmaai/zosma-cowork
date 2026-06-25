@@ -30,7 +30,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -42,7 +42,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -56,7 +56,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -72,7 +72,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -87,7 +87,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -102,7 +102,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={onSelect}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -115,7 +115,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -129,7 +129,7 @@ describe("ConversationSearch", () => {
 			<ConversationSearch
 				sessions={mockSessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				activeSessionId="2"
 			/>,
@@ -158,7 +158,7 @@ describe("ConversationSearch — pin / rename / deep search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onPinSession={vi.fn()}
 			/>,
@@ -173,7 +173,7 @@ describe("ConversationSearch — pin / rename / deep search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onPinSession={onPin}
 			/>,
@@ -192,7 +192,7 @@ describe("ConversationSearch — pin / rename / deep search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onRequestRename={onRequestRename}
 			/>,
@@ -207,7 +207,7 @@ describe("ConversationSearch — pin / rename / deep search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onRequestRename={onRequestRename}
 			/>,
@@ -221,7 +221,7 @@ describe("ConversationSearch — pin / rename / deep search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onRequestRename={vi.fn()}
 			/>,
@@ -246,7 +246,7 @@ describe("ConversationSearch — pagination (infinite scroll)", () => {
 			<ConversationSearch
 				sessions={many}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -262,7 +262,7 @@ describe("ConversationSearch — pagination (infinite scroll)", () => {
 			<ConversationSearch
 				sessions={many}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 			/>,
 		);
@@ -292,7 +292,7 @@ describe("ConversationSearch — deep content search", () => {
 			<ConversationSearch
 				sessions={sessions}
 				onSelect={noop}
-				onNewSession={noop}
+				onNewSession={noop} onOpenSession={noop}
 				onDeleteSession={noop}
 				onDeepSearch={onDeepSearch}
 			/>,

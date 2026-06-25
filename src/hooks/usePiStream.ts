@@ -72,6 +72,21 @@ export interface StreamState {
 	error: string | null;
 	/** Pending steer + follow-up messages — see {@link QueueSnapshot}. */
 	queue: QueueSnapshot;
+	/**
+	 * Text of the current assistant bubble, split into one entry per pi
+	 * sub-turn (#307). The LAST entry is the in-progress sub-turn; earlier
+	 * entries are finalized. `streamingMessage.content` is always the
+	 * non-empty segments joined by `\n\n`.
+	 *
+	 * Why an array instead of a flat string: a sub-turn's own text can
+	 * contain `\n\n`, so we cannot reliably find sub-turn boundaries by
+	 * splitting the joined string. Keeping segments separate lets us (a)
+	 * snap a sub-turn to its authoritative `text_end` content without
+	 * touching siblings, and (b) drop a whole sub-turn that a provider
+	 * re-emitted verbatim (the opencode-go double-emit) — both impossible
+	 * to do safely on a flat string.
+	 */
+	streamSegments: string[];
 }
 
 /** Granular tool execution phase for richer status display */
@@ -119,7 +134,16 @@ export type StreamAction =
 	 * shows up before the sidecar round-trip. Any divergence is healed
 	 * by the next `QUEUE_UPDATE`.
 	 */
-	| { type: "QUEUE_OPTIMISTIC"; kind: "steer" | "follow_up"; text: string };
+	| { type: "QUEUE_OPTIMISTIC"; kind: "steer" | "follow_up"; text: string }
+	/**
+	 * Authoritative final text for the current sub-turn's text content.
+	 * Dispatched on pi's `text_end` event. The `content` field carries
+	 * the full text for this content block — not an incremental delta —
+	 * so the reducer can snap the accumulated bubble content to the
+	 * correct value. This fixes the word-duplication bug (#307) where
+	 * replayed text_delta events cause every word to appear doubled.
+	 */
+	| { type: "TEXT_END"; content: string };
 
 export const INITIAL_STATE: StreamState = {
 	messages: [],
@@ -128,7 +152,30 @@ export const INITIAL_STATE: StreamState = {
 	status: "idle",
 	error: null,
 	queue: { steering: [], followUp: [] },
+	streamSegments: [],
 };
+
+/** Join non-empty sub-turn segments into the bubble's rendered content. */
+function joinSegments(segments: string[]): string {
+	return segments.filter((s) => s.length > 0).join("\n\n");
+}
+
+/**
+ * Drop the last segment when it is byte-identical to the one before it —
+ * i.e. the provider re-emitted the same sub-turn (observed with the
+ * opencode-go / deepseek bridge, which streams some completed text blocks
+ * twice as separate `message_start → text → text_end` sequences). Exact
+ * equality only: we never collapse two sub-turns the model genuinely wrote
+ * the same, unless they are adjacent duplicates, which is the signature of
+ * a replay, not authored repetition.
+ */
+function dedupeLastSegment(segments: string[]): string[] {
+	const n = segments.length;
+	if (n >= 2 && segments[n - 1] !== "" && segments[n - 1] === segments[n - 2]) {
+		return segments.slice(0, n - 1);
+	}
+	return segments;
+}
 
 /** Initial tool phase state */
 export const INITIAL_TOOL_PHASE: ToolPhase | null = null;
@@ -170,17 +217,20 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			const msg = state.streamingMessage;
 			if (!msg) return state;
 			const prevThinking = msg.thinking || "";
-			const prevContent = msg.content || "";
+			// Finalize the current sub-turn (deduping it against the previous one
+			// in case the provider re-emitted it without a `text_end`), then open
+			// a fresh empty segment for the sub-turn that's about to start.
+			const segments = [...dedupeLastSegment(state.streamSegments), ""];
 			return {
 				...state,
+				streamSegments: segments,
 				streamingMessage: {
 					...msg,
 					// New sub-turn's thinking starts on a fresh line so the simple
 					// view's "latest thought" picks up the newest reasoning.
 					thinking:
 						prevThinking && !prevThinking.endsWith("\n") ? `${prevThinking}\n` : prevThinking,
-					// Separate successive answer paragraphs across sub-turns.
-					content: prevContent && !prevContent.endsWith("\n") ? `${prevContent}\n\n` : prevContent,
+					content: joinSegments(segments),
 					isStreaming: true,
 				},
 				status: "thinking",
@@ -199,9 +249,14 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 		case "TEXT_DELTA": {
 			const msg = state.streamingMessage;
 			if (!msg) return state;
+			// Append to the current sub-turn segment (lazily create one if no
+			// message_start has opened it yet).
+			const segs = state.streamSegments.length > 0 ? [...state.streamSegments] : [""];
+			segs[segs.length - 1] += action.delta;
 			return {
 				...state,
-				streamingMessage: { ...msg, content: msg.content + action.delta },
+				streamSegments: segs,
+				streamingMessage: { ...msg, content: joinSegments(segs) },
 				status: "responding",
 			};
 		}
@@ -216,6 +271,31 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					thinking: (msg.thinking || "") + action.delta,
 				},
 				status: "thinking",
+			};
+		}
+
+		/**
+		 * TEXT_END — Snap accumulated text deltas to authoritative final
+		 * content from pi's `text_end` event (#307). Fixes word-duplication
+		 * when the same text_delta events are replayed (e.g. after
+		 * noheadroom compaction). Only replaces the current sub-turn's
+		 * text (after the last `\n\n` separator from TURN_RESET), preserving
+		 * previous sub-turns' content in the single-bubble model.
+		 */
+		case "TEXT_END": {
+			const msg = state.streamingMessage;
+			if (!msg) return state;
+			// Snap the current sub-turn to pi's authoritative final text (kills
+			// word-doubling from replayed deltas), then drop it entirely if it
+			// duplicates the previous sub-turn (kills provider double-emit).
+			const base = state.streamSegments.length > 0 ? [...state.streamSegments] : [""];
+			base[base.length - 1] = action.content;
+			const segs = dedupeLastSegment(base);
+			return {
+				...state,
+				streamSegments: segs,
+				streamingMessage: { ...msg, content: joinSegments(segs) },
+				status: "responding",
 			};
 		}
 
@@ -338,13 +418,25 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			};
 		}
 
-		case "STREAM_ERROR":
+		case "STREAM_ERROR": {
+			// Preserve whatever the assistant streamed before failing (pi keeps
+			// partial output on error) and finalize it into the transcript, so a
+			// mid-stream provider/tool error doesn't leave a frozen half-streamed
+			// bubble stuck in the "streaming" state — the "stops mid" symptom.
+			const msg = state.streamingMessage;
+			const hasContent =
+				msg && (msg.content || msg.thinking || (msg.toolCalls && msg.toolCalls.length > 0));
 			return {
 				...state,
 				isRunning: false,
-				status: "idle",
+				status: "error",
 				error: action.error,
+				messages: hasContent
+					? [...state.messages, { ...(msg as ChatMessage), isStreaming: false }]
+					: state.messages,
+				streamingMessage: null,
 			};
+		}
 
 		case "ABORT_STREAM": {
 			const current = state.streamingMessage;
@@ -516,6 +608,16 @@ export function usePiStream() {
 								case "text_delta":
 									dispatch({ type: "TEXT_DELTA", delta: ame.delta });
 									break;
+								/**
+								 * text_end — pi emits this when a streaming content block
+								 * completes. The `content` field has the authoritative final
+								 * text, correcting any delta accumulation errors (#307).
+								 */
+								case "text_end":
+									if (ame.content) {
+										dispatch({ type: "TEXT_END", content: ame.content });
+									}
+									break;
 								case "toolcall_end": {
 									const tc = ame.toolCall;
 									dispatch({
@@ -614,9 +716,17 @@ export function usePiStream() {
 
 						case "error": {
 							const errEvent = event as PiErrorEvent;
+							// Prefer pi's structured payload (v0.3.0+) over the bare
+							// message: surface the provider and a retry hint so the
+							// ErrorBanner is actionable instead of a generic string.
+							const base = errEvent.message || errEvent.details || "Unknown error";
+							const where = errEvent.provider
+								? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
+								: "";
+							const hint = errEvent.retryable ? " — retrying may help" : "";
 							dispatch({
 								type: "STREAM_ERROR",
-								error: errEvent.message || "Unknown error",
+								error: `${base}${where}${hint}`,
 							});
 							break;
 						}

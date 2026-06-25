@@ -310,9 +310,28 @@ function App() {
 	}, [models, activeModelId]);
 
 	useEffect(() => {
-		if (!needsOnboarding && !showKeyEntry) {
-			loadSessionList().catch(() => {});
-		}
+		if (needsOnboarding || showKeyEntry) return;
+		// Initial load (also re-runs when onboarding/key-entry clears).
+		loadSessionList().catch(() => {});
+		if (!isTauri()) return;
+		// The first load races the sidecar spawn: `list_sessions` rejects before
+		// the sidecar is ready and the `.catch` swallows it, leaving an empty
+		// list that never refills. Re-load on every `ready` event — the initial
+		// spawn AND every restart after `sidecar_lost` — so saved sessions
+		// reappear instead of silently vanishing.
+		let mounted = true;
+		let unlisten: (() => void) | undefined;
+		listen("ready", () => loadSessionList().catch(() => {})).then((u) => {
+			if (!mounted) {
+				u();
+				return;
+			}
+			unlisten = u;
+		});
+		return () => {
+			mounted = false;
+			unlisten?.();
+		};
 	}, [needsOnboarding, showKeyEntry]);
 
 	// A successful OAuth sign-in should dismiss the Connect modal even
@@ -880,6 +899,12 @@ function App() {
 							}}
 							onNewSession={() => {
 								setSidebarView("chats");
+								// "New" starts a session in the configured ZosmaCowork folder — no folder prompt.
+								handleNewSession();
+							}}
+							onOpenSession={() => {
+								setSidebarView("chats");
+								// "Open" picks a folder for the agent to work in.
 								handleNewSessionPrompt();
 							}}
 							homeDir={homeDir ?? undefined}
@@ -926,7 +951,13 @@ function App() {
 								}}
 								onNewSession={() => {
 									setSidebarView("chats");
+									handleNewSession();
+									setMobileMenuOpen(false);
+								}}
+								onOpenSession={() => {
+									setSidebarView("chats");
 									handleNewSessionPrompt();
+									setMobileMenuOpen(false);
 								}}
 								homeDir={homeDir ?? undefined}
 								onDeleteSession={handleDeleteSession}

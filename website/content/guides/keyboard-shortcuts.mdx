@@ -1,0 +1,69 @@
+---
+title: Keyboard Shortcuts
+description: Every keyboard shortcut and slash command in Zosma Cowork.
+---
+
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+# Keyboard Shortcuts
+
+`Cmd` refers to the Command key on macOS and the Windows key or Ctrl on Windows/Linux. Most shortcuts work identically across platforms with `Cmd` substituted for `Ctrl`.
+
+## Global
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd + N` | New session (opens folder picker) |
+| `Cmd + Shift + K` | Focus the message composer |
+
+## Composer
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | Send message |
+| `Shift + Enter` | Insert a newline without sending |
+| `Alt + Enter` | Queue a follow-up message (runs after current turn completes) |
+| `Ctrl + ↑` | Pull queued messages back into the composer for editing |
+
+## Chat view
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd + F` | Open in-thread search |
+| `Escape` | Close in-thread search / abort running stream |
+| `Ctrl + O` | Toggle expanded detail view (thinking blocks + tool-call timelines) |
+
+## Settings
+
+| Shortcut | Action |
+|----------|--------|
+| `Escape` | Close settings and return to chat |
+
+## Slash commands
+
+Type `/` at the start of any message to trigger the command palette. The palette filters as you type.
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/new [folder]` | `/new-session` | Start a new session, optionally in a specific folder path |
+| `/resume` | `/sessions`, `/history` | Open the sessions list in the sidebar |
+| `/model [model-id]` | — | Open the model picker, or switch directly to `model-id` |
+| `/settings` | `/config` | Open settings |
+| `/help` | `/?` | List all available commands |
+
+### Examples
+
+```
+/new ~/code/my-project
+```
+Starts a new session with `~/code/my-project` as the workspace folder — skips the folder picker.
+
+```
+/model claude-opus-4-5
+```
+Switches the active model to `claude-opus-4-5` immediately without opening the picker.
+
+```
+/model
+```
+Opens the model selector UI (same as clicking the model label in the composer).

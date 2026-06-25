@@ -1,0 +1,89 @@
+---
+title: Models
+description: Add providers, enter API keys, and switch models per-session.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+# Models
+
+Zosma Cowork connects to every provider supported by the pi-mono SDK. You bring your own API keys (or subscription credentials) and switch models any time — including mid-session.
+
+## Supported providers
+
+| Provider | Auth method | Example models |
+|----------|-------------|---------------|
+| Anthropic | API key or Claude.ai OAuth | claude-opus-4, claude-sonnet-4, claude-haiku-3-5 |
+| OpenAI | API key or ChatGPT OAuth | gpt-4o, gpt-4o-mini, o3, o4-mini |
+| Google | API key | gemini-2.0-flash, gemini-1.5-pro |
+| Groq | API key | llama-3.3-70b, deepseek-r1-distill |
+| Mistral | API key | mistral-large, codestral |
+| DeepSeek | API key | deepseek-chat, deepseek-coder |
+| xAI | API key | grok-2, grok-3-mini |
+| GitHub Copilot | OAuth | gpt-4o, o3-mini, claude-3.5-sonnet |
+| OpenAI-compatible | API key + base URL | Any self-hosted or third-party endpoint |
+
+The complete model list is fetched from the sidecar on launch via the `get_models` IPC command. The sidecar reads provider configuration from `~/.zosmaai/cowork/models.json`.
+
+## Adding an API key
+
+<Tabs items={["First launch", "Settings"]}>
+  <Tab value="First launch">
+    The onboarding screen (shown on first launch, or when no credentials are saved) prompts for a provider and API key. Select your provider from the dropdown, paste the key, and press **Connect**.
+  </Tab>
+  <Tab value="Settings">
+    Go to **Settings → Authentication**. Each configured provider is listed with its connection status. Click **Add provider** to enter a new key, or click **Remove** to delete an existing one.
+  </Tab>
+</Tabs>
+
+Keys are stored in `~/.zosmaai/cowork/auth.json` on your local machine. They are passed directly to the provider's API and never logged or transmitted elsewhere.
+
+## OAuth (subscription-based) sign-in
+
+If you have a Claude Pro, ChatGPT Plus, or GitHub Copilot subscription, use **Sign in with [Provider]** in the onboarding screen or **Settings → Authentication** to authenticate via OAuth. Copilot integration also surfaces enterprise or team models if your organisation has them.
+
+Once signed in, usage is charged against your existing subscription rather than a pay-per-token API key.
+
+## Selecting a model
+
+![Model selector dropdown showing available models — Big Pickle, Claude Haiku 4.5, Claude Opus 4.1, Claude Opus 4.5, Claude Opus 4.6, Claude Opus 4.7, Claude Sonnet 4, GPT-5.4](/screenshots/chat-model-selector.png)
+
+The **model selector** lives at the bottom of the composer. Click it to open a searchable list of all available models across all configured providers. Select one to switch immediately.
+
+The selected model is saved as your default. When you open a session that was last used with a different model, the composer automatically restores that session's model.
+
+## Switching models mid-session
+
+You can switch models at any point during a conversation. The new model takes effect on the next message — previous messages in the thread are not re-processed. This lets you use a fast, cheap model for exploration and switch to a more capable one when you need it.
+
+### Via the slash command
+
+Type `/model` in the composer to open the model selector from the keyboard. Type `/model <model-id>` to switch directly by ID without opening the picker.
+
+## Session statistics and cost
+
+The status bar at the bottom of the chat shows:
+
+| Metric | Description |
+|--------|-------------|
+| Input tokens | Total tokens sent to the model this session |
+| Output tokens | Total tokens received from the model |
+| Estimated cost | Calculated from the provider's public token prices |
+| Context window used | Percentage of the model's context window consumed |
+
+These are cumulative for the current session and reset when you start a new one.
+
+<Callout type="info" title="Token prices">
+Prices are bundled with the app and updated on each release. Actual provider invoices may differ slightly from the in-app estimate.
+</Callout>
+
+## Thinking / reasoning control
+
+For models that support adjustable reasoning effort (Claude extended thinking, OpenAI o-series), the **thinking control** in the status bar cycles between:
+
+- **auto** — the model decides how much reasoning to apply
+- **none** — reasoning is suppressed (faster, cheaper)
+- **extended** — maximum reasoning effort
+
+The current mode is shown as a label next to the token counts.
