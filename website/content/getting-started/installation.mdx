@@ -1,0 +1,114 @@
+---
+title: Installation
+description: System requirements, download links, and how to build from source.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Installation
+
+## System requirements
+
+| Platform | Minimum version | Architecture |
+|----------|----------------|-------------|
+| macOS | 13 Ventura | Apple Silicon + Intel (universal binary) |
+| Windows | 10 (64-bit) | x64 |
+| Linux | Ubuntu 22.04 / Fedora 38 | x64 |
+
+No Node.js or Rust installation is required on your machine — the agent sidecar and its dependencies are bundled inside the app binary.
+
+## Download a release
+
+Grab the latest installer from [GitHub Releases](https://github.com/zosmaai/zosma-cowork/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS | `Zosma.Cowork_x.y.z_universal.dmg` |
+| Windows | `Zosma.Cowork_x.y.z_x64-setup.msi` |
+| Linux | `zosma-cowork_x.y.z_amd64.AppImage` or `.deb` |
+
+### macOS
+
+Open the `.dmg`, drag **Zosma Cowork** to your Applications folder, then double-click to launch. On first open, macOS may show a security prompt — click **Open** to proceed. The app is notarised and signed for macOS 13+.
+
+### Windows
+
+Run the `.msi` installer and follow the setup wizard. Zosma Cowork installs to `%LOCALAPPDATA%\Programs\Zosma Cowork` by default.
+
+### Linux
+
+**AppImage** — mark executable and run:
+```bash
+chmod +x zosma-cowork_x.y.z_amd64.AppImage
+./zosma-cowork_x.y.z_amd64.AppImage
+```
+
+**.deb** — install with dpkg:
+```bash
+sudo dpkg -i zosma-cowork_x.y.z_amd64.deb
+```
+
+<Callout type="info" title="Staging / nightly builds">
+Unsigned builds are published automatically after every merge to `main` via the [Staging Build](https://github.com/zosmaai/zosma-cowork/actions/workflows/staging-build.yml) GitHub Actions workflow. Artifacts are attached to the workflow run and available for 14 days. A Discord embed with direct download links is posted to the `#staging-builds` channel after each build.
+</Callout>
+
+## Build from source
+
+### Prerequisites
+
+| Tool | Version |
+|------|---------|
+| Node.js | 22 or later |
+| Rust | 1.85 or later (via [rustup](https://rustup.rs)) |
+| npm | bundled with Node.js |
+
+On macOS, Xcode Command Line Tools must be installed (`xcode-select --install`).
+
+### Clone and install
+
+```bash
+git clone https://github.com/zosmaai/zosma-cowork
+cd zosma-cowork
+
+# Install frontend dependencies
+npm install
+
+# Install agent sidecar dependencies
+cd agent-sidecar && npm install && cd ..
+```
+
+### Run in development
+
+```bash
+npm run dev
+```
+
+This starts the hot-reload frontend, the Rust Tauri relay, and the Node.js sidecar from TypeScript source via `tsx`. On a fresh checkout it auto-generates lightweight dev stubs so the Rust shell compiles without a full production build.
+
+### Build a release binary
+
+```bash
+npm run build
+```
+
+Output installers are written to `src-tauri/target/release/bundle/`.
+
+### Run tests before contributing
+
+```bash
+npm run validate        # lint + typecheck + frontend tests
+cargo test --workspace  # Rust relay tests
+cd agent-sidecar && npx tsc --noEmit  # sidecar type check
+```
+
+## Uninstalling
+
+| Platform | Steps |
+|----------|-------|
+| macOS | Drag the app from Applications to Trash. Delete `~/.zosmaai/cowork/` to remove all data. |
+| Windows | Add/Remove Programs → Zosma Cowork → Uninstall. Delete `%USERPROFILE%\.zosmaai\cowork\` for data. |
+| Linux | `sudo dpkg -r zosma-cowork` or delete the AppImage. Delete `~/.zosmaai/cowork/` for data. |
+
+<Callout type="warning" title="Data directory">
+Uninstalling the app does **not** delete `~/.zosmaai/cowork/`. Your session history, API keys, and extensions remain on disk until you manually remove that directory.
+</Callout>

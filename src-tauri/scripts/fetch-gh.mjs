@@ -28,7 +28,7 @@ import {
 import { join, resolve } from "node:path";
 import { platform, arch } from "node:os";
 
-const GH_VERSION = "2.92.0";
+const GH_VERSION = "2.95.0";
 
 // Map Rust target triples to GitHub CLI download configs.
 // gh releases use `gh_VERSION_OS_ARCH` naming, where OS = Linux/macOS/Windows
@@ -39,16 +39,16 @@ const TARGET_MAP = {
 		{
 			osArch: "macOS_arm64",
 			baseUrl: `https://github.com/cli/cli/releases/download/v${GH_VERSION}`,
-			filename: `gh_${GH_VERSION}_macOS_arm64.tar.gz`,
-			extractCmd: "tar -xzf",
+			filename: `gh_${GH_VERSION}_macOS_arm64.zip`,
+			extractCmd: "unzip -o",
 			binaryInArchive: `gh_${GH_VERSION}_macOS_arm64/bin/gh`,
 			destName: "gh-arm64",
 		},
 		{
 			osArch: "macOS_amd64",
 			baseUrl: `https://github.com/cli/cli/releases/download/v${GH_VERSION}`,
-			filename: `gh_${GH_VERSION}_macOS_amd64.tar.gz`,
-			extractCmd: "tar -xzf",
+			filename: `gh_${GH_VERSION}_macOS_amd64.zip`,
+			extractCmd: "unzip -o",
 			binaryInArchive: `gh_${GH_VERSION}_macOS_amd64/bin/gh`,
 			destName: "gh-x64",
 		},
@@ -57,8 +57,8 @@ const TARGET_MAP = {
 	"aarch64-apple-darwin": {
 		osArch: "macOS_arm64",
 		baseUrl: `https://github.com/cli/cli/releases/download/v${GH_VERSION}`,
-		filename: `gh_${GH_VERSION}_macOS_arm64.tar.gz`,
-		extractCmd: "tar -xzf",
+		filename: `gh_${GH_VERSION}_macOS_arm64.zip`,
+		extractCmd: "unzip -o",
 		binaryInArchive: `gh_${GH_VERSION}_macOS_arm64/bin/gh`,
 		destName: "gh",
 	},
@@ -66,8 +66,8 @@ const TARGET_MAP = {
 	"x86_64-apple-darwin": {
 		osArch: "macOS_amd64",
 		baseUrl: `https://github.com/cli/cli/releases/download/v${GH_VERSION}`,
-		filename: `gh_${GH_VERSION}_macOS_amd64.tar.gz`,
-		extractCmd: "tar -xzf",
+		filename: `gh_${GH_VERSION}_macOS_amd64.zip`,
+		extractCmd: "unzip -o",
 		binaryInArchive: `gh_${GH_VERSION}_macOS_amd64/bin/gh`,
 		destName: "gh",
 	},
@@ -78,6 +78,7 @@ const TARGET_MAP = {
 		filename: `gh_${GH_VERSION}_linux_amd64.tar.gz`,
 		extractCmd: "tar -xzf",
 		binaryInArchive: `gh_${GH_VERSION}_linux_amd64/bin/gh`,
+		// Linux still ships .tar.gz
 		destName: "gh",
 	},
 	// Windows x64
@@ -85,7 +86,7 @@ const TARGET_MAP = {
 		osArch: "windows_amd64",
 		baseUrl: `https://github.com/cli/cli/releases/download/v${GH_VERSION}`,
 		filename: `gh_${GH_VERSION}_windows_amd64.zip`,
-		extractCmd: null, // use unzip or powershell
+		extractCmd: null,
 		binaryInArchive: `bin/gh.exe`,
 		destName: "gh.exe",
 	},
