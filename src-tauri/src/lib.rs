@@ -1310,22 +1310,6 @@ async fn search_sessions(query: String, s: State<'_, AppState>) -> Result<Value,
     .await
 }
 
-/// One-shot, non-streaming AI greeting for the empty-state screen. Cheap.
-/// The sidecar always replies with `{ text }` (empty string on failure), so
-/// the frontend's static fallback covers any error path.
-#[tauri::command]
-async fn generate_greeting(
-    recent: Vec<String>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"generate_greeting","id":"gg","recent": recent}),
-        std::time::Duration::from_secs(8),
-    )
-    .await
-}
-
 #[tauri::command]
 async fn new_session(cwd: Option<String>, s: State<'_, AppState>) -> Result<Value, String> {
     // `cwd` is the workspace folder the user picked (via the native folder
@@ -2447,7 +2431,6 @@ pub fn run() {
             google_install_app,
             reload_sidecar,
             list_sessions,
-            generate_greeting,
             save_session,
             load_session,
             delete_session,

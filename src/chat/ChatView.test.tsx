@@ -30,9 +30,9 @@ describe("ChatView empty state", () => {
 
 	it("empty state: centered greeting + input, no statusbar, no suggested actions", () => {
 		render(<ChatView {...defaultProps} thinking={thinking} />);
-		// Static greeting fallback renders immediately above the input.
+		// Greeting renders immediately above the input: time-of-day prefix + tail.
 		expect(screen.getByTestId("greeting")).toBeInTheDocument();
-		expect(screen.getByText("What are you working on?")).toBeInTheDocument();
+		expect(screen.getByTestId("greeting").textContent).toContain("What are you working on?");
 		// Ultra-clean empty screen: no statusbar (decision C).
 		expect(
 			screen.queryByRole("button", { name: /reasoning effort/i }),

@@ -147,7 +147,6 @@ import {
 	type Theme,
 	createAgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { completeSimple } from "@earendil-works/pi-ai";
 import { coworkSelfKnowledgePointer, writeAboutDoc } from "./about-cowork.js";
 import { activateBundledBinaries } from "./bundled-binaries.js";
 import { commandQueue } from "./command-queue.js";
@@ -564,13 +563,6 @@ interface ListSessionsCommand {
 	id: string;
 }
 
-interface GenerateGreetingCommand {
-	type: "generate_greeting";
-	id: string;
-	/** Recent session titles, most-recent first, for the greeting prompt. */
-	recent?: string[];
-}
-
 interface GetSettingsCommand {
 	type: "get_settings";
 	id: string;
@@ -782,7 +774,6 @@ type Command =
 	| NewSessionCommand
 	| GetWorkspaceCommand
 	| ListSessionsCommand
-	| GenerateGreetingCommand
 	| GetSettingsCommand
 	| SaveSettingsCommand
 	| GetInstructionsCommand
@@ -3375,54 +3366,6 @@ async function main() {
 					id: cmd.id,
 					data: { sessions },
 				});
-				break;
-			}
-
-			// ── generate_greeting ──────────────────────────────────────
-			// One-shot, non-streaming completion for the empty-state greeting.
-			// Reuses the active session's (authed) model. Separate from the
-			// visible chat stream so it never lands in the conversation.
-			// Always resolves with { text } — "" signals the UI to keep its
-			// static fallback, so generation failure is never user-facing.
-			case "generate_greeting": {
-				const model = session?.model;
-				if (!model) {
-					send({ type: "result", id: cmd.id, data: { text: "" } });
-					break;
-				}
-				const recent = (cmd.recent ?? [])
-					.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-					.slice(0, 5);
-				const list = recent.length ? recent.map((t) => `- ${t}`).join("\n") : "(none yet)";
-				try {
-					const result = await completeSimple(
-						model,
-						{
-							systemPrompt:
-								"You write ONE short greeting line for a coding assistant's home screen. " +
-								"One sentence, plain text, no markdown, no quotes, under 90 characters. " +
-								"Either invite the user to pick up where they left off, or share a light, " +
-								"specific observation about their recent work.",
-							messages: [
-								{
-									role: "user",
-									content: `Recent session titles:\n${list}\n\nWrite the one-line greeting.`,
-									timestamp: Date.now(),
-								},
-							],
-						},
-						{ maxTokens: 64, temperature: 0.7 },
-					);
-					const text = result.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("")
-						.trim();
-					send({ type: "result", id: cmd.id, data: { text } });
-				} catch (err) {
-					log("generate_greeting failed: %s", err instanceof Error ? err.message : String(err));
-					send({ type: "result", id: cmd.id, data: { text: "" } });
-				}
 				break;
 			}
 

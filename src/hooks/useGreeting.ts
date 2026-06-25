@@ -1,81 +1,65 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
-/** Static line shown immediately and whenever AI generation is unavailable. */
+/** Generic tail used when there is no recent session to reference. */
 export const GREETING_FALLBACK = "What are you working on?";
 
-const TTL_MS = 30 * 60 * 1000; // 30-min cache
-const TIMEOUT_MS = 4000; // a slow sidecar must never wedge the line on "loading"
-const CACHE_KEY = "cowork:greeting";
-const MAX_SESSIONS = 5; // token budget for the prompt
-
-interface Cached {
-	text: string;
-	ts: number;
+/** Time-of-day salutation. <5am and >=10pm read as "working late". */
+function timeOfDay(hour: number): string {
+	if (hour < 5) return "Working late";
+	if (hour < 12) return "Good morning";
+	if (hour < 18) return "Good afternoon";
+	if (hour < 22) return "Good evening";
+	return "Working late";
 }
 
-// ponytail: sessionStorage IS the cache — a parallel in-memory var adds
-// test/reset friction for ~0 gain. Add an in-mem layer if getItem ever profiles hot.
-function readCache(): string | null {
-	try {
-		const raw = sessionStorage.getItem(CACHE_KEY);
-		if (!raw) return null;
-		const c = JSON.parse(raw) as Cached;
-		if (c.text && Date.now() - c.ts < TTL_MS) return c.text;
-	} catch {
-		// corrupt/unavailable storage → treat as cache miss
-	}
-	return null;
-}
-
-function writeCache(text: string): void {
-	try {
-		sessionStorage.setItem(CACHE_KEY, JSON.stringify({ text, ts: Date.now() } satisfies Cached));
-	} catch {
-		// non-fatal: greeting still renders this session
-	}
+function truncate(s: string, max = 48): string {
+	const t = s.trim();
+	return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
 }
 
 /**
- * AI-generated empty-state greeting. Renders the static fallback immediately,
- * swaps in the AI line in place once it resolves. Never blocks the input.
+ * Deterministic empty-state greeting: clock + most-recent session title.
+ * No model/network needed, so it always renders something useful. The AI
+ * layer (per-session model completion) is a later enhancement — it can't run
+ * here because no session/model exists yet on the empty state.
+ */
+export function buildGreeting(now: Date, lastTitle?: string): string {
+	const hello = timeOfDay(now.getHours());
+	const title = lastTitle?.trim();
+	return title
+		? `${hello}. Pick up where you left off on "${truncate(title)}"?`
+		: `${hello}. ${GREETING_FALLBACK}`;
+}
+
+interface SessionLite {
+	title?: string;
+	lastActivity?: number;
+}
+
+/**
+ * Empty-state greeting. Renders a time-of-day line instantly, then upgrades to
+ * reference the most recently active session once list_sessions resolves.
  */
 export function useGreeting(): string {
-	const [text, setText] = useState<string>(() => readCache() ?? GREETING_FALLBACK);
+	const [text, setText] = useState(() => buildGreeting(new Date()));
 
 	useEffect(() => {
-		const cached = readCache();
-		if (cached) {
-			setText(cached);
-			return;
-		}
-
 		let cancelled = false;
-		const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), TIMEOUT_MS));
-
 		(async () => {
 			try {
-				const list = await invoke<{ sessions?: Array<{ title?: string }> }>("list_sessions");
-				const recent = (list.sessions ?? [])
-					.slice(0, MAX_SESSIONS)
-					.map((s) => s.title)
-					.filter((t): t is string => Boolean(t?.trim()));
-				if (recent.length === 0) return; // no history → keep fallback
-
-				const result = await Promise.race([
-					invoke<{ text: string }>("generate_greeting", { recent }),
-					timeout,
-				]);
-				const line = result?.text?.trim();
-				if (!cancelled && line) {
-					writeCache(line);
-					setText(line);
-				}
+				const list = await invoke<{ sessions?: SessionLite[] }>("list_sessions");
+				const sessions = (list.sessions ?? []).filter((s) => s.title?.trim());
+				if (cancelled || sessions.length === 0) return;
+				// Most recent by activity — list may be pinned-first, so don't trust [0].
+				const latest = sessions.reduce((a, b) =>
+					(b.lastActivity ?? 0) > (a.lastActivity ?? 0) ? b : a,
+				);
+				setText(buildGreeting(new Date(), latest.title));
 			} catch {
-				// generation failed → keep the fallback, nothing user-facing
+				// no history / sidecar down → keep the time-only greeting
 			}
 		})();
-
 		return () => {
 			cancelled = true;
 		};
