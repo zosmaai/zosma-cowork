@@ -3,7 +3,6 @@ import { trackEvent } from "@/lib/telemetry";
 import type { ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
 import {
 	forwardRef,
 	useCallback,
@@ -114,7 +113,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
 		const shellRef = useRef<HTMLDivElement>(null);
 		const recognitionRef = useRef<SpeechRecognition | null>(null);
-		const prefersReducedMotion = useReducedMotion();
 
 		useImperativeHandle(ref, () => ({
 			focus: () => textareaRef.current?.focus(),
@@ -360,16 +358,10 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		}, [filteredCommands.length]);
 
 		return (
-			<motion.form
+			<form
 				onSubmit={(e) => handleSubmit(streaming ? "steer" : "send", e)}
 				className="px-4 pb-2 mx-auto w-full"
 				style={{ maxWidth: "var(--chat-composer-max-width, 852px)" }}
-				initial={prefersReducedMotion ? false : { y: 72, opacity: 0 }}
-				animate={{ y: 0, opacity: 1 }}
-				transition={{
-					y: { type: "spring", stiffness: 55, damping: 22, mass: 1 },
-					opacity: { duration: 0.35, ease: "easeOut", delay: 0.05 },
-				}}
 			>
 				{/* Outer shell */}
 				<div ref={shellRef} className="composer-glass relative rounded-2xl">
@@ -544,7 +536,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						)}
 					</div>
 				</div>
-			</motion.form>
+			</form>
 		);
 	},
 );
