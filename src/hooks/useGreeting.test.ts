@@ -124,10 +124,10 @@ describe("useGreeting", () => {
 
 		const { result } = renderHook(() => useGreeting());
 
-		await waitFor(() =>
-			expect(result.current).toContain(GREETING_FALLBACK),
-		);
-		expect(result.current).toContain("Arjun");
+		await waitFor(() => {
+			expect(result.current).toContain(GREETING_FALLBACK);
+			expect(result.current).toContain("Arjun");
+		});
 	});
 
 	it("survives a sidecar error and keeps a valid time-only greeting", async () => {

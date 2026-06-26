@@ -224,7 +224,9 @@ function normalizeText(text: string) {
 }
 
 function escapeMdInline(text: string) {
-	return text.replace(/([\\`*_{}\[\]()#+\-.!|>~])/g, "\\$1");
+	// codeql:js/incomplete-sanitization — escape '<' too; it can start HTML
+	// tags or auto-links in Markdown contexts.
+	return text.replace(/([\\`*_{}\[\]()#+\-.!|>~<])/g, "\\$1");
 }
 
 function escapeMdTableCell(text: string) {

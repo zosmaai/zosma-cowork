@@ -205,30 +205,121 @@ function hasAttachments(part: GmailMessagePart | undefined): boolean {
 
 // ── HTML stripping ──────────────────────────────────────────────
 
+/** URL-safe chars used as the href replacement for unparseable links. */
+const NOOP_HREF = "";
+
+/** Entity lookup for common HTML escapes. */
+const ENTITIES: Record<string, string> = {
+	amp: "&",
+	lt: "<",
+	gt: ">",
+	quot: '"',
+	"#39": "'",
+	nbsp: " ",
+};
+
+/** Block-level tag names that map to a newline in the output. */
+const BLOCK_TAGS = new Set([
+	"br",
+	"p",
+	"div",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"li",
+	"tr",
+	"blockquote",
+]);
+
+/**
+ * Convert HTML email markup to plain text. No regex for tag parsing (CodeQL
+ * flags js/bad-tag-filter / js/incomplete-multi-character-sanitization on
+ * regex-based HTML stripping). Instead walks the string character by
+ * character with a small state machine:
+ *  • &lt;style&gt; / &lt;script&gt; — skip entire block;
+ *  • block elements — emit newline;
+ *  • &lt;a href=&quot;…&quot;&gt;…&lt;/a&gt; — rewrite as [text](url);
+ *  • other tags — stripped silently;
+ *  • HTML entities — decoded from the ENTITIES map.
+ */
 function stripHtml(html: string): string {
-	return (
-		html
-			// Remove style/script blocks entirely
-			.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-			.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-			// Replace common block elements with newlines
-			.replace(/<br\s*\/?>/gi, "\n")
-			.replace(/<\/?(div|p|h[1-6]|li|tr|blockquote)[^>]*>/gi, "\n")
-			// Replace links with [text](url)
-			.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)")
-			// Remove all remaining tags
-			.replace(/<[^>]+>/g, "")
-			// Decode common HTML entities
-			.replace(/&amp;/g, "&")
-			.replace(/&lt;/g, "<")
-			.replace(/&gt;/g, ">")
-			.replace(/&quot;/g, '"')
-			.replace(/&#39;/g, "'")
-			.replace(/&nbsp;/g, " ")
-			// Clean up whitespace
-			.replace(/\n{3,}/g, "\n\n")
-			.trim()
-	);
+	let out = "";
+	let i = 0;
+
+	while (i < html.length) {
+		if (html[i] !== "<") {
+			// Normal character — check for entity before appending
+			if (html[i] === "&") {
+				const semi = html.indexOf(";", i + 1);
+				if (semi !== -1) {
+					const name = html.slice(i + 1, semi);
+					const decoded = ENTITIES[name];
+					if (decoded !== undefined) {
+						out += decoded;
+						i = semi + 1;
+						continue;
+					}
+				}
+			}
+			out += html[i];
+			i++;
+			continue;
+		}
+
+		// ── we hit a '<' — parse the tag ─────────────────────────────
+		const gt = html.indexOf(">", i);
+		if (gt === -1) break; // malformed, stop
+
+		const rawTag = html.slice(i + 1, gt);
+		const tag = rawTag.trim();
+		const isEnd = tag.startsWith("/");
+		// Extract tag name — first run of alphanumeric chars; ">" or whitespace
+		// terminates. Avoids / inside the character class (tsc parser quirk).
+		const tn = isEnd ? tag.slice(1) : tag;
+		const base = tn.match(/[a-zA-Z0-9]+/)?.[0]?.toLowerCase() ?? "";
+
+		// Skip <style …> … </style> and <script …> … </script> entirely
+		if (!isEnd && (base === "style" || base === "script")) {
+			const closer = `</${base}>`;
+			const closeIdx = html.indexOf(closer, gt + 1);
+			if (closeIdx !== -1) {
+				i = closeIdx + closer.length;
+				continue;
+			}
+			// No closing tag found — skip the opening tag only
+			i = gt + 1;
+			continue;
+		}
+
+		// Block-level tags emit a newline
+		if (BLOCK_TAGS.has(base)) {
+			out += "\n";
+		}
+
+		// Link: <a href="url">text</a> → [text](url)
+		if (base === "a" && !isEnd) {
+			const hrefMatch = /href="([^"]*)"/i.exec(rawTag);
+			const href = hrefMatch ? hrefMatch[1] : NOOP_HREF;
+			const textStart = gt + 1;
+			const closeA = html.indexOf("</a>", textStart);
+			const linkText =
+				closeA !== -1
+					? stripHtml(html.slice(textStart, closeA))
+					: "";
+			out += `[${linkText}](${href})`;
+			i = closeA !== -1 ? closeA + 4 : gt + 1;
+			continue;
+		}
+
+		// All other tags (including </a>) are stripped silently
+		i = gt + 1;
+	}
+
+	// Collapse multiple blank lines, trim
+	return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // ── Utilities ───────────────────────────────────────────────────
