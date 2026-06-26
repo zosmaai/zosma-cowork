@@ -1204,6 +1204,15 @@ async fn reload_sidecar(s: State<'_, AppState>) -> Result<Value, String> {
     .await
 }
 
+/// Lightweight env-read for the system username — used in the empty-state
+/// greeting. Microseconds, non-blocking, always returns something.
+#[tauri::command]
+fn get_username() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 async fn list_sessions(s: State<'_, AppState>) -> Result<Value, String> {
     scmd_r(
@@ -2430,6 +2439,7 @@ pub fn run() {
             google_get_app_status,
             google_install_app,
             reload_sidecar,
+            get_username,
             list_sessions,
             save_session,
             load_session,

@@ -9,7 +9,7 @@ import { findModel } from "@/lib/model-key";
 import type { SessionStats, ThinkingState } from "@/lib/sessionStats";
 import type { ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
-import { useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
@@ -342,11 +342,16 @@ export function ChatView({
 
 			{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
 
-			{/* Single persistent MessageInput. Flex layout positions it: centered
-			    (empty, via the bottom spacer) or pinned to the bottom (active). It
-			    snaps between the two with no slide animation — the input is never
-			    remounted (key=sessionKey) so focus/draft survive the switch. */}
-			<div className="overflow-hidden">
+			{/* Single persistent MessageInput. Flex positions it: centered (empty,
+			    via the bottom spacer) or pinned to the bottom (active). `layout=
+			    "position"` smoothly slides it between the two over 500ms — position
+			    only, so the composer's own height changes while typing are NOT
+			    animated. Never remounted (key=sessionKey) so focus/draft survive. */}
+			<motion.div
+				layout={reducedScroll ? false : "position"}
+				transition={{ layout: { duration: 0.5, ease: "easeInOut" } }}
+				className="overflow-hidden"
+			>
 				<MessageInput
 					key={sessionKey}
 					ref={inputRef}
@@ -369,7 +374,7 @@ export function ChatView({
 					commands={commands}
 					onRunCommand={onRunCommand}
 				/>
-			</div>
+			</motion.div>
 
 			{/* Bottom spacer balances the (empty) scroll area above so the
 			    greeting + input group sits vertically centered. Removed on first
