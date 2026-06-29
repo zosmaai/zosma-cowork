@@ -10,9 +10,9 @@ import { ExternalLink, FileText } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { markdownComponents } from "../MarkdownComponents";
 import { parseSkillId } from "../../lib/skillBrowse";
 import { openExternalUrl } from "../../lib/utils";
+import { markdownComponents } from "../MarkdownComponents";
 
 export interface ReaderTarget {
 	id: string;

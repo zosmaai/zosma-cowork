@@ -122,7 +122,9 @@ app.get("/callback", (req: Request, res: Response) => {
 	if (!Number.isInteger(port) || port < 1024 || port > 65535) {
 		res
 			.status(400)
-			.send(brandedPage("Sign-in error", "Invalid sign-in state — please retry from the app.", false));
+			.send(
+				brandedPage("Sign-in error", "Invalid sign-in state — please retry from the app.", false),
+			);
 		return;
 	}
 
@@ -136,8 +138,17 @@ app.get("/callback", (req: Request, res: Response) => {
 /** authorization_code -> tokens. Body: { code, code_verifier, redirect_uri }. */
 app.post("/token", async (req: Request, res: Response) => {
 	const { code, code_verifier, redirect_uri } = (req.body ?? {}) as Record<string, unknown>;
-	if (typeof code !== "string" || typeof code_verifier !== "string" || typeof redirect_uri !== "string") {
-		res.status(400).json({ error: "invalid_request", error_description: "code, code_verifier and redirect_uri are required" });
+	if (
+		typeof code !== "string" ||
+		typeof code_verifier !== "string" ||
+		typeof redirect_uri !== "string"
+	) {
+		res
+			.status(400)
+			.json({
+				error: "invalid_request",
+				error_description: "code, code_verifier and redirect_uri are required",
+			});
 		return;
 	}
 	try {
@@ -151,7 +162,12 @@ app.post("/token", async (req: Request, res: Response) => {
 		});
 		if (status !== 200 || !data.access_token) {
 			console.warn(`token exchange failed status=${status} error=${data.error ?? ""}`);
-			res.status(status === 200 ? 502 : status).json({ error: data.error ?? "token_exchange_failed", error_description: data.error_description });
+			res
+				.status(status === 200 ? 502 : status)
+				.json({
+					error: data.error ?? "token_exchange_failed",
+					error_description: data.error_description,
+				});
 			return;
 		}
 		res.json(tokenPayload(data));
@@ -165,7 +181,9 @@ app.post("/token", async (req: Request, res: Response) => {
 app.post("/refresh", async (req: Request, res: Response) => {
 	const { refresh_token } = (req.body ?? {}) as Record<string, unknown>;
 	if (typeof refresh_token !== "string" || !refresh_token) {
-		res.status(400).json({ error: "invalid_request", error_description: "refresh_token is required" });
+		res
+			.status(400)
+			.json({ error: "invalid_request", error_description: "refresh_token is required" });
 		return;
 	}
 	try {
@@ -177,7 +195,9 @@ app.post("/refresh", async (req: Request, res: Response) => {
 		});
 		if (status !== 200 || !data.access_token) {
 			console.warn(`refresh failed status=${status} error=${data.error ?? ""}`);
-			res.status(status === 200 ? 502 : status).json({ error: data.error ?? "refresh_failed", error_description: data.error_description });
+			res
+				.status(status === 200 ? 502 : status)
+				.json({ error: data.error ?? "refresh_failed", error_description: data.error_description });
 			return;
 		}
 		// Google does not return a refresh_token on refresh; pass through the rest.

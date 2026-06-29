@@ -34,9 +34,7 @@ describe("ChatView empty state", () => {
 		expect(screen.getByTestId("greeting")).toBeInTheDocument();
 		expect(screen.getByTestId("greeting").textContent).toContain("What are you working on?");
 		// Ultra-clean empty screen: no statusbar (decision C).
-		expect(
-			screen.queryByRole("button", { name: /reasoning effort/i }),
-		).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /reasoning effort/i })).not.toBeInTheDocument();
 		// SuggestedActions block is gone for good.
 		expect(screen.queryByText("Write a document")).not.toBeInTheDocument();
 	});
@@ -49,9 +47,7 @@ describe("ChatView empty state", () => {
 				messages={[{ id: "1", role: "user", content: "Hello", timestamp: Date.now() }]}
 			/>,
 		);
-		expect(
-			screen.getByRole("button", { name: /reasoning effort/i }),
-		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /reasoning effort/i })).toBeInTheDocument();
 		expect(screen.queryByTestId("greeting")).not.toBeInTheDocument();
 	});
 
@@ -94,9 +90,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 				{...defaultProps}
 				isRunning={true}
 				status="responding"
-				messages={[
-					{ id: "u1", role: "user", content: "Tell me a big story", timestamp: 1 },
-				]}
+				messages={[{ id: "u1", role: "user", content: "Tell me a big story", timestamp: 1 }]}
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",
@@ -118,9 +112,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 				{...defaultProps}
 				isRunning={true}
 				status="responding"
-				messages={[
-					{ id: "u1", role: "user", content: "original prompt", timestamp: 1 },
-				]}
+				messages={[{ id: "u1", role: "user", content: "original prompt", timestamp: 1 }]}
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",

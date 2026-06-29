@@ -633,7 +633,8 @@ export function usePiStream() {
 									// not just "aborted".
 									dispatch({
 										type: "STREAM_ERROR",
-										error: (ame as unknown as { message?: string }).message || ame.reason || "API error",
+										error:
+											(ame as unknown as { message?: string }).message || ame.reason || "API error",
 									});
 									break;
 							}

@@ -1,6 +1,6 @@
+import { BRAND_LINKS } from "@/lib/brand-links";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { BRAND_LINKS } from "@/lib/brand-links";
 import { About } from "./About";
 
 // About reads the update context (Tauri IPC); stub to an idle no-op.

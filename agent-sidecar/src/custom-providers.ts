@@ -173,6 +173,11 @@ export interface DiscoverModelsResult {
 	 * apart from "couldn't connect at all" (→ likely a wrong URL).
 	 */
 	reachable: boolean;
+	/**
+	 * The HTTP status of the last probe response, when one was received.
+	 * Helps distinguish auth failures (401) from missing endpoints (404).
+	 */
+	status?: number;
 }
 
 /**
@@ -198,6 +203,7 @@ export async function discoverModels(
 	}
 
 	let reachable = false;
+	let lastStatus: number | undefined;
 	for (const url of modelsEndpoints(base)) {
 		try {
 			const res = await doFetch(url, {
@@ -205,6 +211,7 @@ export async function discoverModels(
 				signal: AbortSignal.timeout(timeoutMs),
 			});
 			reachable = true; // we connected, regardless of status
+			lastStatus = res.status;
 			if (!res.ok) continue;
 			const json: unknown = await res.json();
 			// OpenAI shape: { object: "list", data: [{ id }] }. Some servers
@@ -217,12 +224,12 @@ export async function discoverModels(
 			const ids = rows
 				.map((r) => (r && typeof (r as { id?: unknown }).id === "string" ? (r as { id: string }).id : null))
 				.filter((id): id is string => id !== null && id.trim().length > 0);
-			if (ids.length > 0) return { models: [...new Set(ids)], reachable: true };
+			if (ids.length > 0) return { models: [...new Set(ids)], reachable: true, status: lastStatus };
 		} catch {
 			// Connection refused / DNS / timeout / bad JSON — try the next URL.
 		}
 	}
-	return { models: [], reachable };
+	return { models: [], reachable, status: lastStatus };
 }
 
 function validateInput(input: SaveCustomProviderInput): {

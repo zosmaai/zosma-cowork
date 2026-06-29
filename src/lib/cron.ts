@@ -12,15 +12,7 @@
  * ("in 5m", "2h ago") for next/last-run columns.
  */
 
-const DOW = [
-	"Sunday",
-	"Monday",
-	"Tuesday",
-	"Wednesday",
-	"Thursday",
-	"Friday",
-	"Saturday",
-];
+const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** Format "HH:MM" 24h fields into a 12h "9:00 AM" clock string. */
 function clock(minute: number, hour: number): string {

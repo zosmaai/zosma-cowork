@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import { AnimatePresence, type HTMLMotionProps, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 type DialogSize = "sm" | "md" | "lg";
 
@@ -80,7 +81,7 @@ export function Dialog({
 		};
 	}, [open, onClose]);
 
-	return (
+	return createPortal(
 		<AnimatePresence>
 			{open && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -126,7 +127,8 @@ export function Dialog({
 					</motion.div>
 				</div>
 			)}
-		</AnimatePresence>
+		</AnimatePresence>,
+		document.body,
 	);
 }
 

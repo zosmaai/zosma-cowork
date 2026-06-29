@@ -43,12 +43,7 @@ describe("MessageInput — idle behavior (regression guard)", () => {
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={onSend}
-				onSteer={onSteer}
-				onFollowUp={onFollowUp}
-				streaming={false}
-			/>,
+			<MessageInput onSend={onSend} onSteer={onSteer} onFollowUp={onFollowUp} streaming={false} />,
 		);
 
 		const textarea = screen.getByRole("textbox");
@@ -109,12 +104,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={onSend}
-				onSteer={onSteer}
-				onFollowUp={onFollowUp}
-				streaming={true}
-			/>,
+			<MessageInput onSend={onSend} onSteer={onSteer} onFollowUp={onFollowUp} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox");
@@ -134,12 +124,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={onSend}
-				onSteer={onSteer}
-				onFollowUp={onFollowUp}
-				streaming={true}
-			/>,
+			<MessageInput onSend={onSend} onSteer={onSteer} onFollowUp={onFollowUp} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox");
@@ -158,12 +143,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={onSteer}
-				onFollowUp={onFollowUp}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={onSteer} onFollowUp={onFollowUp} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
@@ -178,12 +158,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 
 	it("keeps the textarea ENABLED while streaming (so the user can type)", () => {
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={vi.fn()}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={vi.fn()} onFollowUp={vi.fn()} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
@@ -196,12 +171,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={onSend}
-				onSteer={onSteer}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={onSend} onSteer={onSteer} onFollowUp={vi.fn()} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox");
@@ -216,9 +186,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 		const onSteer = vi.fn();
 
-		render(
-			<MessageInput onSend={vi.fn()} onSteer={onSteer} streaming={true} />,
-		);
+		render(<MessageInput onSend={vi.fn()} onSteer={onSteer} streaming={true} />);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		await user.type(textarea, "hi");
@@ -233,9 +201,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 		const onFollowUp = vi.fn();
 
-		render(
-			<MessageInput onSend={vi.fn()} onFollowUp={onFollowUp} streaming={true} />,
-		);
+		render(<MessageInput onSend={vi.fn()} onFollowUp={onFollowUp} streaming={true} />);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		await user.type(textarea, "and also this");
@@ -251,12 +217,7 @@ describe("MessageInput — streaming-mode keyboard behavior (issue #201)", () =>
 		const user = userEvent.setup();
 
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={onSteer}
-				onFollowUp={onFollowUp}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={onSteer} onFollowUp={onFollowUp} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox");
@@ -293,12 +254,7 @@ describe("MessageInput — discoverability hints (issue #201)", () => {
 		// textarea looked like a second input area. We fold the shortcut
 		// hints into the placeholder so the composer reads as ONE input.
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={vi.fn()}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={vi.fn()} onFollowUp={vi.fn()} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
@@ -312,12 +268,7 @@ describe("MessageInput — discoverability hints (issue #201)", () => {
 
 	it("placeholder text reflects the streaming-mode keyboard contract", () => {
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={vi.fn()}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={vi.fn()} onFollowUp={vi.fn()} streaming={true} />,
 		);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
@@ -353,14 +304,7 @@ describe("MessageInput — disabled vs streaming separation", () => {
 		const onSend = vi.fn();
 		const user = userEvent.setup();
 
-		render(
-			<MessageInput
-				onSend={onSend}
-				onSteer={onSteer}
-				streaming={true}
-				disabled={true}
-			/>,
-		);
+		render(<MessageInput onSend={onSend} onSteer={onSteer} streaming={true} disabled={true} />);
 
 		const textarea = screen.getByRole("textbox");
 		// userEvent.type on a disabled input is a no-op but try anyway
@@ -391,12 +335,7 @@ describe("MessageInput — auto-focus after send (PR3 follow-up)", () => {
 	it("keeps focus on the textarea after Enter queues a steer mid-stream", async () => {
 		const user = userEvent.setup();
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={vi.fn()}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={vi.fn()} onFollowUp={vi.fn()} streaming={true} />,
 		);
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		await user.click(textarea);
@@ -408,12 +347,7 @@ describe("MessageInput — auto-focus after send (PR3 follow-up)", () => {
 	it("keeps focus on the textarea after Alt+Enter queues a follow-up mid-stream", async () => {
 		const user = userEvent.setup();
 		render(
-			<MessageInput
-				onSend={vi.fn()}
-				onSteer={vi.fn()}
-				onFollowUp={vi.fn()}
-				streaming={true}
-			/>,
+			<MessageInput onSend={vi.fn()} onSteer={vi.fn()} onFollowUp={vi.fn()} streaming={true} />,
 		);
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		await user.click(textarea);

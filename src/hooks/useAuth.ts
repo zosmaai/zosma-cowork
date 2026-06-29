@@ -33,19 +33,21 @@ export function useAuth() {
 
 		const retry = () => {
 			if (cancelled) return;
-			invoke<boolean>("has_credentials").then((r) => {
-				if (cancelled) return;
-				if (r) {
-					setHasCredentials(true);
-				} else if (++retries < maxRetries) {
-					timeout = setTimeout(retry, 1000);
-				}
-			}).catch(() => {
-				if (cancelled) return;
-				if (++retries < maxRetries) {
-					timeout = setTimeout(retry, 2000);
-				}
-			});
+			invoke<boolean>("has_credentials")
+				.then((r) => {
+					if (cancelled) return;
+					if (r) {
+						setHasCredentials(true);
+					} else if (++retries < maxRetries) {
+						timeout = setTimeout(retry, 1000);
+					}
+				})
+				.catch(() => {
+					if (cancelled) return;
+					if (++retries < maxRetries) {
+						timeout = setTimeout(retry, 2000);
+					}
+				});
 		};
 
 		// Also re-check on the "ready" event from the sidecar

@@ -1,7 +1,9 @@
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { checkKeyFormat } from "@/lib/key-format";
 import type { AuthStatus } from "@/types/auth";
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
-import { Check, ChevronDown, Eye, EyeOff, Key, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Eye, EyeOff, Key, Loader2, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClaudeIcon, GeminiIcon, GitHubIcon, OpenAIIcon } from "../BrandIcons";
@@ -346,10 +348,17 @@ function ApiKeyRow({
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [formatHint, setFormatHint] = useState<string | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const reduced = useReducedMotion();
 
 	const apiKeyProviders = useMemo(() => authStatus?.apiKeyProviders ?? [], [authStatus]);
+
+	// Providers that already have a key saved (type === "api_key")
+	const savedKeyProviders = useMemo(
+		() => (authStatus?.providers ?? []).filter((p) => p.type === "api_key"),
+		[authStatus],
+	);
 
 	// Once the provider list arrives, seed the picker. Prefer `openrouter`
 	// (the issue #150 trigger), else fall back to the first available.
@@ -364,6 +373,24 @@ function ApiKeyRow({
 		if (expanded) requestAnimationFrame(() => inputRef.current?.focus());
 	}, [expanded]);
 
+	// ── Format check: re-run when key or provider changes ──────────────
+	useEffect(() => {
+		if (!key.trim() || !provider) {
+			setFormatHint(null);
+			return;
+		}
+		const result = checkKeyFormat(provider, key);
+		setFormatHint(result.ok ? null : (result.hint ?? null));
+	}, [provider, key]);
+
+	// ── Save & Probe ─────────────────────────────────────────────────
+	//
+	// Flow: probe FIRST (up to 5 s), save SECOND.
+	// - Probe returns definitive 401 AuthError → show red error, abort save.
+	// - Probe times out / network error → save anyway (can't distinguish
+	//   a bad key from the user being offline — benefit of the doubt).
+	// - No probe registered for provider → save directly.
+	// - Probe passes → save → close panel.
 	const handleSave = useCallback(async () => {
 		const trimmedKey = key.trim();
 		const trimmedProvider = provider.trim();
@@ -374,22 +401,84 @@ function ApiKeyRow({
 		}
 		setSaving(true);
 		setError(null);
+
 		try {
+			// 1) Probe first — only abort if the server definitively rejects the key
+			try {
+				const validation = await invoke<{
+					ok: boolean;
+					probe?: { ok: boolean; status?: number; message?: string };
+				}>("validate_provider_key", {
+					provider: trimmedProvider,
+					key: trimmedKey,
+				});
+
+				if (validation.probe && !validation.probe.ok) {
+					// Definitive server rejection — don't save
+					setError(
+						validation.probe.message
+							? `Invalid API key — ${validation.probe.message}`
+							: "Invalid API key — rejected by provider",
+					);
+					return;
+				}
+				// probe.ok === true, or no probe registered → fall through to save
+			} catch {
+				// Network error / timeout / sidecar error — save anyway
+				// (can't tell if the key is bad or the user is just offline)
+			}
+
+			// 2) Save
 			await invoke("save_auth_key", { provider: trimmedProvider, key: trimmedKey });
 			window.dispatchEvent(new CustomEvent("config-reload"));
 			onSaved();
 			setSaved(true);
+
 			setTimeout(() => {
 				setSaved(false);
 				setExpanded(false);
 				setKey("");
-			}, 1200);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save key");
+				setFormatHint(null);
+			}, 1500);
+		} catch (saveErr) {
+			setError(saveErr instanceof Error ? saveErr.message : "Failed to save key");
 		} finally {
 			setSaving(false);
 		}
 	}, [key, provider, onSaved]);
+
+	// ── Delete saved key with confirmation ────────────────────────────
+	const [deleting, setDeleting] = useState<string | null>(null);
+	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+	const confirmDeleteKey = useCallback((providerId: string) => {
+		setDeleteConfirmId(providerId);
+	}, []);
+
+	const handleDeleteConfirmed = useCallback(async () => {
+		const providerId = deleteConfirmId;
+		if (!providerId) return;
+		setDeleteConfirmId(null);
+		setDeleting(providerId);
+		setError(null);
+		try {
+			await invoke("logout_provider", { provider: providerId });
+			window.dispatchEvent(new CustomEvent("config-reload"));
+			onSaved();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to delete key");
+		} finally {
+			setDeleting(null);
+		}
+	}, [deleteConfirmId, onSaved]);
+
+	const handleDeleteCancelled = useCallback(() => {
+		setDeleteConfirmId(null);
+	}, []);
+
+	const deleteProviderName = deleteConfirmId
+		? (apiKeyProviders.find((p) => p.id === deleteConfirmId)?.displayName ?? deleteConfirmId)
+		: "";
 
 	return (
 		<div className="glass overflow-hidden">
@@ -399,11 +488,19 @@ function ApiKeyRow({
 				onClick={() => {
 					setExpanded((v) => !v);
 					setError(null);
+					if (expanded) {
+						setFormatHint(null);
+					}
 				}}
 				className="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-muted/20"
 			>
 				<Key className="w-4.5 h-4.5 shrink-0 text-foreground/50" />
 				<span className="flex-1 text-[13px] text-foreground">API key</span>
+				{savedKeyProviders.length > 0 && (
+					<span className="text-[10px] font-medium mr-1.5" style={{ color: "hsl(var(--primary))" }}>
+						{savedKeyProviders.length} saved
+					</span>
+				)}
 				<motion.div
 					animate={{ rotate: expanded ? 180 : 0 }}
 					transition={{ duration: reduced ? 0 : 0.18, ease }}
@@ -411,6 +508,46 @@ function ApiKeyRow({
 					<ChevronDown className="w-3.5 h-3.5 text-muted-foreground/50" />
 				</motion.div>
 			</button>
+
+			{/* Saved API keys — always visible so user knows what's configured */}
+			{savedKeyProviders.length > 0 && (
+				<ul
+					className="px-3.5 pb-3 space-y-1.5"
+					style={{ borderTop: "1px solid hsl(var(--border))" }}
+				>
+					{savedKeyProviders.map((entry) => {
+						const displayName =
+							apiKeyProviders.find((p) => p.id === entry.id)?.displayName ?? entry.id;
+						return (
+							<li
+								key={entry.id}
+								className="flex items-center gap-2 text-[11px] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
+							>
+								<Key className="w-3 h-3 shrink-0 text-primary/60" />
+								<span className="flex-1 truncate">{displayName}</span>
+								<span
+									className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+									style={{
+										background: "hsl(var(--primary) / 0.12)",
+										color: "hsl(var(--primary))",
+									}}
+								>
+									Key saved
+								</span>
+								<button
+									type="button"
+									onClick={() => confirmDeleteKey(entry.id)}
+									disabled={deleting === entry.id}
+									aria-label={`Delete key for ${displayName}`}
+									className="text-[11px] px-2 py-0.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-50"
+								>
+									{deleting === entry.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Delete"}
+								</button>
+							</li>
+						);
+					})}
+				</ul>
+			)}
 
 			{/* Expandable input area */}
 			<AnimatePresence initial={false}>
@@ -478,7 +615,11 @@ function ApiKeyRow({
 										className="w-full text-[12px] font-mono px-3 py-2 pr-8 rounded-md border focus:outline-none transition-colors"
 										style={{
 											background: "hsl(var(--background))",
-											borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
+											borderColor: error
+												? "hsl(var(--destructive))"
+												: formatHint
+													? "hsl(var(--warning))"
+													: "hsl(var(--border))",
 											color: "hsl(var(--foreground))",
 										}}
 										onFocus={(e) => {
@@ -489,7 +630,9 @@ function ApiKeyRow({
 										onBlur={(e) => {
 											e.currentTarget.style.borderColor = error
 												? "hsl(var(--destructive))"
-												: "hsl(var(--border))";
+												: formatHint
+													? "hsl(var(--warning))"
+													: "hsl(var(--border))";
 										}}
 									/>
 									{/* Show/hide toggle */}
@@ -526,11 +669,41 @@ function ApiKeyRow({
 								</motion.button>
 							</div>
 
+							{/* Format hint — advisory warning only, save is still allowed */}
+							{formatHint && (
+								<div className="flex items-start gap-1.5 mt-2">
+									<AlertTriangle
+										className="w-3 h-3 shrink-0 mt-0.5"
+										style={{ color: "hsl(var(--warning))" }}
+									/>
+									<p className="text-[11px]" style={{ color: "hsl(var(--warning))" }}>
+										{formatHint}
+										<br />
+										<span className="text-muted-foreground">
+											You can still save — provider key formats can change.
+										</span>
+									</p>
+								</div>
+							)}
+
 							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
 						</div>
 					</motion.div>
 				)}
 			</AnimatePresence>
+
+			{/* Delete confirmation dialog */}
+			<ConfirmDialog
+				open={deleteConfirmId !== null}
+				onClose={handleDeleteCancelled}
+				onConfirm={handleDeleteConfirmed}
+				title={`Delete ${deleteProviderName} key?`}
+				description="This will remove the API key from your local keychain. You'll need to re-enter it to use this provider."
+				confirmLabel="Delete"
+				cancelLabel="Cancel"
+				variant="destructive"
+				icon={Trash2}
+			/>
 		</div>
 	);
 }

@@ -6,12 +6,12 @@
  * TaskDetailPage Run Log or the Activity feed.
  */
 
+import { formatRelative } from "@/lib/cron";
+import { isNearBottom } from "@/lib/scroll";
+import type { ConversationEntry, TaskRun } from "@/types";
 import { listen } from "@tauri-apps/api/event";
 import { ArrowLeft, CalendarClock, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ConversationEntry, TaskRun } from "@/types";
-import { formatRelative } from "@/lib/cron";
-import { isNearBottom } from "@/lib/scroll";
 
 interface RunDetailViewProps {
 	run: TaskRun;
@@ -95,9 +95,7 @@ export function RunDetailView({ run: initialRun, taskName, onBack, listRuns }: R
 		if (el) stickToBottomRef.current = isNearBottom(el);
 	};
 
-	const duration = run.completedAt
-		? formatDuration(run.startedAt, run.completedAt)
-		: null;
+	const duration = run.completedAt ? formatDuration(run.startedAt, run.completedAt) : null;
 
 	const statusConfig = {
 		pending: { label: "Queued", color: "text-amber-500" },
@@ -107,11 +105,7 @@ export function RunDetailView({ run: initialRun, taskName, onBack, listRuns }: R
 	}[run.status];
 
 	return (
-		<div
-			ref={scrollRef}
-			onScroll={handleScroll}
-			className="flex flex-1 flex-col overflow-y-auto"
-		>
+		<div ref={scrollRef} onScroll={handleScroll} className="flex flex-1 flex-col overflow-y-auto">
 			{/* Header */}
 			<div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-sm">
 				<button
@@ -124,10 +118,10 @@ export function RunDetailView({ run: initialRun, taskName, onBack, listRuns }: R
 				</button>
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
-						<h1 className="truncate text-sm font-semibold text-foreground">
-							{taskName}
-						</h1>
-						<span className={`flex items-center gap-1 text-[10px] font-semibold ${statusConfig.color}`}>
+						<h1 className="truncate text-sm font-semibold text-foreground">{taskName}</h1>
+						<span
+							className={`flex items-center gap-1 text-[10px] font-semibold ${statusConfig.color}`}
+						>
 							{isLive && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
 							{statusConfig.label}
 						</span>
@@ -136,7 +130,8 @@ export function RunDetailView({ run: initialRun, taskName, onBack, listRuns }: R
 						{formatRelative(run.startedAt)}
 						{duration && (
 							<>
-								{" "}· <span className="font-mono">{duration}</span>
+								{" "}
+								· <span className="font-mono">{duration}</span>
 							</>
 						)}
 					</p>
@@ -237,13 +232,19 @@ function ConversationBlock({ entry }: { entry: ConversationEntry }) {
 			);
 		case "tool_result":
 			return (
-				<div className={`relative overflow-hidden rounded-lg border px-4 py-3 ${
-					entry.toolError
-						? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
-						: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
-				}`}>
-					<div className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`} />
-					<p className={`text-[10px] font-semibold uppercase tracking-wider mb-1 ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}>
+				<div
+					className={`relative overflow-hidden rounded-lg border px-4 py-3 ${
+						entry.toolError
+							? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
+							: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
+					}`}
+				>
+					<div
+						className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`}
+					/>
+					<p
+						className={`text-[10px] font-semibold uppercase tracking-wider mb-1 ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}
+					>
 						{entry.toolError ? "Error" : "Result"}
 					</p>
 					<p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground/80">

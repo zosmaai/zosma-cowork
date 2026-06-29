@@ -85,14 +85,7 @@ export function useGreeting(): string {
 					.filter((s) => !s.pinned)
 					.sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))[0];
 
-				setText(
-					buildGreeting(
-						new Date(),
-						name || undefined,
-						pinned[0]?.title,
-						latest?.title,
-					),
-				);
+				setText(buildGreeting(new Date(), name || undefined, pinned[0]?.title, latest?.title));
 			} catch {
 				// keep the time-only greeting
 			}

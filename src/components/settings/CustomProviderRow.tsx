@@ -27,7 +27,7 @@
 
 import type { CustomProvider, SaveCustomProviderInput } from "@/types/auth";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronDown, Eye, EyeOff, Loader2, Server } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Eye, EyeOff, Loader2, Server } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useId, useState } from "react";
 
@@ -65,6 +65,12 @@ export function CustomProviderRow({ onChange }: Props) {
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [testing, setTesting] = useState(false);
+	const [testResult, setTestResult] = useState<{
+		ok: boolean;
+		message: string;
+		models?: string[];
+	} | null>(null);
 	const reduced = useReducedMotion();
 	const baseUrlId = useId();
 	const manualModelsId = useId();
@@ -137,12 +143,28 @@ export function CustomProviderRow({ onChange }: Props) {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (msg.startsWith(NO_MODELS_PREFIX)) {
 				// Discovery found nothing — reveal manual entry instead of failing.
+				// Parse the status code if present: NO_MODELS_DISCOVERED:reachable:401
+				const parts = msg.split(":");
+				const reachable = parts[1] === "reachable";
+				const status = parts[2] ? Number.parseInt(parts[2], 10) : undefined;
 				setManualMode(true);
-				setError(
-					msg.endsWith("unreachable")
-						? "Couldn't reach that endpoint. Check the URL, or enter model IDs manually below."
-						: "No models were auto-discovered at this endpoint. Enter one or more model IDs below.",
-				);
+				if (status === 401) {
+					setError(
+						"Connected, but your API key was rejected (401). Check the key, or enter model IDs manually below.",
+					);
+				} else if (status === 403) {
+					setError(
+						"Connected, but access is forbidden (403). Check permissions or the key, or enter model IDs manually below.",
+					);
+				} else if (!reachable) {
+					setError(
+						"Couldn't reach that endpoint. Check the URL, or enter model IDs manually below.",
+					);
+				} else {
+					setError(
+						"No models were auto-discovered at this endpoint. Enter one or more model IDs below.",
+					);
+				}
 			} else {
 				setError(msg);
 			}
@@ -150,6 +172,37 @@ export function CustomProviderRow({ onChange }: Props) {
 			setSaving(false);
 		}
 	}, [canSave, baseUrl, manualMode, manualModels, apiKey, onChange, refresh]);
+
+	// ── Test connection (advisory, non-blocking) ───────────────────────
+	const handleTestConnection = useCallback(async () => {
+		if (!baseUrl.trim()) return;
+		setTesting(true);
+		setTestResult(null);
+		setError(null);
+		try {
+			const result = await invoke<{
+				ok: boolean;
+				message: string;
+				models?: string[];
+				status?: number;
+			}>("test_custom_provider_connection", {
+				baseUrl: baseUrl.trim(),
+				apiKey: apiKey.trim() || undefined,
+			});
+			setTestResult({
+				ok: result.ok,
+				message: result.message,
+				models: result.models,
+			});
+		} catch (err) {
+			setTestResult({
+				ok: false,
+				message: err instanceof Error ? err.message : String(err),
+			});
+		} finally {
+			setTesting(false);
+		}
+	}, [baseUrl, apiKey]);
 
 	const handleDelete = useCallback(
 		async (id: string) => {
@@ -363,7 +416,47 @@ export function CustomProviderRow({ onChange }: Props) {
 										"Save"
 									)}
 								</motion.button>
+
+								{/* Test connection — advisory, non-blocking */}
+								<motion.button
+									type="button"
+									onClick={handleTestConnection}
+									disabled={!baseUrl.trim() || testing || saving}
+									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+									whileTap={reduced ? {} : { scale: 0.96 }}
+									transition={{ duration: 0.12, ease }}
+								>
+									{testing ? (
+										<Loader2 className="w-3.5 h-3.5 animate-spin" />
+									) : testResult?.ok ? (
+										<Check className="w-3.5 h-3.5" />
+									) : (
+										"Test connection"
+									)}
+								</motion.button>
 							</div>
+
+							{/* Test result feedback */}
+							{testResult && (
+								<div className="flex items-start gap-1.5 mt-2">
+									{testResult.ok ? (
+										<Check className="w-3 h-3 shrink-0 mt-0.5 text-primary" />
+									) : (
+										<AlertTriangle
+											className="w-3 h-3 shrink-0 mt-0.5"
+											style={{ color: "hsl(var(--warning))" }}
+										/>
+									)}
+									<p
+										className="text-[11px]"
+										style={{
+											color: testResult.ok ? "hsl(var(--primary))" : "hsl(var(--warning))",
+										}}
+									>
+										{testResult.message}
+									</p>
+								</div>
+							)}
 
 							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
 						</div>

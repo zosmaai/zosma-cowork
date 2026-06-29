@@ -11,10 +11,10 @@
  * tasks that have been executed and are no longer active.
  */
 
+import { formatRelative, humanizeCron } from "@/lib/cron";
+import type { CompletedTask, Task } from "@/types";
 import { ChevronDown, ChevronRight, ListChecks, Pause, Repeat } from "lucide-react";
 import { useState } from "react";
-import type { CompletedTask, Task } from "@/types";
-import { formatRelative, humanizeCron } from "@/lib/cron";
 
 interface TasksListProps {
 	tasks: Task[];
@@ -84,7 +84,11 @@ export function TasksList({
 						onClick={() => setCompletedExpanded(!completedExpanded)}
 						className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 hover:text-sidebar-foreground/70"
 					>
-						{completedExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+						{completedExpanded ? (
+							<ChevronDown className="h-3 w-3" />
+						) : (
+							<ChevronRight className="h-3 w-3" />
+						)}
 						Completed
 						<span className="ml-auto rounded bg-sidebar-accent/50 px-1 py-px text-[9px] font-normal normal-case tracking-normal text-sidebar-foreground/50">
 							{completedTasks.length}
@@ -186,8 +190,8 @@ function TasksEmptyState() {
 			</div>
 			<p className="text-sm font-medium text-sidebar-foreground">No tasks yet</p>
 			<p className="mt-1 text-[11px] leading-relaxed text-sidebar-foreground/50">
-				Ask in a Cowork chat to schedule a task — for example, "every weekday at 9am summarize
-				my unread email." Scheduled tasks will show up here.
+				Ask in a Cowork chat to schedule a task — for example, "every weekday at 9am summarize my
+				unread email." Scheduled tasks will show up here.
 			</p>
 		</div>
 	);

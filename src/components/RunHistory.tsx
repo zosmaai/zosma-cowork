@@ -5,10 +5,10 @@
  * by date. Acts as the default view when no task is selected.
  */
 
+import { formatRelative } from "@/lib/cron";
+import type { Task, TaskRun } from "@/types";
 import { ChevronDown, ChevronRight, History, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { Task, TaskRun } from "@/types";
-import { formatRelative } from "@/lib/cron";
 
 interface RunEntry {
 	run: TaskRun;
@@ -129,11 +129,7 @@ export function RunHistory({
 							{/* Entries for this date */}
 							<div className="space-y-3">
 								{group.entries.map((entry) => (
-									<RunCard
-										key={entry.run.runId}
-										entry={entry}
-										onJumpToTask={onJumpToTask}
-									/>
+									<RunCard key={entry.run.runId} entry={entry} onJumpToTask={onJumpToTask} />
 								))}
 							</div>
 						</div>
@@ -153,9 +149,7 @@ function RunCard({
 }) {
 	const { run, taskName } = entry;
 	const [stepsExpanded, setStepsExpanded] = useState(false);
-	const duration = run.completedAt
-		? formatDuration(run.startedAt, run.completedAt)
-		: null;
+	const duration = run.completedAt ? formatDuration(run.startedAt, run.completedAt) : null;
 
 	const statusConfig = {
 		pending: { icon: "⏳", label: "Queued", ring: "border-amber-500/30" },
@@ -187,7 +181,9 @@ function RunCard({
 					<span className="text-xs font-semibold text-foreground">{taskName}</span>
 
 					{/* Status badge */}
-					<span className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[9px] font-semibold ${run.status === "completed" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : run.status === "failed" ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" : "bg-muted text-muted-foreground border-border"}`}>
+					<span
+						className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[9px] font-semibold ${run.status === "completed" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : run.status === "failed" ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" : "bg-muted text-muted-foreground border-border"}`}
+					>
 						{statusConfig.label}
 					</span>
 
@@ -198,9 +194,7 @@ function RunCard({
 
 					{/* Duration */}
 					{duration && (
-						<span className="text-[10px] font-mono text-muted-foreground/40">
-							{duration}
-						</span>
+						<span className="text-[10px] font-mono text-muted-foreground/40">{duration}</span>
 					)}
 
 					{/* Jump to task */}
@@ -220,9 +214,7 @@ function RunCard({
 					<p className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/40">
 						Instruction
 					</p>
-					<p className="mt-0.5 line-clamp-2 text-xs text-foreground/80">
-						{run.prompt}
-					</p>
+					<p className="mt-0.5 line-clamp-2 text-xs text-foreground/80">{run.prompt}</p>
 				</div>
 
 				{/* Response */}
@@ -234,7 +226,11 @@ function RunCard({
 							onClick={() => setStepsExpanded(!stepsExpanded)}
 							className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/40 hover:bg-muted/30"
 						>
-							{stepsExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+							{stepsExpanded ? (
+								<ChevronDown className="h-3 w-3" />
+							) : (
+								<ChevronRight className="h-3 w-3" />
+							)}
 							Steps
 							<span className="ml-auto rounded bg-muted/40 px-1.5 py-px text-[9px] font-normal normal-case tracking-normal text-muted-foreground/40">
 								{run.conversation.length}
@@ -262,17 +258,31 @@ function RunHistoryEmpty() {
 			</div>
 			<h2 className="text-base font-semibold text-foreground">No activity yet</h2>
 			<p className="mt-1.5 max-w-xs text-xs leading-relaxed text-muted-foreground">
-				When a scheduled task fires, each execution appears in a timeline here — along with
-				the instruction the AI received and the result it produced.
+				When a scheduled task fires, each execution appears in a timeline here — along with the
+				instruction the AI received and the result it produced.
 			</p>
 			<p className="mt-4 text-xs text-muted-foreground/60">
-				Try clicking <span className="font-medium text-foreground/80">&ldquo;Run now&rdquo;</span> on any task to create the first entry.
+				Try clicking <span className="font-medium text-foreground/80">&ldquo;Run now&rdquo;</span>{" "}
+				on any task to create the first entry.
 			</p>
 		</div>
 	);
 }
 
-function ConversationStep({ entry }: { entry: { type: string; content?: string; toolName?: string; toolArgs?: Record<string, unknown>; toolResult?: string; toolError?: boolean } | import("@/types").ConversationEntry }) {
+function ConversationStep({
+	entry,
+}: {
+	entry:
+		| {
+				type: string;
+				content?: string;
+				toolName?: string;
+				toolArgs?: Record<string, unknown>;
+				toolResult?: string;
+				toolError?: boolean;
+		  }
+		| import("@/types").ConversationEntry;
+}) {
 	switch (entry.type) {
 		case "thinking":
 			return (
@@ -280,13 +290,26 @@ function ConversationStep({ entry }: { entry: { type: string; content?: string; 
 					<div className="absolute left-0 top-0 h-full w-0.5 bg-amber-500/30" />
 					<div className="flex items-start gap-2">
 						<span className="mt-px shrink-0 text-[10px] opacity-60">
-							<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500/70">
+							<svg
+								aria-hidden="true"
+								width="13"
+								height="13"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="text-amber-500/70"
+							>
 								<path d="M12 2a10 10 0 1 0 10 10h-10V2Z" />
 								<path d="M22 12A10 10 0 0 0 12 2v10h10Z" />
 							</svg>
 						</span>
 						<div className="min-w-0 flex-1">
-							<p className="text-[9px] font-semibold uppercase tracking-wider text-amber-500/60">Thinking</p>
+							<p className="text-[9px] font-semibold uppercase tracking-wider text-amber-500/60">
+								Thinking
+							</p>
 							<p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed italic text-muted-foreground/70">
 								{entry.content?.slice(0, 200)}
 							</p>
@@ -300,13 +323,26 @@ function ConversationStep({ entry }: { entry: { type: string; content?: string; 
 					<div className="absolute left-0 top-0 h-full w-0.5 bg-sky-500/30" />
 					<div className="flex items-start gap-2">
 						<span className="mt-px shrink-0 text-[10px] opacity-60">
-							<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-500/70">
+							<svg
+								aria-hidden="true"
+								width="13"
+								height="13"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="text-sky-500/70"
+							>
 								<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
 							</svg>
 						</span>
 						<div className="min-w-0 flex-1">
 							<div className="flex items-center gap-1.5 flex-wrap">
-								<span className="text-[9px] font-semibold uppercase tracking-wider text-sky-500/60">Tool</span>
+								<span className="text-[9px] font-semibold uppercase tracking-wider text-sky-500/60">
+									Tool
+								</span>
 								<span className="truncate rounded bg-sky-500/10 px-1.5 py-px text-[9px] font-medium text-sky-600 dark:text-sky-400">
 									{entry.toolName}
 								</span>
@@ -322,22 +358,48 @@ function ConversationStep({ entry }: { entry: { type: string; content?: string; 
 			);
 		case "tool_result":
 			return (
-				<div className={`group relative overflow-hidden rounded-lg border px-2.5 py-1.5 ${
-					entry.toolError
-						? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
-						: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
-				}`}>
-					<div className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`} />
+				<div
+					className={`group relative overflow-hidden rounded-lg border px-2.5 py-1.5 ${
+						entry.toolError
+							? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
+							: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
+					}`}
+				>
+					<div
+						className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`}
+					/>
 					<div className="flex items-start gap-2">
 						<span className="mt-px shrink-0 text-[10px] opacity-60">
 							{entry.toolError ? (
-								<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500/70">
+								<svg
+									aria-hidden="true"
+									width="13"
+									height="13"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									className="text-red-500/70"
+								>
 									<circle cx="12" cy="12" r="10" />
 									<line x1="15" y1="9" x2="9" y2="15" />
 									<line x1="9" y1="9" x2="15" y2="15" />
 								</svg>
 							) : (
-								<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500/70">
+								<svg
+									aria-hidden="true"
+									width="13"
+									height="13"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									className="text-emerald-500/70"
+								>
 									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
 									<polyline points="14 2 14 8 20 8" />
 									<line x1="12" y1="18" x2="12" y2="12" />
@@ -346,7 +408,9 @@ function ConversationStep({ entry }: { entry: { type: string; content?: string; 
 							)}
 						</span>
 						<div className="min-w-0 flex-1">
-							<p className={`text-[9px] font-semibold uppercase tracking-wider ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}>
+							<p
+								className={`text-[9px] font-semibold uppercase tracking-wider ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}
+							>
 								{entry.toolError ? "Error" : "Result"}
 							</p>
 							<p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground/70">
@@ -360,7 +424,17 @@ function ConversationStep({ entry }: { entry: { type: string; content?: string; 
 			return (
 				<div className="flex items-start gap-2 px-1 py-0.5">
 					<span className="mt-0.5 shrink-0 text-foreground/40">
-						<svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<svg
+							aria-hidden="true"
+							width="11"
+							height="11"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						>
 							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
 						</svg>
 					</span>

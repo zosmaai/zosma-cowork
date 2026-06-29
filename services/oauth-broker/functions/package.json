@@ -1,25 +1,25 @@
 {
-  "name": "zosma-oauth-broker",
-  "version": "1.0.0",
-  "description": "Stateless Google OAuth token broker for Zosma Cowork. Holds the Web-application client secret server-side; the desktop app sends PKCE auth codes / refresh tokens here for exchange so no secret ever ships in the client.",
-  "private": true,
-  "main": "lib/index.js",
-  "engines": {
-    "node": "22"
-  },
-  "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "start": "functions-framework --target=broker --source=lib",
-    "serve": "npm run build && functions-framework --target=broker --source=lib"
-  },
-  "dependencies": {
-    "@google-cloud/functions-framework": "^3.4.5",
-    "express": "^4.21.2"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
-  }
+	"name": "zosma-oauth-broker",
+	"version": "1.0.0",
+	"description": "Stateless Google OAuth token broker for Zosma Cowork. Holds the Web-application client secret server-side; the desktop app sends PKCE auth codes / refresh tokens here for exchange so no secret ever ships in the client.",
+	"private": true,
+	"main": "lib/index.js",
+	"engines": {
+		"node": "22"
+	},
+	"scripts": {
+		"build": "tsc",
+		"build:watch": "tsc --watch",
+		"start": "functions-framework --target=broker --source=lib",
+		"serve": "npm run build && functions-framework --target=broker --source=lib"
+	},
+	"dependencies": {
+		"@google-cloud/functions-framework": "^3.4.5",
+		"express": "^4.21.2"
+	},
+	"devDependencies": {
+		"@types/express": "^4.17.21",
+		"@types/node": "^22.10.2",
+		"typescript": "^5.7.2"
+	}
 }

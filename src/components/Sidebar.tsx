@@ -1,7 +1,7 @@
-import { ListChecks, MessageSquare, Settings } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { RoutinesStatus } from "@/hooks/useRoutinesExtension";
 import type { CompletedTask, Task } from "@/types";
+import { ListChecks, MessageSquare, Settings } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ConversationSearch, type DeepSearchMatch } from "./ConversationSearch";
 import { TasksList } from "./TasksList";
 

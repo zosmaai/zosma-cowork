@@ -1,8 +1,8 @@
 import {
-	applyChatWidth,
 	CHAT_WIDTH_LABELS,
 	CHAT_WIDTH_PRESETS,
 	type ChatWidth,
+	applyChatWidth,
 	getChatWidth,
 	setChatWidth,
 } from "@/lib/chat-width";

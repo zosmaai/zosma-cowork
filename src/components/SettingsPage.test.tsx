@@ -111,9 +111,7 @@ describe("SettingsPage", () => {
 			screen.getAllByRole("button", { name: /Custom Instructions/ }).length,
 		).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "Apps" }).length).toBeGreaterThanOrEqual(1);
-		expect(
-			screen.getAllByRole("button", { name: "Appearance" }).length,
-		).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Appearance" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "Telemetry" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "About" }).length).toBeGreaterThanOrEqual(1);
 	});

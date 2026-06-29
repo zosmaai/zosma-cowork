@@ -5,10 +5,19 @@
  * section (expanded by default) with a game-like timeline of past executions.
  */
 
-import { CalendarClock, ChevronDown, ChevronRight, Eye, Pause, Play, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ConversationEntry, Task, TaskRun } from "@/types";
 import { formatRelative, humanizeCron } from "@/lib/cron";
+import type { ConversationEntry, Task, TaskRun } from "@/types";
+import {
+	CalendarClock,
+	ChevronDown,
+	ChevronRight,
+	Eye,
+	Pause,
+	Play,
+	Trash2,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { RunDetailView } from "./RunDetailView";
 
@@ -252,8 +261,9 @@ export function TaskDetailPage({
 						<div className="rounded-lg border-2 border-dashed border-border bg-muted/20 px-5 py-6 text-center">
 							<p className="text-xs font-medium text-muted-foreground">No runs yet</p>
 							<p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/60">
-								When this task fires, each execution appears here with its prompt and
-								response. Click <span className="font-medium text-foreground/80">&ldquo;Run now&rdquo;</span> above to trigger one.
+								When this task fires, each execution appears here with its prompt and response.
+								Click <span className="font-medium text-foreground/80">&ldquo;Run now&rdquo;</span>{" "}
+								above to trigger one.
 							</p>
 						</div>
 					)}
@@ -264,7 +274,12 @@ export function TaskDetailPage({
 							<div className="absolute left-[11px] top-2 bottom-2 w-px bg-border/60" />
 
 							{runs.map((run, idx) => (
-								<RunCard key={run.runId} run={run} isLatest={idx === 0} onViewRun={() => setSelectedRun(run)} />
+								<RunCard
+									key={run.runId}
+									run={run}
+									isLatest={idx === 0}
+									onViewRun={() => setSelectedRun(run)}
+								/>
 							))}
 						</div>
 					)}
@@ -274,17 +289,35 @@ export function TaskDetailPage({
 	);
 }
 
-function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean; onViewRun?: () => void }) {
+function RunCard({
+	run,
+	isLatest,
+	onViewRun,
+}: { run: TaskRun; isLatest: boolean; onViewRun?: () => void }) {
 	const [stepsExpanded, setStepsExpanded] = useState(false);
-	const duration = run.completedAt
-		? formatDuration(run.startedAt, run.completedAt)
-		: null;
+	const duration = run.completedAt ? formatDuration(run.startedAt, run.completedAt) : null;
 
 	const statusConfig = {
-		pending: { icon: "⏳", label: "Queued", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20" },
-		running: { icon: "🔄", label: "Running", color: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20" },
-		completed: { icon: "✓", label: "Success", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" },
-		failed: { icon: "✕", label: "Failed", color: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" },
+		pending: {
+			icon: "⏳",
+			label: "Queued",
+			color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+		},
+		running: {
+			icon: "🔄",
+			label: "Running",
+			color: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
+		},
+		completed: {
+			icon: "✓",
+			label: "Success",
+			color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+		},
+		failed: {
+			icon: "✕",
+			label: "Failed",
+			color: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+		},
 	}[run.status];
 
 	return (
@@ -306,7 +339,9 @@ function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean
 			<div className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
 				{/* Top row: status badge + timestamp + duration */}
 				<div className="flex items-center gap-2 flex-wrap">
-					<span className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[10px] font-semibold ${statusConfig.color}`}>
+					<span
+						className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[10px] font-semibold ${statusConfig.color}`}
+					>
 						{statusConfig.label}
 					</span>
 					<span className="text-[11px] text-muted-foreground/70">
@@ -314,7 +349,9 @@ function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean
 					</span>
 					{duration && (
 						<>
-							<span className="text-[10px] text-muted-foreground/40" aria-hidden>·</span>
+							<span className="text-[10px] text-muted-foreground/40" aria-hidden>
+								·
+							</span>
 							<span className="text-[10px] font-mono text-muted-foreground/50">{duration}</span>
 						</>
 					)}
@@ -326,7 +363,10 @@ function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean
 					{onViewRun && (
 						<button
 							type="button"
-							onClick={(e) => { e.stopPropagation(); onViewRun(); }}
+							onClick={(e) => {
+								e.stopPropagation();
+								onViewRun();
+							}}
 							className="ml-2 shrink-0 rounded-md border border-border px-2 py-0.5 text-[9px] font-medium text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
 						>
 							<Eye className="mr-1 inline-block h-3 w-3" />
@@ -340,9 +380,7 @@ function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean
 					<p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
 						Instruction
 					</p>
-					<p className="mt-0.5 line-clamp-2 text-xs text-foreground/85">
-						{run.prompt}
-					</p>
+					<p className="mt-0.5 line-clamp-2 text-xs text-foreground/85">{run.prompt}</p>
 				</div>
 
 				{/* Conversation tree — collapsible (#300) */}
@@ -353,7 +391,11 @@ function RunCard({ run, isLatest, onViewRun }: { run: TaskRun; isLatest: boolean
 							onClick={() => setStepsExpanded(!stepsExpanded)}
 							className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 hover:bg-muted/30"
 						>
-							{stepsExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+							{stepsExpanded ? (
+								<ChevronDown className="h-3 w-3" />
+							) : (
+								<ChevronRight className="h-3 w-3" />
+							)}
 							Steps
 							<span className="ml-auto rounded bg-muted/50 px-1.5 py-px text-[9px] font-normal normal-case tracking-normal text-muted-foreground/50">
 								{run.conversation.length}
@@ -382,7 +424,18 @@ function ConversationStep({ entry }: { entry: ConversationEntry }) {
 					<div className="absolute left-0 top-0 h-full w-0.5 bg-amber-500/30" />
 					<div className="flex items-start gap-2">
 						<span className="mt-0.5 shrink-0 text-[11px] opacity-60">
-							<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500/70">
+							<svg
+								aria-hidden="true"
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="text-amber-500/70"
+							>
 								<path d="M12 2a10 10 0 1 0 10 10h-10V2Z" />
 								<path d="M22 12A10 10 0 0 0 12 2v10h10Z" />
 							</svg>
@@ -405,7 +458,18 @@ function ConversationStep({ entry }: { entry: ConversationEntry }) {
 					<div className="absolute left-0 top-0 h-full w-0.5 bg-sky-500/30" />
 					<div className="flex items-start gap-2">
 						<span className="mt-0.5 shrink-0 text-[11px] opacity-60">
-							<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-500/70">
+							<svg
+								aria-hidden="true"
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="text-sky-500/70"
+							>
 								<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
 							</svg>
 						</span>
@@ -429,22 +493,48 @@ function ConversationStep({ entry }: { entry: ConversationEntry }) {
 			);
 		case "tool_result":
 			return (
-				<div className={`group relative overflow-hidden rounded-lg border px-3 py-2 ${
-					entry.toolError
-						? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
-						: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
-				}`}>
-					<div className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`} />
+				<div
+					className={`group relative overflow-hidden rounded-lg border px-3 py-2 ${
+						entry.toolError
+							? "border-red-500/15 bg-gradient-to-br from-red-500/[0.04] to-red-500/[0.02]"
+							: "border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.04] to-emerald-500/[0.02]"
+					}`}
+				>
+					<div
+						className={`absolute left-0 top-0 h-full w-0.5 ${entry.toolError ? "bg-red-500/30" : "bg-emerald-500/30"}`}
+					/>
 					<div className="flex items-start gap-2">
 						<span className="mt-0.5 shrink-0 text-[11px] opacity-60">
 							{entry.toolError ? (
-								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500/70">
+								<svg
+									aria-hidden="true"
+									width="14"
+									height="14"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									className="text-red-500/70"
+								>
 									<circle cx="12" cy="12" r="10" />
 									<line x1="15" y1="9" x2="9" y2="15" />
 									<line x1="9" y1="9" x2="15" y2="15" />
 								</svg>
 							) : (
-								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500/70">
+								<svg
+									aria-hidden="true"
+									width="14"
+									height="14"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									className="text-emerald-500/70"
+								>
 									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
 									<polyline points="14 2 14 8 20 8" />
 									<line x1="12" y1="18" x2="12" y2="12" />
@@ -453,7 +543,9 @@ function ConversationStep({ entry }: { entry: ConversationEntry }) {
 							)}
 						</span>
 						<div className="min-w-0 flex-1">
-							<p className={`text-[10px] font-semibold uppercase tracking-wider ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}>
+							<p
+								className={`text-[10px] font-semibold uppercase tracking-wider ${entry.toolError ? "text-red-500/60" : "text-emerald-500/60"}`}
+							>
 								{entry.toolError ? "Error" : "Result"}
 							</p>
 							<p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/70">
@@ -467,7 +559,17 @@ function ConversationStep({ entry }: { entry: ConversationEntry }) {
 			return (
 				<div className="flex items-start gap-2 px-1 py-0.5">
 					<span className="mt-0.5 shrink-0 text-foreground/40">
-						<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<svg
+							aria-hidden="true"
+							width="12"
+							height="12"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						>
 							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
 						</svg>
 					</span>

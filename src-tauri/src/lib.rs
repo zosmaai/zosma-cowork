@@ -890,6 +890,23 @@ async fn save_auth_key(
     .await
 }
 
+/// Validate a provider API key via format check + optional live probe.
+/// Forwards to the sidecar's validate_provider_key IPC command.
+/// Uses a 10s timeout (5s for probe + buffer).
+#[tauri::command]
+async fn validate_provider_key(
+    provider: String,
+    key: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"validate_provider_key","id":"vpk","provider":provider,"key":key}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
 // ─── Custom OpenAI-compatible providers (issue #207) ───────────────────────
 // Thin forwarders for the three sidecar commands that read/write the
 // `providers.<id>` section of models.json. The UI never touches models.json
@@ -928,6 +945,21 @@ async fn delete_custom_provider(
         &s,
         &serde_json::json!({"type":"delete_custom_provider","id":"dcp","providerId":provider_id}),
         std::time::Duration::from_secs(30),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn test_custom_provider_connection(
+    base_url: String,
+    api_key: Option<String>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    // 10s timeout — enough for a probe without being indefinite.
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"test_custom_provider_connection","id":"tcpc","baseUrl":base_url,"apiKey":api_key}),
+        std::time::Duration::from_secs(10),
     )
     .await
 }
@@ -2418,9 +2450,11 @@ pub fn run() {
             send_ui_response,
             set_active_model,
             save_auth_key,
+            validate_provider_key,
             list_custom_providers,
             save_custom_provider,
             delete_custom_provider,
+            test_custom_provider_connection,
             start_oauth,
             cancel_oauth,
             logout_provider,

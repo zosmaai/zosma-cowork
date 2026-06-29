@@ -1,3 +1,4 @@
+import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage as ChatMessageType, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
@@ -5,10 +6,9 @@ import { Clipboard, Download, FolderOpen, User } from "lucide-react";
 import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { ActivityBlock, ActivityRecap } from "./ActivityBlock";
-import { markdownComponents } from "./MarkdownComponents";
 import { FeedbackButtons } from "./FeedbackButtons";
+import { markdownComponents } from "./MarkdownComponents";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallSummary, ToolCallTimeline } from "./ToolCallTimeline";
 

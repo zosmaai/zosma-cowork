@@ -1,14 +1,14 @@
+import {
+	FONT_SCALE_LABELS,
+	FONT_SCALE_PRESETS,
+	type FontScale,
+	getFontScale,
+	setFontScale,
+} from "@/lib/font-scale";
 import { getThemeMode, toggleTheme } from "@/lib/themes";
 import { Moon, Sun } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
-import {
-	FONT_SCALE_LABELS,
-	FONT_SCALE_PRESETS,
-	getFontScale,
-	setFontScale,
-	type FontScale,
-} from "@/lib/font-scale";
 
 interface ThemeProps {
 	fontScale?: number;

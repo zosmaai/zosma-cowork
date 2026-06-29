@@ -23,9 +23,7 @@ describe("buildGreeting", () => {
 	});
 
 	it("includes the user name when available", () => {
-		expect(buildGreeting(at(20), "arjun")).toBe(
-			`Good evening, Arjun. ${GREETING_FALLBACK}`,
-		);
+		expect(buildGreeting(at(20), "arjun")).toBe(`Good evening, Arjun. ${GREETING_FALLBACK}`);
 	});
 
 	it("capitalises the first letter of a lower-case name", () => {
@@ -60,9 +58,7 @@ describe("buildGreeting", () => {
 		const long = "A".repeat(60);
 		const out = buildGreeting(at(20), undefined, undefined, long);
 		expect(out).toContain("…");
-		expect(out.length).toBeLessThan(
-			`Good evening. Pick up what you left off on "${long}"?`.length,
-		);
+		expect(out.length).toBeLessThan(`Good evening. Pick up what you left off on "${long}"?`.length);
 	});
 
 	it("pinned session outranks recent session even when both are given", () => {
@@ -90,9 +86,7 @@ describe("useGreeting", () => {
 
 		const { result } = renderHook(() => useGreeting());
 
-		await waitFor(() =>
-			expect(result.current).toContain('Ready for "Sales Report"?'),
-		);
+		await waitFor(() => expect(result.current).toContain('Ready for "Sales Report"?'));
 	});
 
 	it("shows name + most recent unpinned when nothing is pinned", async () => {
@@ -137,9 +131,7 @@ describe("useGreeting", () => {
 
 		const { result } = renderHook(() => useGreeting());
 
-		await waitFor(() =>
-			expect(result.current).toMatch(/[.,]/),
-		);
+		await waitFor(() => expect(result.current).toMatch(/[.,]/));
 		expect(result.current).not.toContain("Pick up");
 	});
 });

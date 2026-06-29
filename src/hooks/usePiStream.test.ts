@@ -212,10 +212,7 @@ describe("streamReducer — queue slice (#201 PR 3)", () => {
 	});
 
 	it("RESET clears the queue back to empty arrays", () => {
-		const s = run([
-			{ type: "QUEUE_UPDATE", steering: ["x"], followUp: ["y"] },
-			{ type: "RESET" },
-		]);
+		const s = run([{ type: "QUEUE_UPDATE", steering: ["x"], followUp: ["y"] }, { type: "RESET" }]);
 		expect(s.queue).toEqual({ steering: [], followUp: [] });
 	});
 });

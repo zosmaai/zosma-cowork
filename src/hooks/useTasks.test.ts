@@ -5,9 +5,9 @@
  * `{ tasks: [...] }` vs bare-array response, and refetches on `tasks_changed`.
  */
 
+import type { Task } from "@/types";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Task } from "@/types";
 
 const invokeMock = vi.fn();
 const listenMock = vi.fn();

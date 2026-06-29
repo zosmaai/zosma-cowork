@@ -1,3 +1,4 @@
+import { Tooltip } from "@/components/ui/tooltip";
 import {
 	Folder,
 	FolderOpen,
@@ -10,7 +11,6 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Tooltip } from "@/components/ui/tooltip";
 
 interface Session {
 	id: string;

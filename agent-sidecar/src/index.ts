@@ -199,6 +199,7 @@ import {
 	setTaskEnabled,
 	watchTaskFiles,
 } from "./tasks-store.js";
+import { validateProviderKey } from "./providers/key-validator.js";
 // Vendored pi-anthropic-messages bridge (see scripts/prebuild.mjs). Without
 // this loaded as an extension, Claude Pro/Max OAuth requests are
 // fingerprinted by Anthropic as a "third-party app" and rejected with a
@@ -359,6 +360,13 @@ interface SaveAuthCommand {
 	key: string;
 }
 
+interface ValidateProviderKeyCommand {
+	type: "validate_provider_key";
+	id: string;
+	provider: string;
+	key: string;
+}
+
 interface StartOAuthCommand {
 	type: "start_oauth";
 	id: string;
@@ -399,6 +407,14 @@ interface DeleteCustomProviderCommand {
 	type: "delete_custom_provider";
 	id: string;
 	providerId: string;
+}
+
+/** Test whether a custom OpenAI-compatible endpoint is reachable and the key works. */
+interface TestCustomProviderConnectionCommand {
+	type: "test_custom_provider_connection";
+	id: string;
+	baseUrl: string;
+	apiKey?: string;
 }
 
 /** Broker the Google OAuth consent for the selected scopes and fan creds out. */
@@ -750,6 +766,7 @@ type Command =
 	| ClearQueueCommand
 	| SetModelCommand
 	| SaveAuthCommand
+	| ValidateProviderKeyCommand
 	| StartOAuthCommand
 	| CancelOAuthCommand
 	| LogoutCommand
@@ -757,6 +774,7 @@ type Command =
 	| ListCustomProvidersCommand
 	| SaveCustomProviderCommand
 	| DeleteCustomProviderCommand
+	| TestCustomProviderConnectionCommand
 	| ConnectGoogleCommand
 	| GetGoogleStatusCommand
 	| DisconnectGoogleCommand
@@ -2353,6 +2371,27 @@ async function main() {
 				break;
 			}
 
+			// ── validate_provider_key ───────────────────────────────────
+			case "validate_provider_key": {
+				try {
+					const result = await validateProviderKey(
+						cmd.provider,
+						cmd.key,
+						// No AbortSignal from IPC for now — sidecar manages timeout internally
+					);
+					send({ type: "result", id: cmd.id, data: result });
+				} catch (err: unknown) {
+					const msg = err instanceof Error ? err.message : String(err);
+					log("validate_provider_key error: %s", msg);
+					send({
+						type: "error",
+						id: cmd.id,
+						message: `Key validation failed: ${msg}`,
+					});
+				}
+				break;
+			}
+
 			// ── start_oauth ────────────────────────────────────────────
 			case "start_oauth": {
 				if (!authStorage) {
@@ -2693,10 +2732,13 @@ async function main() {
 						// reachable flag lets it word the hint precisely. The
 						// `NO_MODELS_DISCOVERED:` prefix is the cross-boundary
 						// contract (Tauri invoke only carries the message string).
+						// Include the HTTP status so the UI can distinguish auth
+						// failures (401) from missing endpoints (404).
+						const statusSuffix = discovered.status ? `:${discovered.status}` : "";
 						send({
 							type: "error",
 							id: cmd.id,
-							message: `NO_MODELS_DISCOVERED:${discovered.reachable ? "reachable" : "unreachable"}`,
+							message: `NO_MODELS_DISCOVERED:${discovered.reachable ? "reachable" : "unreachable"}${statusSuffix}`,
 						});
 						break;
 					}
@@ -2741,6 +2783,54 @@ async function main() {
 					break;
 				}
 				send({ type: "result", id: cmd.id, data: { success: true } });
+				break;
+			}
+
+			case "test_custom_provider_connection": {
+				try {
+					const result = await discoverModels(cmd.baseUrl, cmd.apiKey, { timeoutMs: 8_000 });
+					if (result.models.length > 0) {
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								ok: true,
+								models: result.models,
+								message: `Found ${result.models.length} model${result.models.length === 1 ? "" : "s"}`,
+							},
+						});
+					} else if (result.reachable) {
+						const statusMsg = result.status
+							? ` (HTTP ${result.status})`
+							: "";
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								ok: false,
+								reachable: true,
+								status: result.status,
+								message: `Connected but no models found${statusMsg}. Check the URL or enter model IDs manually.`,
+							},
+						});
+					} else {
+						send({
+							type: "result",
+							id: cmd.id,
+							data: {
+								ok: false,
+								reachable: false,
+								message: "Couldn't reach that endpoint. Check the URL and that the server is running.",
+							},
+						});
+					}
+				} catch (err) {
+					send({
+						type: "error",
+						id: cmd.id,
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
 				break;
 			}
 

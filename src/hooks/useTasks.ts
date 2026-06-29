@@ -62,12 +62,8 @@ export function useTasks(): UseTasksReturn {
 		if (!failed) setLoading(true);
 		if (!failed) setError(null);
 		try {
-			const result = await retryOnClosed(() =>
-				invoke<{ tasks?: Task[] } | Task[]>("tasks_list"),
-			);
-			const list = Array.isArray(result)
-				? result
-				: (result as { tasks?: Task[] }).tasks || [];
+			const result = await retryOnClosed(() => invoke<{ tasks?: Task[] } | Task[]>("tasks_list"));
+			const list = Array.isArray(result) ? result : (result as { tasks?: Task[] }).tasks || [];
 			setTasks(list);
 			setError(null);
 		} catch (err) {
@@ -161,9 +157,7 @@ export function useTasks(): UseTasksReturn {
 		try {
 			await invoke("tasks_set_enabled", { taskId, enabled });
 			// Optimistic; the `tasks_changed` event reconciles authoritatively.
-			setTasks((prev) =>
-				prev.map((t) => (t.id === taskId ? { ...t, enabled } : t)),
-			);
+			setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, enabled } : t)));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		}
@@ -178,21 +172,16 @@ export function useTasks(): UseTasksReturn {
 		}
 	}, []);
 
-	const listRuns = useCallback(
-		async (taskId: string, limit = 50): Promise<TaskRun[]> => {
-			try {
-				const result = await retryOnClosed(() =>
-					invoke<{ runs?: TaskRun[] } | TaskRun[]>("tasks_list_runs", { taskId, limit }),
-				);
-				return Array.isArray(result)
-					? result
-					: (result as { runs?: TaskRun[] }).runs || [];
-			} catch {
-				return [];
-			}
-		},
-		[],
-	);
+	const listRuns = useCallback(async (taskId: string, limit = 50): Promise<TaskRun[]> => {
+		try {
+			const result = await retryOnClosed(() =>
+				invoke<{ runs?: TaskRun[] } | TaskRun[]>("tasks_list_runs", { taskId, limit }),
+			);
+			return Array.isArray(result) ? result : (result as { runs?: TaskRun[] }).runs || [];
+		} catch {
+			return [];
+		}
+	}, []);
 
 	const getCompletedTasks = useCallback(async (): Promise<CompletedTask[]> => {
 		try {

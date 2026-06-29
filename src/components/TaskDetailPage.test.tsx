@@ -1,6 +1,6 @@
+import type { ConversationEntry, Task, TaskRun } from "@/types";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ConversationEntry, Task, TaskRun } from "@/types";
 import { TaskDetailPage } from "./TaskDetailPage";
 
 function task(overrides: Partial<Task> = {}): Task {
