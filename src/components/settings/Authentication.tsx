@@ -17,7 +17,7 @@ type Phase = "idle" | "starting" | "waiting_browser" | "exchanging" | "done";
 // (registerGeminiAntigravity) but hidden from the provider list for now while
 // the subscription/ToS story is settled. Flip to true to re-expose the option;
 // no other change is needed.
-const SHOW_ANTIGRAVITY = false;
+const SHOW_ANTIGRAVITY = true;
 
 const PROVIDERS_CONFIG = [
 	{ id: "anthropic", label: "Claude Pro/Max", icon: ClaudeIcon },

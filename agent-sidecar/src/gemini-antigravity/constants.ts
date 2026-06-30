@@ -29,7 +29,17 @@ export const CLIENT_ID =
 // $ANTIGRAVITY_CLIENT_SECRET or the gitignored agent-sidecar/antigravity-client-secret
 // file), which replaces the placeholder below. At runtime an explicit env var
 // still wins. If neither is provided, Google sign-in will fail with a clear error.
-export const CLIENT_SECRET = process.env.ANTIGRAVITY_CLIENT_SECRET || "__ANTIGRAVITY_CLIENT_SECRET__";
+export const CLIENT_SECRET =
+	process.env.ANTIGRAVITY_CLIENT_SECRET || "__ANTIGRAVITY_CLIENT_SECRET__";
+
+/**
+ * Returns true when the client secret is a real injected value.
+ * Returns false when the build-time placeholder is still present
+ * (i.e. prebuild.mjs did not run or ANTIGRAVITY_CLIENT_SECRET is unset).
+ */
+export function isClientSecretConfigured(): boolean {
+	return Boolean(CLIENT_SECRET) && !CLIENT_SECRET.startsWith("__ANTIGRAVITY");
+}
 
 export const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -68,7 +78,8 @@ export const LOAD_CODE_ASSIST_ENDPOINTS = [
 const ANTIGRAVITY_VERSION = process.env.PI_AI_ANTIGRAVITY_VERSION || "1.107.0";
 /** Mimic the Antigravity desktop client so the backend accepts the request. */
 export const REQUEST_HEADERS: Record<string, string> = {
-	"User-Agent": process.env.ANTIGRAVITY_USER_AGENT || `antigravity/${ANTIGRAVITY_VERSION} darwin/arm64`,
+	"User-Agent":
+		process.env.ANTIGRAVITY_USER_AGENT || `antigravity/${ANTIGRAVITY_VERSION} darwin/arm64`,
 	"x-goog-api-client":
 		process.env.ANTIGRAVITY_X_GOOG_API_CLIENT || "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"Client-Metadata":
@@ -98,11 +109,43 @@ export interface GeminiModelDef {
 }
 
 export const GEMINI_MODELS: GeminiModelDef[] = [
-	{ id: "gemini-2.5-pro", upstream: "gemini-2.5-pro", name: "Gemini 2.5 Pro", reasoning: true, input: ["text", "image"], contextWindow: 1_048_576, maxTokens: 65_536 },
-	{ id: "gemini-2.5-flash", upstream: "gemini-2.5-flash", name: "Gemini 2.5 Flash", reasoning: true, input: ["text", "image"], contextWindow: 1_048_576, maxTokens: 65_536 },
+	{
+		id: "gemini-2.5-pro",
+		upstream: "gemini-2.5-pro",
+		name: "Gemini 2.5 Pro",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: 1_048_576,
+		maxTokens: 65_536,
+	},
+	{
+		id: "gemini-2.5-flash",
+		upstream: "gemini-2.5-flash",
+		name: "Gemini 2.5 Flash",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: 1_048_576,
+		maxTokens: 65_536,
+	},
 	// The backend's latest pro/flash. Display names follow Antigravity's
 	// branding (3.1 Pro / 3.5 Flash); `upstream` is the name the inference
 	// endpoint accepts (the "-agent" ids).
-	{ id: "gemini-3.1-pro", upstream: "gemini-pro-agent", name: "Gemini 3.1 Pro", reasoning: true, input: ["text", "image"], contextWindow: 1_048_576, maxTokens: 65_536 },
-	{ id: "gemini-3.5-flash", upstream: "gemini-3-flash-agent", name: "Gemini 3.5 Flash", reasoning: true, input: ["text", "image"], contextWindow: 1_048_576, maxTokens: 65_536 },
+	{
+		id: "gemini-3.1-pro",
+		upstream: "gemini-pro-agent",
+		name: "Gemini 3.1 Pro",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: 1_048_576,
+		maxTokens: 65_536,
+	},
+	{
+		id: "gemini-3.5-flash",
+		upstream: "gemini-3-flash-agent",
+		name: "Gemini 3.5 Flash",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: 1_048_576,
+		maxTokens: 65_536,
+	},
 ];

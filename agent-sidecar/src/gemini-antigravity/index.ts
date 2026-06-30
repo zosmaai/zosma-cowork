@@ -17,9 +17,16 @@ import {
 	type OAuthProviderInterface,
 	registerOAuthProvider,
 } from "@earendil-works/pi-ai/oauth";
-import { CODE_ASSIST_ENDPOINTS, GEMINI_MODELS, PROVIDER_ID, PROVIDER_NAME } from "./constants.js";
+import {
+	CLIENT_SECRET,
+	CODE_ASSIST_ENDPOINTS,
+	GEMINI_MODELS,
+	PROVIDER_ID,
+	PROVIDER_NAME,
+	isClientSecretConfigured,
+} from "./constants.js";
 import { discoverProject, getUserEmail, refreshAccessToken, runGeminiConsent } from "./oauth.js";
-import { PROJECT_HEADER, registerGeminiApiProvider, UPSTREAM_HEADER } from "./provider.js";
+import { PROJECT_HEADER, UPSTREAM_HEADER, registerGeminiApiProvider } from "./provider.js";
 
 /** Our credentials carry the discovered projectId + email alongside the tokens. */
 interface GeminiCredentials extends OAuthCredentials {
@@ -104,7 +111,21 @@ let registered = false;
 /** Idempotently register the Gemini (Google) provider. Call once at startup. */
 export function registerGeminiAntigravity(): void {
 	if (registered) return;
+
+	if (!isClientSecretConfigured()) {
+		// Log to stderr — stdout is reserved for the JSON sidecar protocol.
+		const prefix =
+			CLIENT_SECRET && CLIENT_SECRET.length > 8
+				? `${CLIENT_SECRET.slice(0, 4)}...${CLIENT_SECRET.slice(-4)}`
+				: `<${CLIENT_SECRET.slice(0, 40)}>`;
+		process.stderr.write(
+			`[gemini-antigravity] Skipping provider registration: client secret not configured (value: ${prefix})\n`,
+		);
+		return;
+	}
+
 	registered = true;
+	process.stderr.write("[gemini-antigravity] Provider registered successfully.\n");
 	registerOAuthProvider(provider);
 	registerGeminiApiProvider();
 }

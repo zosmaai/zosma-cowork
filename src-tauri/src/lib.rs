@@ -325,8 +325,9 @@ async fn spawn_sidecar(
     // Determine runtime: tsx for .ts (dev), node for .cjs (production)
     let run_cmd: String;
     let run_args: Vec<String>;
+    let is_dev = p.extension().map(|e| e == "ts").unwrap_or(false);
 
-    if p.extension().map(|e| e == "ts").unwrap_or(false) {
+    if is_dev {
         // Dev mode: use tsx from agent-sidecar's node_modules.
         // On Windows, npm creates THREE files per bin: a POSIX shell wrapper
         // (`tsx`, no extension) for Git Bash, plus `tsx.cmd` for cmd.exe and
@@ -396,6 +397,42 @@ async fn spawn_sidecar(
         format!("{existing_node_opts} --use-system-ca")
     };
     c.env("NODE_OPTIONS", node_options);
+    // Dev mode: parse the repo-root .env and inject each var directly onto
+    // the child process. This is the only safe approach — Node.js explicitly
+    // disallows --env-file inside NODE_OPTIONS (exits with code 9).
+    // Skipped in production where secrets are baked in by prebuild.mjs.
+    if is_dev {
+        let env_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|p| p.join(".env"))
+            .filter(|p| p.exists());
+        if let Some(env_path) = &env_file {
+            log::info!("Sidecar: .env file found at {}", env_path.display());
+            if let Ok(contents) = std::fs::read_to_string(env_path) {
+                log::info!("Sidecar: loading dev .env from {}", env_path.display());
+                for line in contents.lines() {
+                    let line = line.trim();
+                    // skip blanks and comments
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, val)) = line.split_once('=') {
+                        let key = key.trim();
+                        let val = val.trim().trim_matches('"').trim_matches('\'');
+                        if !key.is_empty() && std::env::var(key).is_err() {
+                            c.env(key, val);
+                            log::info!("Sidecar: injected env var {}", key);
+                        }
+                    }
+                }
+            }
+        } else {
+            log::info!(
+                "Sidecar: .env file NOT FOUND at {:?}/../.env",
+                env!("CARGO_MANIFEST_DIR")
+            );
+        }
+    }
     c.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
