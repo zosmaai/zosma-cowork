@@ -1568,6 +1568,39 @@ async fn tasks_delete(task_id: String, s: State<'_, AppState>) -> Result<Value, 
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn tasks_create(
+    name: String,
+    schedule: String,
+    prompt: String,
+    task_type: Option<String>,
+    recurring: Option<bool>,
+    max_age_days: Option<u32>,
+    session_id: Option<String>,
+    run_immediately: Option<bool>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    scmd_r(
+        &s,
+        &serde_json::json!({
+            "type": "tasks_create",
+            "id": "tc",
+            "name": name,
+            "schedule": schedule,
+            "prompt": prompt,
+            "taskType": task_type,
+            "recurring": recurring,
+            "maxAgeDays": max_age_days,
+            "sessionId": session_id,
+            "runImmediately": run_immediately
+        }),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+    .map(|r| r.get("task").cloned().unwrap_or(Value::Null))
+}
+
+#[tauri::command]
 async fn tasks_set_enabled(
     task_id: String,
     enabled: bool,
@@ -2596,6 +2629,7 @@ pub fn run() {
             list_extensions,
             tasks_list,
             tasks_delete,
+            tasks_create,
             tasks_set_enabled,
             tasks_run_now,
             tasks_list_runs,

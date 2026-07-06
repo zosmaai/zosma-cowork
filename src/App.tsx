@@ -653,10 +653,29 @@ function App() {
 				},
 				openSettings,
 				showHelp: openSettings,
+				startLoop: (result) => {
+					// Surface parse errors in the shared Tasks banner; on success
+					// create a recurring task that fires immediately and reveal the
+					// Tasks list so the new loop (and its first run) is visible.
+					setSidebarView("tasks");
+					if (!result.ok) {
+						tasksApi.reportError(result.error);
+						return;
+					}
+					void tasksApi.create({
+						name: result.label,
+						schedule: result.cron,
+						prompt: result.prompt,
+						taskType: "session",
+						recurring: true,
+						runImmediately: true,
+						...(activeSessionFile ? { sessionId: activeSessionFile } : {}),
+					});
+				},
 			};
 			runBuiltinCommand(ctx, builtin, args);
 		},
-		[handleNewSessionPrompt, handleModelSelect, models],
+		[handleNewSessionPrompt, handleModelSelect, models, tasksApi, activeSessionFile],
 	);
 
 	// Load the sidecar's active workspace once it's ready, so the sidebar can

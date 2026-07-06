@@ -191,6 +191,7 @@ import {
 import { handleClearQueueCommand, handleFollowUpCommand, handleSteerCommand } from "./steering.js";
 import { runTaskFire } from "./task-fire.js";
 import {
+	createTask,
 	deleteTask,
 	getCompletedTasks,
 	listRuns,
@@ -624,6 +625,20 @@ interface TasksDeleteCommand {
 	cwd?: string;
 }
 
+interface TasksCreateCommand {
+	type: "tasks_create";
+	id: string;
+	cwd?: string;
+	name: string;
+	schedule: string;
+	prompt: string;
+	taskType?: "durable" | "session";
+	recurring?: boolean;
+	maxAgeDays?: number;
+	sessionId?: string;
+	runImmediately?: boolean;
+}
+
 interface TasksSetEnabledCommand {
 	type: "tasks_set_enabled";
 	id: string;
@@ -799,6 +814,7 @@ type Command =
 	| ListExtensionsCommand
 	| TasksListCommand
 	| TasksDeleteCommand
+	| TasksCreateCommand
 	| TasksSetEnabledCommand
 	| TasksRunNowCommand
 	| TasksListRunsCommand
@@ -3695,6 +3711,21 @@ async function main() {
 			case "tasks_delete": {
 				const deleted = deleteTask(cmd.cwd ?? workspaceCwd, cmd.taskId);
 				send({ type: "result", id: cmd.id, data: { deleted } });
+				break;
+			}
+
+			case "tasks_create": {
+				const task = createTask(cmd.cwd ?? workspaceCwd, {
+					name: cmd.name,
+					schedule: cmd.schedule,
+					prompt: cmd.prompt,
+					type: cmd.taskType,
+					recurring: cmd.recurring,
+					maxAgeDays: cmd.maxAgeDays,
+					sessionId: cmd.sessionId,
+					runImmediately: cmd.runImmediately,
+				});
+				send({ type: "result", id: cmd.id, data: { task } });
 				break;
 			}
 

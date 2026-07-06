@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandContext } from "./builtinCommands";
-import { BUILTIN_COMMANDS, findBuiltinCommand, runBuiltinCommand } from "./builtinCommands";
+import {
+	BUILTIN_COMMANDS,
+	findBuiltinCommand,
+	parseLoopArgs,
+	runBuiltinCommand,
+} from "./builtinCommands";
 
 /** Resolve a command for dispatch tests, failing loudly if the name is wrong. */
 function cmd(name: string) {
@@ -17,6 +22,7 @@ function mockCtx(): CommandContext {
 		setModel: vi.fn(),
 		openSettings: vi.fn(),
 		showHelp: vi.fn(),
+		startLoop: vi.fn(),
 	};
 }
 
@@ -24,7 +30,14 @@ describe("BUILTIN_COMMANDS registry", () => {
 	it("exposes the clean-subset commands", () => {
 		const ids = BUILTIN_COMMANDS.map((c) => c.id).sort();
 		expect(ids).toEqual(
-			["session.new", "session.resume", "model.switch", "view.settings", "help.list"].sort(),
+			[
+				"session.new",
+				"session.resume",
+				"session.loop",
+				"model.switch",
+				"view.settings",
+				"help.list",
+			].sort(),
 		);
 	});
 
@@ -43,6 +56,7 @@ describe("BUILTIN_COMMANDS registry", () => {
 		expect(findBuiltinCommand("history")?.id).toBe("session.resume");
 		expect(findBuiltinCommand("config")?.id).toBe("view.settings");
 		expect(findBuiltinCommand("?")?.id).toBe("help.list");
+		expect(findBuiltinCommand("repeat")?.id).toBe("session.loop");
 	});
 
 	it("resolves a command by its primary name", () => {
@@ -98,5 +112,78 @@ describe("runBuiltinCommand dispatch", () => {
 		const ctx = mockCtx();
 		runBuiltinCommand(ctx, cmd("help"), "");
 		expect(ctx.showHelp).toHaveBeenCalledTimes(1);
+	});
+
+	it("/loop passes a parsed spec to startLoop", () => {
+		const ctx = mockCtx();
+		runBuiltinCommand(ctx, cmd("loop"), "30m check the build");
+		expect(ctx.startLoop).toHaveBeenCalledWith({
+			ok: true,
+			cron: "*/30 * * * *",
+			prompt: "check the build",
+			label: "every 30 minutes",
+		});
+	});
+
+	it("/loop passes an error result for bad input", () => {
+		const ctx = mockCtx();
+		runBuiltinCommand(ctx, cmd("loop"), "");
+		expect(ctx.startLoop).toHaveBeenCalledWith(
+			expect.objectContaining({ ok: false }),
+		);
+	});
+});
+
+describe("parseLoopArgs", () => {
+	it("reads a bare number as minutes", () => {
+		expect(parseLoopArgs("5 ping")).toEqual({
+			ok: true,
+			cron: "*/5 * * * *",
+			prompt: "ping",
+			label: "every 5 minutes",
+		});
+	});
+
+	it("supports s / m / h / d units and singular labels", () => {
+		expect(parseLoopArgs("1m tick")).toMatchObject({
+			cron: "*/1 * * * *",
+			label: "every minute",
+		});
+		expect(parseLoopArgs("2h build")).toMatchObject({
+			cron: "0 */2 * * *",
+			label: "every 2 hours",
+		});
+		expect(parseLoopArgs("1d digest")).toMatchObject({
+			cron: "0 0 */1 * *",
+			label: "every day",
+		});
+		// sub-minute rounds up to a whole minute
+		expect(parseLoopArgs("30s poll")).toMatchObject({
+			cron: "*/1 * * * *",
+			label: "every minute",
+		});
+	});
+
+	it("normalises boundary values to the coarser unit", () => {
+		expect(parseLoopArgs("60m x")).toMatchObject({ cron: "0 * * * *", label: "every hour" });
+		expect(parseLoopArgs("24h x")).toMatchObject({ cron: "0 0 * * *", label: "every day" });
+	});
+
+	it("keeps the full prompt including inner whitespace", () => {
+		expect(parseLoopArgs("10m  summarise  my inbox ")).toMatchObject({
+			prompt: "summarise  my inbox",
+		});
+	});
+
+	it("rejects a missing prompt", () => {
+		expect(parseLoopArgs("10m")).toMatchObject({ ok: false });
+		expect(parseLoopArgs("")).toMatchObject({ ok: false });
+	});
+
+	it("rejects an unreadable or out-of-range interval", () => {
+		expect(parseLoopArgs("abc do it")).toMatchObject({ ok: false });
+		expect(parseLoopArgs("0m do it")).toMatchObject({ ok: false });
+		expect(parseLoopArgs("90m do it")).toMatchObject({ ok: false });
+		expect(parseLoopArgs("25h do it")).toMatchObject({ ok: false });
 	});
 });

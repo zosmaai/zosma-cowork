@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type ScheduledTask,
+	createTask,
 	deleteTask,
 	disabledTasksFilePath,
 	listTasks,
@@ -166,6 +167,45 @@ describe("tasks-store", () => {
 			writeActive(cwd, [task({ id: "a" })]);
 			setTaskEnabled(cwd, "a", false);
 			expect(() => runTaskNow(cwd, "a")).toThrow(/disabled/i);
+		});
+	});
+
+	describe("createTask", () => {
+		it("appends a task to the active file with defaults", () => {
+			writeActive(cwd, []);
+			const created = createTask(cwd, {
+				name: "every 5 minutes",
+				schedule: "*/5 * * * *",
+				prompt: "check the build",
+			});
+			expect(created.enabled).toBe(true);
+			expect(created.id).toBeTruthy();
+			expect(created.type).toBe("session");
+			expect(created.recurring).toBe(true);
+			const stored = readActive(cwd);
+			expect(stored).toHaveLength(1);
+			expect(stored[0].prompt).toBe("check the build");
+			expect(stored[0].schedule).toBe("*/5 * * * *");
+		});
+
+		it("stamps nextRunAt in the past when runImmediately is set", () => {
+			writeActive(cwd, []);
+			createTask(cwd, {
+				name: "loop",
+				schedule: "*/5 * * * *",
+				prompt: "go",
+				runImmediately: true,
+			});
+			const next = new Date(readActive(cwd)[0].nextRunAt as string).getTime();
+			expect(next).toBeLessThan(Date.now());
+		});
+
+		it("generates unique ids for successive tasks", () => {
+			writeActive(cwd, []);
+			const a = createTask(cwd, { name: "a", schedule: "*/5 * * * *", prompt: "a" });
+			const b = createTask(cwd, { name: "b", schedule: "*/5 * * * *", prompt: "b" });
+			expect(a.id).not.toBe(b.id);
+			expect(readActive(cwd)).toHaveLength(2);
 		});
 	});
 

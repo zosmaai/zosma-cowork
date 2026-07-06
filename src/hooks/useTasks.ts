@@ -29,6 +29,10 @@ interface UseTasksReturn {
 
 	/** Refetch the task list from the sidecar. */
 	refresh: () => Promise<void>;
+	/** Create a task (e.g. from the composer's `/loop` command). */
+	create: (input: CreateTaskInput) => Promise<Task | null>;
+	/** Surface a client-side error in the shared task error banner. */
+	reportError: (message: string) => void;
 	/** Delete a task by id. */
 	del: (taskId: string) => Promise<void>;
 	/** Pause (false) or resume (true) a task by id. */
@@ -49,6 +53,20 @@ interface UseTasksReturn {
 	completedLoading: boolean;
 	/** Monotonic counter incremented on each task_run_completed event. */
 	runCompletedAt: number;
+}
+
+/** Payload for {@link UseTasksReturn.create}. Mirrors the sidecar bridge. */
+export interface CreateTaskInput {
+	name: string;
+	/** cron expression, e.g. every 5 min = star-slash-5 star star star star. */
+	schedule: string;
+	prompt: string;
+	taskType?: "durable" | "session";
+	recurring?: boolean;
+	maxAgeDays?: number;
+	sessionId?: string;
+	/** Fire on the scheduler's next poll (backs `/loop … runs immediately`). */
+	runImmediately?: boolean;
 }
 
 export function useTasks(): UseTasksReturn {
@@ -139,6 +157,23 @@ export function useTasks(): UseTasksReturn {
 		};
 	}, [refreshCompleted, refresh]);
 
+	const create = useCallback(
+		async (input: CreateTaskInput): Promise<Task | null> => {
+			setError(null);
+			try {
+				const task = await invoke<Task | null>("tasks_create", { ...input });
+				await refresh();
+				return task ?? null;
+			} catch (err) {
+				setError(err instanceof Error ? err.message : String(err));
+				return null;
+			}
+		},
+		[refresh],
+	);
+
+	const reportError = useCallback((message: string) => setError(message), []);
+
 	const del = useCallback(
 		async (taskId: string) => {
 			setError(null);
@@ -203,6 +238,8 @@ export function useTasks(): UseTasksReturn {
 		loading,
 		error,
 		refresh,
+		create,
+		reportError,
 		del,
 		setEnabled,
 		runNow,

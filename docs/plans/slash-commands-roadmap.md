@@ -49,8 +49,19 @@ A1 `Command` with `run(ctx, args)`), a `CommandContext` of GUI actions, and
 | `/model` | — | bare → `openModelSelector()`; `/model <id>` → `setModel(id)` |
 | `/settings` | `/config` | `openSettings()` → `setShowSettings(true)` |
 | `/help` | `/?` | `showHelp()` — enumerate commands |
+| `/loop` | `/repeat` | `startLoop(parseLoopArgs(args))` → creates a recurring task (runs immediately) via the Tasks bridge (#291) |
 
 Unknown `/foo` falls through and sends as normal text (don't trap typos).
+
+**`/loop <interval> <prompt>` (#291)** surfaces pi-routines' recurring-task
+command in the composer. `parseLoopArgs` (pure, unit-tested) turns the interval
+(`s`/`m`/`h`/`d`, or a bare number read as minutes) into a cron expression;
+App.tsx's `startLoop` then creates a recurring **session** task via the Tasks
+bridge with `runImmediately` so it fires on the scheduler's next tick, and
+reveals the Tasks list. This needed a new write path on the bridge —
+`createTask` (tasks-store) → `tasks_create` (sidecar) → `tasks_create` Tauri
+shim → `useTasks.create`. Parse/creation errors surface in the shared Tasks
+error banner.
 
 ### A2b — deferred (need new frontend plumbing) ⏳
 

@@ -27,6 +27,7 @@ import {
 	CornerDownLeft,
 	Eye,
 	MessageSquarePlus,
+	Repeat,
 	SlidersHorizontal,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -65,6 +66,7 @@ const CATEGORY_ICON: Record<CommandCategory, ComponentType<{ className?: string 
 
 const ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
 	MessageSquarePlus,
+	Repeat,
 	SlidersHorizontal,
 	Eye,
 	Blocks,

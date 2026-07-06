@@ -33,6 +33,7 @@
  * (stripping `nextRunAt` so pi-routines recomputes a fresh forward run).
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -252,6 +253,62 @@ export function runTaskNow(cwd: string, taskId: string): boolean {
 	task.nextRunAt = new Date(Date.now() - 60_000 * 16).toISOString();
 	writeTaskFile(activePath, file);
 	return true;
+}
+
+/** Fields the bridge accepts when creating a task (see {@link createTask}). */
+export interface CreateTaskInput {
+	/** Human-readable label shown in the Tasks UI. */
+	name: string;
+	/** cron expression, e.g. every 5 min = star-slash-5 star star star star. */
+	schedule: string;
+	/** Message sent to the agent each time the task fires. */
+	prompt: string;
+	type?: TaskType;
+	recurring?: boolean;
+	/** Auto-expire after N days of inactivity (0 = permanent). */
+	maxAgeDays?: number;
+	sessionId?: string;
+	/**
+	 * Fire on the scheduler's very next poll instead of waiting for the first
+	 * cron boundary. Backs the `/loop … (runs immediately)` composer command.
+	 */
+	runImmediately?: boolean;
+}
+
+/**
+ * Create a new durable task in `cwd`'s active (pi-routines) task file and
+ * return it with the bridge-derived `enabled: true` flag.
+ *
+ * When `runImmediately` is set, `nextRunAt` is stamped ~16min in the past (the
+ * same trick {@link runTaskNow} uses) so pi-routines fires it on its next 1s
+ * tick; otherwise pi-routines derives the first run from the cron `schedule`.
+ */
+export function createTask(cwd: string, input: CreateTaskInput): BridgeTask {
+	const activePath = tasksFilePath(cwd);
+	const file = readTaskFile(activePath);
+	const now = new Date();
+
+	const task: ScheduledTask = {
+		id: randomUUID(),
+		name: input.name,
+		schedule: input.schedule,
+		prompt: input.prompt,
+		type: input.type ?? "session",
+		createdAt: now.toISOString(),
+		recurring: input.recurring ?? true,
+		maxAgeDays: input.maxAgeDays ?? 0,
+		...(input.sessionId ? { sessionId: input.sessionId } : {}),
+	};
+
+	if (input.runImmediately) {
+		// Match runTaskNow: punch through pi-routines' forward jitter so the
+		// first run happens on the scheduler's next tick.
+		task.nextRunAt = new Date(now.getTime() - 60_000 * 16).toISOString();
+	}
+
+	file.tasks.push(task);
+	writeTaskFile(activePath, file);
+	return { ...task, enabled: true };
 }
 
 // ── Run recording (reads the jsonl files written by the forked pi-routines) ──

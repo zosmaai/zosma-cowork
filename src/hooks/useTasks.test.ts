@@ -79,6 +79,38 @@ describe("useTasks", () => {
 		expect(invokeMock).toHaveBeenCalledWith("tasks_list");
 	});
 
+	it("create calls tasks_create then refreshes", async () => {
+		const { result } = renderHook(() => useTasks());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		invokeMock.mockClear();
+		invokeMock.mockResolvedValueOnce(task({ id: "new" }));
+		invokeMock.mockResolvedValue({ tasks: [task({ id: "new" })] });
+		await act(async () => {
+			await result.current.create({
+				name: "every 5 minutes",
+				schedule: "*/5 * * * *",
+				prompt: "go",
+				runImmediately: true,
+			});
+		});
+		expect(invokeMock).toHaveBeenCalledWith("tasks_create", {
+			name: "every 5 minutes",
+			schedule: "*/5 * * * *",
+			prompt: "go",
+			runImmediately: true,
+		});
+		expect(invokeMock).toHaveBeenCalledWith("tasks_list");
+	});
+
+	it("reportError surfaces a client-side message", async () => {
+		const { result } = renderHook(() => useTasks());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		act(() => {
+			result.current.reportError("bad interval");
+		});
+		expect(result.current.error).toBe("bad interval");
+	});
+
 	it("setEnabled calls tasks_set_enabled with the flag", async () => {
 		invokeMock.mockResolvedValueOnce({ tasks: [task({ id: "a", enabled: true })] });
 		const { result } = renderHook(() => useTasks());
