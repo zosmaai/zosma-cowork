@@ -25,6 +25,20 @@ export interface CommandContext {
 	openSettings: () => void;
 	/** Show the list of available commands. */
 	showHelp: () => void;
+	/**
+	 * Send a message to the active agent session. Used by extension commands
+	 * (e.g. blog commands) that need to prompt the agent directly.
+	 */
+	sendMessage: (msg: string) => void;
+	/**
+	 * Run the agent with a full prompt but show only a short label in the chat
+	 * bubble. Use this for slash commands that inject large system-style prompts
+	 * (e.g. blog pipeline commands) so the UI stays clean.
+	 *
+	 * @param displayText  Short label shown as the user bubble (e.g. "/write-blog — Explore Topics")
+	 * @param prompt       Full prompt text sent to the agent (never shown in UI)
+	 */
+	runAgent: (displayText: string, prompt: string) => void;
 }
 
 /** A built-in command: a palette {@link Command} plus its dispatch action. */

@@ -190,8 +190,8 @@ function TasksEmptyState() {
 			</div>
 			<p className="text-sm font-medium text-sidebar-foreground">No tasks yet</p>
 			<p className="mt-1 text-[11px] leading-relaxed text-sidebar-foreground/50">
-				Ask in a Cowork chat to schedule a task — for example, "every weekday at 9am summarize my
-				unread email." Scheduled tasks will show up here.
+				Ask in a Cowork chat to schedule a task — for example, "write a blog post every weekday
+				morning" or "summarize my unread email at 9am." Scheduled tasks will show up here.
 			</p>
 		</div>
 	);

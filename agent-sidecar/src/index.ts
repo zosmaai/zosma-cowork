@@ -1982,14 +1982,17 @@ async function main() {
 		log("prompt: using model %s/%s", promptModel?.provider, promptModel?.id);
 		activePromptId = cmd.id;
 
-		// Startup timeout (20s): if the model doesn't produce ANY agent events
-		// within 20 seconds, abort the prompt. This handles the case where a
-		// local model (via llama-swap) fails to load — without this,
-		// `session.prompt()` hangs forever because pi's SDK never returns an
-		// error for a failed model load (#307). The global subscriber in
-		// initAgent sets `promptHasEmitted` on the first event; we just check
-		// it once when the timer fires.
-		const STARTUP_TIMEOUT_MS = 20_000;
+		// Startup timeout: if the model doesn't produce ANY agent events within
+		// this window, abort the prompt. This handles the case where a model
+		// fails to load or is unresponsive — without this, `session.prompt()`
+		// hangs forever (#307). The global subscriber in initAgent sets
+		// `promptHasEmitted` on the first event; we check it once when the
+		// timer fires.
+		//
+		// 60s: holds for whatever model is currently selected — generous enough
+		// for slow cold-starts, large contexts, and skill-injection overhead,
+		// while still catching a genuinely dead/unresponsive model quickly.
+		const STARTUP_TIMEOUT_MS = 60_000;
 		currentPromptStartedAt = Date.now();
 		promptHasEmitted = false;
 		const startupTimer = setTimeout(() => {
@@ -2025,6 +2028,54 @@ async function main() {
 
 		try {
 			await activeSession.prompt(cmd.text);
+
+			// ── Blog auto-continuation ──────────────────────────────────────────
+			// DeepSeek (and other non-Claude models) frequently emit a text
+			// response mid-workflow — "Now let me write…" — which resolves
+			// session.prompt() before the task is done. The loop below detects
+			// an incomplete blog pipeline (phase !== "done") and re-prompts up
+			// to MAX_BLOG_CONTINUATIONS times, staying inside the same session
+			// so the model retains full conversation history. The global
+			// PROMPT_TIMEOUT_MS still caps the total wall time.
+			// /blog-write → write post, terminal = phase:"done" (save_draft)
+			// /write-blog  → explore topics, terminal = phase:"selecting" (save_topics)
+			const isWriteCmd = /^\/blog-write/i.test(cmd.text.trim());
+			const isExploreCmd = /^\/write-blog/i.test(cmd.text.trim());
+			const blogTerminalPhase = isWriteCmd ? "done" : isExploreCmd ? "selecting" : null;
+			const MAX_BLOG_CONTINUATIONS = 3;
+			if (blogTerminalPhase !== null) {
+				for (let attempt = 0; attempt < MAX_BLOG_CONTINUATIONS; attempt++) {
+					// Read the blog state from disk — written by save_draft / save_topics.
+					const stateFile = join(workspaceCwd, ".pi", "blog", "state.json");
+					let blogPhase = "";
+					try {
+						if (existsSync(stateFile)) {
+							blogPhase = JSON.parse(readFileSync(stateFile, "utf-8")).phase ?? "";
+						}
+					} catch {
+						/* ignore read errors — treat as incomplete */
+					}
+					if (blogPhase === blogTerminalPhase || blogPhase === "done") {
+						log("blog-continue: phase=%s, workflow complete", blogPhase);
+						break;
+					}
+					const needsTool = isWriteCmd
+						? "Call save_draft with the finished Markdown post."
+						: "Call save_topics with your topic array.";
+					log(
+						"blog-continue: phase=%s (want %s), re-prompting (%d/%d)",
+						blogPhase || "unknown",
+						blogTerminalPhase,
+						attempt + 1,
+						MAX_BLOG_CONTINUATIONS,
+					);
+					await activeSession.prompt(
+						`The blog workflow is not complete. ${needsTool} ` +
+						"Continue from where you stopped — do not repeat completed steps. " +
+						"Call the next tool immediately without narrating.",
+					);
+				}
+			}
 		} catch (err) {
 			// Surface SDK errors back to the UI instead of swallowing them
 			// silently with just a "done" event.

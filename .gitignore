@@ -29,4 +29,11 @@ SHOW_HN.md
 
 # Antigravity OAuth client secret (injected into the sidecar bundle at build time; not committed)
 agent-sidecar/antigravity-client-secret
+
+# Bundled native binaries (node, git, gh) — too large for GitHub (>100 MB)
+src-tauri/binaries/node
+src-tauri/binaries/node-arm64
+src-tauri/binaries/node-x64
+src-tauri/binaries/gh
+src-tauri/binaries/git
 .superpowers/

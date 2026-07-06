@@ -97,7 +97,7 @@ export type ToolPhase =
 	| { type: "error"; toolName: string; message: string };
 
 export type StreamAction =
-	| { type: "START_STREAM"; prompt: string }
+	| { type: "START_STREAM"; prompt: string; displayText?: string }
 	| { type: "TEXT_DELTA"; delta: string }
 	| { type: "THINKING_DELTA"; delta: string }
 	| { type: "MODEL_INFO"; model: string; provider: string }
@@ -191,7 +191,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					{
 						id: crypto.randomUUID(),
 						role: "user",
-						content: action.prompt,
+						content: action.displayText ?? action.prompt,
 						timestamp: Date.now(),
 					},
 				],
@@ -581,8 +581,8 @@ export function usePiStream() {
 	}, []);
 
 	const startStream = useCallback(
-		async (text: string) => {
-			dispatch({ type: "START_STREAM", prompt: text });
+		async (text: string, displayText?: string) => {
+			dispatch({ type: "START_STREAM", prompt: text, displayText });
 
 			const channel = new Channel<PiEvent>();
 

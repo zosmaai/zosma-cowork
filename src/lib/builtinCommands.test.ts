@@ -17,6 +17,8 @@ function mockCtx(): CommandContext {
 		setModel: vi.fn(),
 		openSettings: vi.fn(),
 		showHelp: vi.fn(),
+		sendMessage: vi.fn(),
+		runAgent: vi.fn(),
 	};
 }
 

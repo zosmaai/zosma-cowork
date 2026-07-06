@@ -143,12 +143,10 @@ app.post("/token", async (req: Request, res: Response) => {
 		typeof code_verifier !== "string" ||
 		typeof redirect_uri !== "string"
 	) {
-		res
-			.status(400)
-			.json({
-				error: "invalid_request",
-				error_description: "code, code_verifier and redirect_uri are required",
-			});
+		res.status(400).json({
+			error: "invalid_request",
+			error_description: "code, code_verifier and redirect_uri are required",
+		});
 		return;
 	}
 	try {
@@ -162,12 +160,10 @@ app.post("/token", async (req: Request, res: Response) => {
 		});
 		if (status !== 200 || !data.access_token) {
 			console.warn(`token exchange failed status=${status} error=${data.error ?? ""}`);
-			res
-				.status(status === 200 ? 502 : status)
-				.json({
-					error: data.error ?? "token_exchange_failed",
-					error_description: data.error_description,
-				});
+			res.status(status === 200 ? 502 : status).json({
+				error: data.error ?? "token_exchange_failed",
+				error_description: data.error_description,
+			});
 			return;
 		}
 		res.json(tokenPayload(data));

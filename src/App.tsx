@@ -28,6 +28,8 @@ import {
 	findBuiltinCommand,
 	runBuiltinCommand,
 } from "@/lib/builtinCommands";
+import { BLOG_COMMANDS, findBlogCommand, runBlogCommand } from "@/lib/blogCommands";
+import { useBlogExtension } from "@/hooks/useBlogExtension";
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage } from "@/types";
@@ -104,6 +106,8 @@ function App() {
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 	const tasksApi = useTasks();
 	const routines = useRoutinesExtension(sidebarView === "tasks" || sidebarView === "history");
+	// Ensure @zosmaai/pi-blog is installed in the sidecar on first launch.
+	useBlogExtension(sidecarReady);
 	const selectedTask = tasksApi.tasks.find((t) => t.id === selectedTaskId) ?? null;
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
@@ -515,6 +519,48 @@ function App() {
 	);
 
 	/**
+	 * Like handleSend but shows a short label in the chat bubble instead of
+	 * the full prompt. Used by slash commands that inject large pipeline
+	 * prompts (e.g. blog commands) so the raw instructions never appear as a
+	 * user message.
+	 */
+	const handleRunAgent = useCallback(
+		async (displayText: string, prompt: string) => {
+			let sessionFile = activeSessionFile;
+			const isNewSession = !sessionFile;
+			if (!sessionFile) {
+				sessionFile = `session-${Date.now()}.jsonl`;
+				setActiveSessionFile(sessionFile);
+			}
+
+			if (isNewSession) {
+				const title = displayText.length > 80 ? `${displayText.slice(0, 77)}...` : displayText;
+				setSessionEntries((prev) => [
+					{
+						file: sessionFile,
+						title,
+						cwd: workspaceCwd ?? undefined,
+						messageCount: 1,
+						createdAt: Date.now(),
+						lastActivity: Date.now(),
+					},
+					...prev,
+				]);
+				trackEvent("session_created");
+			}
+
+			const activeModel = findModel(models, activeModelId);
+			trackEvent("message_sent", {
+				provider: activeModel?.provider?.split("-")[0] ?? "unknown",
+				model: activeModel?.id ?? "unknown",
+			});
+
+			startStream(prompt, displayText);
+		},
+		[activeSessionFile, startStream, models, activeModelId, workspaceCwd],
+	);
+
+	/**
 	 * Issue #201 PR 3 — Ctrl+↑ in the composer fires this. We atomically
 	 * drain the SDK queue (so nothing fires while the user is editing) and
 	 * load the drained messages into the composer via the existing
@@ -629,12 +675,37 @@ function App() {
 		await handleNewSession(selected);
 	}, [handleNewSession, workspaceCwd]);
 
-	// Slash-command dispatch (epic #179). Built-in commands close over these
-	// GUI actions; the registry itself is pure (src/lib/builtinCommands.ts).
-	// Interim: bare `/model` and `/help` open Settings until dedicated UI lands
-	// (see docs/plans/slash-commands-roadmap.md A2b).
+	// Slash-command dispatch (epic #179). Built-in + blog commands.
+	// Blog commands send rich prompts to the Pi sidecar agent; they do NOT
+	// need to call Pi's command system directly — the @zosmaai/pi-blog extension
+	// is pre-installed and its tools are available to the agent in every session.
 	const handleRunCommand = useCallback(
 		(cmd: Command, args: string) => {
+			// Check blog commands first (they share the "extensions" category).
+			const blog = findBlogCommand(cmd.name);
+			if (blog) {
+				const ctx: CommandContext = {
+					newSession: () => handleNewSessionPrompt(),
+					openSessions: () => setSidebarView("chats"),
+					openModelSelector: () => {
+						setSidebarView("settings");
+						setShowSettings(true);
+					},
+					setModel: () => {},
+					openSettings: () => {
+						setSidebarView("settings");
+						setShowSettings(true);
+					},
+					showHelp: () => {
+						setSidebarView("settings");
+						setShowSettings(true);
+					},
+					sendMessage: handleSend,
+					runAgent: handleRunAgent,
+				};
+				runBlogCommand(ctx, blog, args);
+				return;
+			}
 			const builtin = findBuiltinCommand(cmd.name);
 			if (!builtin) return;
 			const openSettings = () => {
@@ -653,10 +724,12 @@ function App() {
 				},
 				openSettings,
 				showHelp: openSettings,
+				sendMessage: handleSend,
+				runAgent: handleRunAgent,
 			};
 			runBuiltinCommand(ctx, builtin, args);
 		},
-		[handleNewSessionPrompt, handleModelSelect, models],
+		[handleNewSessionPrompt, handleModelSelect, models, handleRunAgent, handleSend],
 	);
 
 	// Load the sidecar's active workspace once it's ready, so the sidebar can
@@ -1116,7 +1189,7 @@ function App() {
 								onModelSelect={handleModelSelect}
 								toolPhase={toolPhase}
 								draft={composerDraft}
-								commands={BUILTIN_COMMANDS}
+								commands={[...BUILTIN_COMMANDS, ...BLOG_COMMANDS]}
 								onRunCommand={handleRunCommand}
 							/>
 						)}
