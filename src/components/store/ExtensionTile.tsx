@@ -5,7 +5,7 @@
  */
 
 import { cn } from "@/lib/utils";
-import { Settings } from "lucide-react";
+import { AlertTriangle, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { extensionDisplayName } from "../../lib/extensionBrowse";
@@ -21,6 +21,7 @@ export function ExtensionTile({
 	category,
 	onOpen,
 	onSettings,
+	needsConfig,
 	action,
 }: {
 	seed: string;
@@ -31,6 +32,8 @@ export function ExtensionTile({
 	category?: string;
 	onOpen?: () => void;
 	onSettings?: () => void;
+	/** Show a "needs configuration" indicator (required config missing). */
+	needsConfig?: boolean;
 	action: ReactNode;
 }) {
 	const clickable = !!onOpen;
@@ -77,6 +80,15 @@ export function ExtensionTile({
 						<p className="text-sm font-semibold text-foreground truncate leading-tight">{name}</p>
 						{version && (
 							<span className="text-[10px] text-muted-foreground/50 shrink-0">v{version}</span>
+						)}
+						{needsConfig && (
+							<span
+								title="Needs configuration"
+								className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400"
+							>
+								<AlertTriangle className="w-2.5 h-2.5" />
+								Setup
+							</span>
 						)}
 					</div>
 					{subtitle && (

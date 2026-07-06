@@ -7,8 +7,10 @@
  * tiles open a detail view with enable/disable, configuration, and uninstall.
  */
 
+import { ExtensionConfigForm } from "@/components/extension-setup/ExtensionConfigForm";
 import { useExtensions } from "@/hooks/useExtensions";
 import { getExtensionSetup } from "@/lib/extension-setup-registry";
+import { hasConfigSchema, isConfigIncomplete } from "@/lib/extensionConfigSchema";
 import { openExternalUrl } from "@/lib/utils";
 import type { ZemExtension } from "@/types";
 import {
@@ -86,6 +88,7 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 		install,
 		uninstall,
 		setEnabled,
+		setConfig,
 		searchDiscover,
 		installing,
 	} = useExtensions();
@@ -206,6 +209,14 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 		[setEnabled, onReload],
 	);
 
+	const handleSaveConfig = useCallback(
+		async (ext: ZemExtension, config: Record<string, unknown>) => {
+			await setConfig(ext.id, config);
+			onReload();
+		},
+		[setConfig, onReload],
+	);
+
 	// Recompute install state live so toggling/installing from the detail
 	// reflects pi's source of truth immediately.
 	const liveApp = useMemo(() => {
@@ -236,18 +247,26 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 	// Detail view short-circuits the grid — same app page for discover + installed.
 	if (liveApp) {
 		const setup = getExtensionSetup(liveApp);
-		const tab: AppTab = openTab === "setup" && !setup ? "install" : openTab;
+		// The Setup tab exists when the extension has a bespoke setup screen OR a
+		// generic configSchema we can render a form from (issue #178).
+		const showConfig = hasConfigSchema(liveApp.ext);
+		const hasSetup = !!setup || showConfig;
+		const tab: AppTab = openTab === "setup" && !hasSetup ? "install" : openTab;
 		return (
 			<div className="flex flex-col">
 				<AppDetail
 					app={liveApp}
 					tab={tab}
-					hasSetup={!!setup}
+					hasSetup={hasSetup}
+					showConfig={showConfig}
 					onTab={setOpenTab}
 					onBack={() => setOpenApp(null)}
 					onInstall={() => handleInstall(liveApp.pkg)}
 					onToggle={() => liveApp.ext && handleToggle(liveApp.ext)}
 					onUninstall={() => liveApp.ext && handleUninstall(liveApp.ext)}
+					onSaveConfig={(config) =>
+						liveApp.ext ? handleSaveConfig(liveApp.ext, config) : undefined
+					}
 					installing={installing === liveApp.pkg}
 				/>
 			</div>
@@ -428,8 +447,11 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										version={ext.version}
 										description={ext.description}
 										onOpen={() => showApp(appFromExt(ext))}
+										needsConfig={isConfigIncomplete(appFromExt(ext))}
 										onSettings={
-											getExtensionSetup(ext) ? () => showApp(appFromExt(ext), "setup") : undefined
+											getExtensionSetup(ext) || hasConfigSchema(ext)
+												? () => showApp(appFromExt(ext), "setup")
+												: undefined
 										}
 										action={
 											<ToggleSwitch
@@ -521,21 +543,25 @@ function AppDetail({
 	app,
 	tab,
 	hasSetup,
+	showConfig,
 	onTab,
 	onBack,
 	onInstall,
 	onToggle,
 	onUninstall,
+	onSaveConfig,
 	installing,
 }: {
 	app: StoreApp;
 	tab: AppTab;
 	hasSetup: boolean;
+	showConfig: boolean;
 	onTab: (t: AppTab) => void;
 	onBack: () => void;
 	onInstall: () => void;
 	onToggle: () => void;
 	onUninstall: () => void;
+	onSaveConfig: (config: Record<string, unknown>) => Promise<void> | void;
 	installing: boolean;
 }) {
 	const ext = app.ext;
@@ -603,7 +629,14 @@ function AppDetail({
 			</div>
 
 			{tab === "setup" && hasSetup ? (
-				<SetupTab app={app} setup={setup} onInstall={onInstall} installing={installing} />
+				<SetupTab
+					app={app}
+					setup={setup}
+					showConfig={showConfig}
+					onInstall={onInstall}
+					onSaveConfig={onSaveConfig}
+					installing={installing}
+				/>
 			) : (
 				<InstallTab
 					app={app}
@@ -752,16 +785,19 @@ function InstallTab({
 function SetupTab({
 	app,
 	setup,
+	showConfig,
 	onInstall,
+	onSaveConfig,
 	installing,
 }: {
 	app: StoreApp;
 	setup: ReturnType<typeof getExtensionSetup>;
+	showConfig: boolean;
 	onInstall: () => void;
+	onSaveConfig: (config: Record<string, unknown>) => Promise<void> | void;
 	installing: boolean;
 }) {
-	if (!setup) return null;
-	const SetupComponent = setup.Component;
+	if (!setup && !showConfig) return null;
 
 	if (!app.installed || !app.ext) {
 		return (
@@ -781,5 +817,12 @@ function SetupTab({
 		);
 	}
 
-	return <SetupComponent ext={app.ext} configKey={setup.key} />;
+	// Bespoke setup screen wins when whitelisted; otherwise render the generic
+	// configSchema-driven form (issue #178).
+	if (setup) {
+		const SetupComponent = setup.Component;
+		return <SetupComponent ext={app.ext} configKey={setup.key} />;
+	}
+
+	return <ExtensionConfigForm ext={app.ext} onSave={onSaveConfig} />;
 }
