@@ -116,7 +116,7 @@ function main() {
 	}
 	if (stale.length > 0) {
 		console.error(
-			`✗ Baseline is stale — you reduced inline token styles but didn't ratchet the baseline.\n  Run: npm run lint:styles -- --update\n${stale.join("\n")}`,
+			`✗ Baseline is stale — you reduced inline token styles but didn't ratchet the baseline.\n  Run: pnpm run lint:styles -- --update\n${stale.join("\n")}`,
 		);
 		process.exit(1);
 	}

@@ -112,11 +112,16 @@ jobs:
           # to the workflow's own branch (i.e. the default branch).
           ref: ${{ github.event.pull_request.head.sha || github.event.inputs.ref || github.ref }}
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -140,8 +145,8 @@ jobs:
         shell: bash
         run: |
           cd agent-sidecar
-          npm ci
-          npm run bundle
+          pnpm install --frozen-lockfile
+          pnpm run bundle
           # Patch import_meta.url for CJS compatibility (cross-platform node, not sed)
           node -e "
             const fs = require('fs');
@@ -157,7 +162,7 @@ jobs:
         run: node src-tauri/scripts/fetch-node.mjs
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Tell Tauri's macOS bundler to skip codesigning explicitly. Without
       # this, tauri-action sees an empty APPLE_SIGNING_IDENTITY env var and

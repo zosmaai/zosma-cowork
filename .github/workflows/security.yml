@@ -9,19 +9,26 @@ on:
     - cron: "0 6 * * 1" # Weekly on Monday
 
 jobs:
-  npm-audit:
-    name: npm audit
+  dependency-audit:
+    name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      # audit-ci wraps `npm audit` with an allowlist (audit-ci.jsonc) so a
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # audit-ci wraps the audit with an allowlist (audit-ci.jsonc) so a
       # build-tooling-only advisory can't red-gate unrelated PRs. Every
       # allowlist entry carries a reason + removal condition. See issue #264.
+      # audit-ci auto-detects pnpm-lock.yaml, no npm dependency here.
       - run: npx audit-ci --config audit-ci.jsonc
 
   cargo-audit:
