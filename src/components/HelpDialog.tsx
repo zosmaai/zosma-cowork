@@ -44,7 +44,12 @@ export function HelpDialog({ open, commands, onClose }: HelpDialogProps) {
 			className="fixed inset-0 z-50 flex items-center justify-center"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+			<div
+				className="absolute inset-0 bg-black/50"
+				onClick={onClose}
+				onKeyDown={(e) => e.key === "Escape" && onClose()}
+				aria-hidden="true"
+			/>
 
 			{/* Panel */}
 			<div

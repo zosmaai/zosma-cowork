@@ -35,10 +35,10 @@ export function ModelSelector({
 	// Use controlled value when provided, otherwise fall back to internal state.
 	const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
 
-	const setOpen = (value: boolean) => {
+	const setOpen = useCallback((value: boolean) => {
 		setInternalOpen(value);
 		onOpenChange?.(value);
-	};
+	}, [onOpenChange]);
 	const [query, setQuery] = useState("");
 	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 	// Max height of the whole dropdown box, clamped to the space actually
@@ -95,7 +95,7 @@ export function ModelSelector({
 		recalcPosition();
 		setOpen(true);
 		setQuery("");
-	}, [recalcPosition]);
+	}, [recalcPosition, setOpen]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -116,7 +116,7 @@ export function ModelSelector({
 			document.removeEventListener("mousedown", close);
 			window.removeEventListener("scroll", onScroll, true);
 		};
-	}, [open, recalcPosition]);
+	}, [open, recalcPosition, setOpen]);
 
 	useEffect(() => {
 		if (open) requestAnimationFrame(() => searchRef.current?.focus());
