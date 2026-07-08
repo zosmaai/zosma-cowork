@@ -19,7 +19,7 @@ echo "================================================"
 echo ""
 echo "=== Step 1: Build sidecar bundle + frontend ==="
 node scripts/prebuild.mjs
-npm run build:frontend
+pnpm run build:frontend
 
 # ── Step 2: Build Tauri app (creates binary, deb, rpm, AppDir) ──
 echo ""

@@ -11,7 +11,7 @@
 //   - src-tauri/binaries/node             (fetched by src-tauri/scripts/fetch-node.mjs)
 //
 // Those generators run from `beforeBuildCommand` (production `tauri build`), but
-// NOT from `beforeDevCommand`. So a fresh checkout running `npm run dev` fails
+// NOT from `beforeDevCommand`. So a fresh checkout running `pnpm run dev` fails
 // with `resource path 'agent-sidecar/index.cjs' doesn't exist` before any code
 // runs. This script bridges that gap for the dev workflow.
 //
@@ -52,7 +52,7 @@ ensure(
 		"// DEV STUB — not used in `tauri dev` (the sidecar runs from",
 		"// agent-sidecar/src/index.ts via tsx). The real bundle is produced by",
 		"// scripts/prebuild.mjs during a production `tauri build`.",
-		'throw new Error("agent-sidecar/index.cjs is a dev stub — run `npm run build` to generate the real bundle.");',
+		'throw new Error("agent-sidecar/index.cjs is a dev stub — run `pnpm run build` to generate the real bundle.");',
 		"",
 	].join("\n"),
 );
@@ -99,6 +99,6 @@ if (created === 0) {
 	console.log("[ensure-dev-resources] all bundle resources present — nothing to do.");
 } else {
 	console.log(
-		`[ensure-dev-resources] ${created} dev stub(s) created. Run \`npm run build\` for a real production bundle.`,
+		`[ensure-dev-resources] ${created} dev stub(s) created. Run \`pnpm run build\` for a real production bundle.`,
 	);
 }

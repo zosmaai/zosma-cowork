@@ -19,4 +19,4 @@ echo '{"type":"init","zosmaDir":"/tmp/zosma-test-$$"}' | timeout 10 node src-tau
 
 echo ""
 echo "=== Done ==="
-echo "The bundle started without ENOENT errors. Ready for 'npm run build' (tauri build)."
+echo "The bundle started without ENOENT errors. Ready for 'pnpm run build' (tauri build)."

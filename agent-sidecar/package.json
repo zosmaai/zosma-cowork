@@ -8,7 +8,7 @@
     "vendor:latest": "node scripts/vendor-latest.mjs",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs --external:@opentelemetry/api",
     "start": "node dist/bundle.cjs",
     "test": "vitest run --config vitest.config.ts"
   },
@@ -17,9 +17,10 @@
     "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@earendil-works/pi-tui": "^0.74.0",
+    "chokidar": "^4.0.0",
     "jiti": "^2.7.0",
     "typebox": "^1.1.24",
-    "chokidar": "^4.0.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -16,7 +16,8 @@
 		"test": "vitest run --passWithNoTests",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
-		"validate": "npm run lint && npm run lint:styles && npm run typecheck && npm run test"
+		"validate": "pnpm run lint && pnpm run lint:styles && pnpm run typecheck && pnpm run test",
+		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd .."
 	},
 	"dependencies": {
 		"@radix-ui/react-tooltip": "^1.2.8",
@@ -40,7 +41,8 @@
 		"react-dom": "^19.1.0",
 		"react-markdown": "^10.1.0",
 		"remark-gfm": "^4.0.1",
-		"tailwind-merge": "^3.5.0"
+		"tailwind-merge": "^3.5.0",
+		"unist-util-visit": "^5.1.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
@@ -49,6 +51,7 @@
 		"@testing-library/jest-dom": "^6.9.1",
 		"@testing-library/react": "^16.3.2",
 		"@testing-library/user-event": "^14.6.1",
+		"@types/hast": "^3.0.4",
 		"@types/qrcode": "^1.5.6",
 		"@types/react": "^19.1.0",
 		"@types/react-dom": "^19.1.0",

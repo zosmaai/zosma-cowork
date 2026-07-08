@@ -17,29 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Lint styles (inline token-color guardrail)
-        run: npm run lint:styles
+        run: pnpm run lint:styles
 
       - name: Type check
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Test
-        run: npm run test
+        run: pnpm run test
 
       - name: Build frontend
-        run: npm run build:frontend
+        run: pnpm run build:frontend
         env:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
@@ -52,24 +57,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: agent-sidecar/package-lock.json
+          cache: pnpm
+          cache-dependency-path: agent-sidecar/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Type check
         run: npx tsc --noEmit
 
       - name: Test
-        run: npm run test
+        run: pnpm run test
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
   docs:
     name: Docs Site Build
@@ -105,11 +115,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Build agent-sidecar
         run: node scripts/prebuild.mjs
@@ -131,7 +146,7 @@ jobs:
         run: node scripts/ensure-dev-resources.mjs
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Setup Rust
         run: |

@@ -5,7 +5,7 @@
 // The vendored pi-anthropic-messages bridge is managed by
 // `agent-sidecar/scripts/fetch-vendor.mjs`, which the sidecar's
 // `postinstall` hook runs automatically before tsc/esbuild see the
-// source. We don't duplicate that logic here — the `npm ci` below
+// source. We don't duplicate that logic here — the `pnpm install` below
 // triggers it.
 
 import { execSync } from "node:child_process";
@@ -16,7 +16,7 @@ const root = resolve(import.meta.dirname, "..");
 const sidecarDir = join(root, "agent-sidecar");
 
 console.log("[prebuild] Building agent-sidecar bundle...");
-execSync("npm ci && npm run bundle", {
+execSync("pnpm install --frozen-lockfile && pnpm run bundle", {
 	cwd: sidecarDir,
 	shell: true,
 	stdio: "inherit",
