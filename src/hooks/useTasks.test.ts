@@ -102,6 +102,26 @@ describe("useTasks", () => {
 		expect(invokeMock).toHaveBeenCalledWith("tasks_list");
 	});
 
+	it("create surfaces the error and returns null when tasks_create rejects", async () => {
+		const { result } = renderHook(() => useTasks());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		invokeMock.mockClear();
+		invokeMock.mockRejectedValueOnce(new Error("create failed"));
+		let returned: unknown;
+		await act(async () => {
+			returned = await result.current.create({
+				name: "every 5 minutes",
+				schedule: "*/5 * * * *",
+				prompt: "go",
+				runImmediately: true,
+			});
+		});
+		expect(returned).toBeNull();
+		expect(result.current.error).toBe("create failed");
+		// A failed create must NOT refetch the list on the error path.
+		expect(invokeMock).not.toHaveBeenCalledWith("tasks_list");
+	});
+
 	it("reportError surfaces a client-side message", async () => {
 		const { result } = renderHook(() => useTasks());
 		await waitFor(() => expect(result.current.loading).toBe(false));

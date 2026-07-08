@@ -1580,11 +1580,15 @@ async fn tasks_create(
     run_immediately: Option<bool>,
     s: State<'_, AppState>,
 ) -> Result<Value, String> {
+    // Unique id per call: a hardcoded id collides in `pending_requests` when
+    // several callers invoke this command concurrently (the map insert
+    // overwrites, so all-but-one request resolves as "closed" and errors).
+    let id = format!("tc-{}", uuid_v4());
     scmd_r(
         &s,
         &serde_json::json!({
             "type": "tasks_create",
-            "id": "tc",
+            "id": id,
             "name": name,
             "schedule": schedule,
             "prompt": prompt,

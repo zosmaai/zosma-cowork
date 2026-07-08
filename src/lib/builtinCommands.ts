@@ -68,9 +68,11 @@ const UNIT_NOUN: Record<"m" | "h" | "d", string> = {
  *
  * cron is minute-granular, so sub-minute intervals round up to 1 minute. Each
  * unit maps to its natural cron slot; a value that overflows its slot (e.g.
- * `90m`) is rejected with a hint rather than silently mangled.
+ * `90m`) returns a helpful { error } pointing at the next unit up rather than
+ * being silently mangled or rejected with the generic usage string. `null` is
+ * reserved for tokens we can't parse at all (bad format / unknown unit).
  */
-function intervalToCron(token: string): { cron: string; label: string } | null {
+function intervalToCron(token: string): { cron: string; label: string } | { error: string } | null {
 	const match = /^(\d+)\s*([a-z]*)$/i.exec(token.trim());
 	if (!match) return null;
 	const value = Number.parseInt(match[1], 10);
@@ -83,21 +85,37 @@ function intervalToCron(token: string): { cron: string; label: string } | null {
 	// Seconds can't be expressed in cron: round up to whole minutes.
 	if (unit === "s") {
 		const mins = Math.max(1, Math.ceil(value / 60));
-		if (mins > 59) return null;
+		if (mins > 59) {
+			return {
+				error: `${value} seconds is too large for a seconds interval — use hours instead (e.g. ${Math.ceil(value / 3600)}h).`,
+			};
+		}
 		return { cron: `*/${mins} * * * *`, label: cadence(mins, "m") };
 	}
 	if (unit === "m") {
 		if (value === 60) return { cron: "0 * * * *", label: cadence(1, "h") };
-		if (value > 59) return null;
+		if (value > 59) {
+			return {
+				error: `${value} minutes is too large for a minute interval — use hours instead (e.g. ${Math.ceil(value / 60)}h).`,
+			};
+		}
 		return { cron: `*/${value} * * * *`, label: cadence(value, "m") };
 	}
 	if (unit === "h") {
 		if (value === 24) return { cron: "0 0 * * *", label: cadence(1, "d") };
-		if (value > 23) return null;
+		if (value > 23) {
+			return {
+				error: `${value} hours is too large for an hour interval — use days instead (e.g. ${Math.ceil(value / 24)}d).`,
+			};
+		}
 		return { cron: `0 */${value} * * *`, label: cadence(value, "h") };
 	}
 	// days
-	if (value > 31) return null;
+	if (value > 31) {
+		return {
+			error: `${value} days is too large for a day interval — the maximum is 31d.`,
+		};
+	}
 	return { cron: `0 0 */${value} * *`, label: cadence(value, "d") };
 }
 
@@ -130,6 +148,11 @@ export function parseLoopArgs(args: string): LoopParseResult {
 			ok: false,
 			error: `Couldn't read the interval "${intervalToken}". ${LOOP_USAGE}`,
 		};
+	}
+	// Overflow (e.g. `90m`): surface the specific next-unit-up hint instead of
+	// the generic usage string.
+	if ("error" in parsed) {
+		return { ok: false, error: parsed.error };
 	}
 	return { ok: true, cron: parsed.cron, prompt, label: parsed.label };
 }

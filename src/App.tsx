@@ -654,23 +654,40 @@ function App() {
 				openSettings,
 				showHelp: openSettings,
 				startLoop: (result) => {
-					// Surface parse errors in the shared Tasks banner; on success
-					// create a recurring task that fires immediately and reveal the
-					// Tasks list so the new loop (and its first run) is visible.
-					setSidebarView("tasks");
+					// Parse error: surface it in the shared Tasks banner and reveal
+					// the list so the message is visible.
 					if (!result.ok) {
 						tasksApi.reportError(result.error);
+						setSidebarView("tasks");
 						return;
 					}
-					void tasksApi.create({
-						name: result.label,
-						schedule: result.cron,
-						prompt: result.prompt,
-						taskType: "session",
-						recurring: true,
-						runImmediately: true,
-						...(activeSessionFile ? { sessionId: activeSessionFile } : {}),
-					});
+					// Create the recurring task FIRST, then reveal the Tasks list —
+					// only once the loop actually exists do we switch views, so a
+					// failed create never drops the user onto an empty Tasks page.
+					// Don't fire-and-forget: await the result so a creation failure
+					// is surfaced (tasksApi.create() sets the shared error banner and
+					// returns null) instead of being silently voided.
+					void tasksApi
+						.create({
+							name: result.label,
+							schedule: result.cron,
+							prompt: result.prompt,
+							taskType: "session",
+							recurring: true,
+							runImmediately: true,
+							...(activeSessionFile ? { sessionId: activeSessionFile } : {}),
+						})
+						.then((created) => {
+							if (!created) {
+								// create() already populated the shared error banner;
+								// log for diagnostics too so it isn't silently discarded.
+								console.error("Failed to create /loop task");
+							}
+							// Reveal the Tasks list either way: on success it shows the
+							// new loop and its first run; on failure it surfaces the
+							// error banner set by create().
+							setSidebarView("tasks");
+						});
 				},
 			};
 			runBuiltinCommand(ctx, builtin, args);
