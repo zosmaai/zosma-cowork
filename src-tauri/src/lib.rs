@@ -371,9 +371,21 @@ async fn spawn_sidecar(
     } else {
         let node_path = find_node(&app);
         run_cmd = node_path.to_string_lossy().to_string();
-        run_args = vec![p_str];
-        log::info!("Sidecar: {} {}", run_cmd, run_args[0]);
+        // `--use-system-ca` (Node 22.15+/24) makes Node consult the OS trust
+        // store for OAuth token exchange behind corporate MITM proxies. We pass
+        // it as a real Node CLI ARG (not via NODE_OPTIONS) on purpose: pi shells
+        // out to `npm` for extension installs, and a child Node inherits the
+        // parent's NODE_OPTIONS. Older child Nodes reject `--use-system-ca` in
+        // NODE_OPTIONS and exit with code 9, which silently broke every
+        // extension install. A CLI arg is consumed by THIS Node only and never
+        // leaks to child processes. See the NODE_OPTIONS block below.
+        run_args = vec!["--use-system-ca".to_string(), p_str];
+        log::info!("Sidecar: {} {} {}", run_cmd, run_args[0], run_args[1]);
     }
+    // True when `--use-system-ca` was handed to Node as a CLI arg above (the
+    // production/bundled-Node path). Dev mode runs via tsx and still relies on
+    // NODE_OPTIONS below.
+    let system_ca_via_arg = !is_dev;
 
     let mut c = Command::new(&run_cmd);
     for a in &run_args {
@@ -389,14 +401,59 @@ async fn spawn_sidecar(
     // Falls back gracefully when the OS store has no extras. Preserve any
     // pre-existing NODE_OPTIONS the user has set.
     let existing_node_opts = std::env::var("NODE_OPTIONS").unwrap_or_default();
-    let node_options = if existing_node_opts.contains("--use-system-ca") {
-        existing_node_opts
-    } else if existing_node_opts.is_empty() {
-        "--use-system-ca".to_string()
+    if system_ca_via_arg {
+        // Production: `--use-system-ca` is already a Node CLI arg (see above), so
+        // we must NOT add it to NODE_OPTIONS — doing so would re-introduce the
+        // exit-code-9 leak into the child `npm` process. Preserve any
+        // user-provided NODE_OPTIONS untouched.
+        if !existing_node_opts.is_empty() {
+            c.env("NODE_OPTIONS", existing_node_opts);
+        }
     } else {
-        format!("{existing_node_opts} --use-system-ca")
-    };
-    c.env("NODE_OPTIONS", node_options);
+        // Dev (tsx): pass `--use-system-ca` via NODE_OPTIONS. Dev machines run a
+        // modern Node that accepts it, and installs there use the dev toolchain.
+        let node_options = if existing_node_opts.contains("--use-system-ca") {
+            existing_node_opts
+        } else if existing_node_opts.is_empty() {
+            "--use-system-ca".to_string()
+        } else {
+            format!("{existing_node_opts} --use-system-ca")
+        };
+        c.env("NODE_OPTIONS", node_options);
+    }
+    // Export the bundled npm entrypoint so the sidecar can install extensions
+    // with NO system Node/npm (pi runs `<thisNode> --use-system-ca <npm-cli.js>
+    // install ...`). Production/bundled only; dev falls back to system `npm`.
+    if !is_dev {
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let binaries_dir = resource_dir.join("binaries");
+            let npm_cli = binaries_dir.join("npm").join("bin").join("npm-cli.js");
+            if npm_cli.exists() {
+                let npm_cli = strip_unc_prefix(npm_cli);
+                log::info!("Bundled npm: {:?}", npm_cli);
+                c.env(
+                    "ZOSMA_BUNDLED_NPM_CLI",
+                    npm_cli.to_string_lossy().to_string(),
+                );
+                // Prepend the bundled Node dir to PATH so npm lifecycle scripts
+                // (e.g. protobufjs postinstall → `node scripts/postinstall`) can
+                // resolve `node` on a machine with no system Node/npm. Without
+                // this, install aborts with `sh: node: not found` (exit 127).
+                let node_dir = strip_unc_prefix(binaries_dir);
+                let sep = if cfg!(windows) { ";" } else { ":" };
+                let cur = std::env::var("PATH").unwrap_or_default();
+                c.env(
+                    "PATH",
+                    format!("{}{}{}", node_dir.to_string_lossy(), sep, cur),
+                );
+            } else {
+                log::warn!(
+                    "Bundled npm not found at {:?} — extension install will rely on system npm",
+                    npm_cli
+                );
+            }
+        }
+    }
     // Dev mode: parse the repo-root .env and inject each var directly onto
     // the child process. This is the only safe approach — Node.js explicitly
     // disallows --env-file inside NODE_OPTIONS (exits with code 9).
@@ -2288,13 +2345,25 @@ async fn open_url(url: String) -> Result<(), String> {
     // the rejection.
     #[cfg(target_os = "windows")]
     let result = {
-        // `cmd /c start "" <url>` — the empty quoted string is required
-        // because `start` interprets the first quoted arg as the window
-        // title. CREATE_NO_WINDOW (0x08000000) prevents a brief flash of
-        // a console window when the GUI app shells out.
+        // `cmd /c start "" "<url>"`. Two things are load-bearing here:
+        //   1. The empty `""` is the window title `start` expects as its first
+        //      quoted arg.
+        //   2. The URL MUST be wrapped in double quotes, appended via `raw_arg`
+        //      so Rust doesn't re-escape it. Without the quotes, cmd.exe treats
+        //      `&` as a command separator and truncates the URL at the FIRST
+        //      `&` — so an OAuth URL like
+        //        …/auth?client_id=X&redirect_uri=…&response_type=code&scope=…
+        //      collapses to just `client_id=X`, and Google rejects it with
+        //      "Access blocked: Authorisation error — Required parameter is
+        //      missing: response_type" (Error 400: invalid_request). Quoting
+        //      also stops `%` in percent-encoded params being read as a cmd
+        //      variable reference. This mirrors how the `open` crate (used by
+        //      tauri-plugin-shell) opens URLs on Windows.
+        // CREATE_NO_WINDOW (0x08000000) prevents a brief console-window flash.
         use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
-            .args(["/c", "start", "", &url])
+            .args(["/c", "start", ""])
+            .raw_arg(format!("\"{url}\""))
             .creation_flags(0x0800_0000)
             .status()
     };

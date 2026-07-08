@@ -16,7 +16,12 @@ vi.mock("node:os", async (orig) => {
 	return { ...actual, homedir: () => HOME };
 });
 
-import { discoverExtensions, setExtensionEnabled } from "./extension-manager.js";
+import {
+	bundledNpmCommand,
+	discoverExtensions,
+	normalizeInstallSource,
+	setExtensionEnabled,
+} from "./extension-manager.js";
 
 const piAgent = () => join(HOME, ".pi", "agent");
 
@@ -46,6 +51,65 @@ beforeEach(() => {
 
 afterEach(() => {
 	if (HOME && existsSync(HOME)) rmSync(HOME, { recursive: true, force: true });
+});
+
+describe("normalizeInstallSource", () => {
+	// Regression: a bare npm name must be prefixed with `npm:`, otherwise pi's
+	// package manager treats it as a local path and fails installs on a fresh
+	// machine with `Path does not exist: /Users/<user>/@scope/name`.
+	it("prefixes bare scoped + unscoped npm names with npm:", () => {
+		expect(normalizeInstallSource("@zosmaai/pi-llm-wiki")).toBe("npm:@zosmaai/pi-llm-wiki");
+		expect(normalizeInstallSource("pi-routines")).toBe("npm:pi-routines");
+		expect(normalizeInstallSource("  @scope/name  ")).toBe("npm:@scope/name");
+	});
+
+	it("leaves already-schemed sources untouched", () => {
+		for (const s of [
+			"npm:@scope/name",
+			"git:example.com/x",
+			"git+https://example.com/x.git",
+			"github:owner/repo",
+			"https://example.com/x.tgz",
+			"ssh://git@example.com/x",
+			"git@github.com:owner/repo.git",
+		]) {
+			expect(normalizeInstallSource(s)).toBe(s);
+		}
+	});
+
+	it("leaves genuine local paths untouched", () => {
+		for (const s of ["./local-ext", "/abs/path", "~/dev/ext", "C:\\dev\\ext", "D:/ext"]) {
+			expect(normalizeInstallSource(s)).toBe(s);
+		}
+	});
+});
+
+describe("bundledNpmCommand", () => {
+	// Regression: on a machine with no system Node/npm (the common "not set up
+	// for dev work" case), extension install must use Cowork's bundled Node+npm.
+	// The Tauri host advertises the bundled npm-cli.js via ZOSMA_BUNDLED_NPM_CLI.
+	it("returns [thisNode, --use-system-ca, cli] when the bundled npm exists", () => {
+		const cmd = bundledNpmCommand(
+			{ ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js" },
+			"/app/binaries/node",
+			() => true,
+		);
+		expect(cmd).toEqual(["/app/binaries/node", "--use-system-ca", "/app/binaries/npm/bin/npm-cli.js"]);
+	});
+
+	it("returns undefined when the env var is unset (dev / system npm fallback)", () => {
+		expect(bundledNpmCommand({}, "/usr/bin/node", () => true)).toBeUndefined();
+	});
+
+	it("returns undefined when the advertised cli path is missing (never a broken stub)", () => {
+		expect(
+			bundledNpmCommand(
+				{ ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js" },
+				"/app/binaries/node",
+				() => false,
+			),
+		).toBeUndefined();
+	});
 });
 
 describe("discoverExtensions (pi-native)", () => {

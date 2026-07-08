@@ -13,7 +13,7 @@
  */
 
 import { execFileSync, execSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -23,15 +23,23 @@ const OFFICECLI_RELEASES = "https://github.com/iOfficeAI/OfficeCLI/releases";
 
 /**
  * Platform-specific download URLs for the latest OfficeCLI release.
- * Maps Node process.platform + process.arch to GitHub release asset names.
- * Falls back to Linux x64 if no match (most common server env).
+ * Maps Node `process.platform-process.arch` to the GitHub release asset name.
+ *
+ * IMPORTANT: these must match the ACTUAL asset names on
+ * github.com/iOfficeAI/OfficeCLI/releases. Upstream ships a single
+ * self-contained binary per platform (NOT an archive), and uses `win`/`mac`
+ * (not `windows`/`macos`). The previous names (`officecli-windows-x64.zip`,
+ * `officecli-macos-x64.tar.gz`, `officecli-linux-x64.tar.gz`) 404'd on every
+ * platform, so auto-download always failed and the "create document" tool was
+ * broken everywhere — e.g. "the native tool had a dependency issue".
  */
-const DOWNLOAD_URLS: Record<string, string> = {
-	"linux-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-linux-x64.tar.gz`,
-	"linux-arm64": `${OFFICECLI_RELEASES}/latest/download/officecli-linux-arm64.tar.gz`,
-	"darwin-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-macos-x64.tar.gz`,
-	"darwin-arm64": `${OFFICECLI_RELEASES}/latest/download/officecli-macos-arm64.tar.gz`,
-	"win32-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-windows-x64.zip`,
+export const DOWNLOAD_URLS: Record<string, string> = {
+	"linux-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-linux-x64`,
+	"linux-arm64": `${OFFICECLI_RELEASES}/latest/download/officecli-linux-arm64`,
+	"darwin-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-mac-x64`,
+	"darwin-arm64": `${OFFICECLI_RELEASES}/latest/download/officecli-mac-arm64`,
+	"win32-x64": `${OFFICECLI_RELEASES}/latest/download/officecli-win-x64.exe`,
+	"win32-arm64": `${OFFICECLI_RELEASES}/latest/download/officecli-win-arm64.exe`,
 };
 
 const RESOLVER_VERSION = 1; // Bump to invalidate all cached binaries
@@ -155,7 +163,7 @@ export class OfficeCLIResolver {
 	 */
 	private readVersion(binaryPath: string): string {
 		try {
-			const output = execSync(`"${binaryPath}" version 2>&1`, {
+			const output = execSync(`"${binaryPath}" --version 2>&1`, {
 				encoding: "utf-8",
 				timeout: 5_000,
 			});
@@ -199,59 +207,33 @@ export class OfficeCLIResolver {
 		const binDir = join(this.zosmaDir, "cowork", "bin");
 		mkdirSync(binDir, { recursive: true });
 
-		const isWindows = process.platform === "win32";
-		const archivePath = join(binDir, isWindows ? "officecli.zip" : "officecli.tar.gz");
+		// Upstream ships a single self-contained binary per platform (no archive),
+		// so download it straight to the destination — no unzip/tar step. Write to
+		// a temp path first and rename into place, so a partial/failed download can
+		// never leave a truncated binary that later "resolves" and then crashes.
+		const binaryPath = this.bundledPath();
+		const tmpPath = `${binaryPath}.download`;
 
 		try {
-			// Download
 			console.error(`[office-docs] Downloading OfficeCLI for ${platformKey}...`);
-			this.downloadFile(downloadUrl, archivePath);
+			this.downloadFile(downloadUrl, tmpPath);
 
-			// Extract
-			if (isWindows) {
-				execSync(
-					`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${binDir}' -Force"`,
-					{
-						stdio: "pipe",
-						timeout: 30_000,
-					},
-				);
-			} else {
-				execSync(`tar -xzf "${archivePath}" -C "${binDir}" 2>&1`, {
-					stdio: "pipe",
-					timeout: 30_000,
-				});
+			if (!existsSync(tmpPath) || statSync(tmpPath).size === 0) {
+				throw new Error("downloaded file is empty");
 			}
 
-			// Cleanup archive
-			try {
-				const rmCmd = isWindows ? "del" : "rm";
-				execSync(`${rmCmd} "${archivePath}"`, { timeout: 5_000 });
-			} catch {
-				// Non-critical cleanup failure
-			}
+			if (existsSync(binaryPath)) rmSync(binaryPath, { force: true });
+			renameSync(tmpPath, binaryPath);
+			// chmod is a no-op on Windows; needed so the raw binary is executable.
+			if (process.platform !== "win32") chmodSync(binaryPath, 0o755);
 
-			const binaryPath = this.bundledPath();
-			if (!existsSync(binaryPath)) {
-				// Try to find the extracted binary
-				const found = this.findExtractedBinary(binDir);
-				if (found) {
-					chmodSync(found, 0o755);
-					console.error(`[office-docs] Installed OfficeCLI to ${found}`);
-					return found;
-				}
-				throw new Error("Binary not found after extraction");
-			}
-
-			chmodSync(binaryPath, 0o755);
 			console.error(`[office-docs] Installed OfficeCLI to ${binaryPath}`);
 			return binaryPath;
 		} catch (err) {
-			// Clean up partial downloads
 			try {
-				if (existsSync(archivePath)) execSync(`rm -f "${archivePath}"`, { timeout: 5_000 });
+				if (existsSync(tmpPath)) rmSync(tmpPath, { force: true });
 			} catch {
-				// ignore
+				// ignore cleanup failure
 			}
 			throw new OfficeCLINotFoundError(
 				`Failed to download OfficeCLI: ${err instanceof Error ? err.message : String(err)}`,
@@ -292,23 +274,6 @@ export class OfficeCLIResolver {
 		execFileSync(process.execPath, ["-e", script], {
 			timeout: 60_000,
 		});
-	}
-
-	/**
-	 * After extraction, the binary might not be at the expected path.
-	 * Search the bin directory for anything named officecli*.
-	 */
-	private findExtractedBinary(binDir: string): string | null {
-		const { readdirSync } = require("node:fs") as typeof import("node:fs");
-		try {
-			const entries = readdirSync(binDir);
-			const binary = entries.find(
-				(e) => e.startsWith("officecli") && !e.endsWith(".tar.gz") && !e.endsWith(".zip"),
-			);
-			return binary ? join(binDir, binary) : null;
-		} catch {
-			return null;
-		}
 	}
 }
 

@@ -88,6 +88,13 @@ for (const tool of ["gh", "git"]) {
 	}
 }
 
+// 4. Bundled npm (JS package). Fetched by fetch-node.mjs during
+//    beforeBuildCommand; not present in dev. The `binaries/npm/**/*` resource
+//    glob still needs at least one file to exist. A bare placeholder (NO
+//    bin/npm-cli.js) means the Rust host won't advertise a bundled npm, so the
+//    sidecar falls back to the system `npm` — which is correct for dev.
+ensure(join("binaries", "npm", ".placeholder"), "npm is bundled only in production builds\n");
+
 if (created === 0) {
 	console.log("[ensure-dev-resources] all bundle resources present — nothing to do.");
 } else {

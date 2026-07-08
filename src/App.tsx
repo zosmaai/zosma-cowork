@@ -36,7 +36,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getFontScale } from "./lib/font-scale";
+import { fontScaleClass, getFontScale } from "./lib/font-scale";
+import { cn } from "./lib/utils";
 
 interface SessionEntry {
 	file: string;
@@ -842,7 +843,13 @@ function App() {
 	}));
 
 	return (
-		<div className="flex h-screen md:gap-2.5 md:p-2.5" style={{ zoom: fontScale }}>
+		// The app is scaled with CSS `zoom` (font-size presets). Because `zoom`
+		// multiplies the PAINTED size, the root height is zoom-COMPENSATED (100vh
+		// divided by the scale) so it always paints as exactly one viewport —
+		// otherwise Large/Extra-Large overflows <body>, and focus-scroll clips the
+		// fixed sidebar top-chrome (the New-chat button) off the top. The per-preset
+		// zoom + height utilities live in `fontScaleClass` (see lib/font-scale.ts).
+		<div className={cn("flex md:gap-2.5 md:p-2.5", fontScaleClass(fontScale))}>
 			{/* Extension UI dialogs (pi-ask-user etc. via ctx.ui) */}
 			<ExtensionUiHost />
 

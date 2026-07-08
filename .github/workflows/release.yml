@@ -276,7 +276,20 @@ jobs:
           # before un-drafting. If the matrix is silently producing empty
           # releases we want to know now, not when a user clicks an empty
           # tag page.
-          ASSETS_JSON=$(gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          #
+          # Retry with backoff: GitHub's release API can return stale results
+          # immediately after matrix uploads complete (eventual consistency).
+          # See: failed v0.16.8 release where assets existed but gh CLI returned
+          # empty for ~60s after upload.
+          ASSETS_JSON=""
+          for attempt in 1 2 3 4 5; do
+            ASSETS_JSON=$(gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' 2>/dev/null || true)
+            if [ -n "$ASSETS_JSON" ]; then
+              break
+            fi
+            echo "⏳ release assets not visible yet (attempt $attempt/5), waiting..."
+            sleep $((attempt * 10))
+          done
           echo "Release assets:"
           echo "$ASSETS_JSON"
           MISSING=0

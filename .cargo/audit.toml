@@ -1,0 +1,19 @@
+# cargo-audit configuration
+#
+# Temporary ignores for two DoS-class advisories in `quick-xml`, which enters the
+# dependency graph only as a deep transitive dep of the Tauri desktop stack:
+#   * RUSTSEC-2026-0194 — quadratic run time when checking a start tag for
+#     duplicate attribute names
+#   * RUSTSEC-2026-0195 — unbounded namespace-declaration allocation in `NsReader`
+#     (memory-exhaustion DoS)
+# Both are fixed only in quick-xml >= 0.41.0. Our lockfile pins two older majors
+# that we do not control directly:
+#   * 0.37.5  via  tauri-winrt-notification
+#   * 0.39.2  via  the Tauri bundler / plist stack
+# Advancing past them requires a Tauri upgrade. Neither path parses untrusted XML
+# in zosma-cowork, so real-world exploitability here is negligible.
+#
+# TODO: remove these ignores once Tauri is bumped to a release that pulls
+# quick-xml >= 0.41.0, then re-run `cargo audit` to confirm a clean bill.
+[advisories]
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]

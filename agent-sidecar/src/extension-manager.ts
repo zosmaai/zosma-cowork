@@ -107,7 +107,53 @@ function savePrefs(prefs: ExtPrefs): void {
  */
 function makePackageManager(cwd: string): DefaultPackageManager {
 	const settingsManager = SettingsManager.create(cwd, piAgentDir());
+	applyBundledNpm(settingsManager);
 	return new DefaultPackageManager({ cwd, agentDir: piAgentDir(), settingsManager });
+}
+
+/**
+ * Point pi's npm command at Cowork's BUNDLED Node + npm so extension install
+ * works on machines with no system Node/npm — the common "not set up for dev
+ * work" case that otherwise fails with `npm ... failed` after the source has
+ * been correctly classified as npm.
+ *
+ * The Tauri host exports `ZOSMA_BUNDLED_NPM_CLI` (absolute path to the bundled
+ * `npm-cli.js`) only in production when the resource exists. We then run npm as
+ * `<thisNode> --use-system-ca <npm-cli.js>`:
+ *   - `process.execPath` is the SAME bundled Node that runs this sidecar, so no
+ *     system Node is required, and it's new enough (v24) to accept the flag.
+ *   - `--use-system-ca` is passed as a real CLI arg (NOT via `NODE_OPTIONS`,
+ *     which older child Nodes reject with exit code 9) so npm still trusts
+ *     corporate MITM roots for the registry TLS handshake.
+ *
+ * Returns undefined in dev / when no bundle is present → pi falls back to the
+ * system `npm` on PATH, exactly as before.
+ */
+export function bundledNpmCommand(
+	env: NodeJS.ProcessEnv = process.env,
+	execPath: string = process.execPath,
+	exists: (p: string) => boolean = existsSync,
+): string[] | undefined {
+	const cli = env.ZOSMA_BUNDLED_NPM_CLI;
+	if (!cli || !exists(cli)) return undefined;
+	return [execPath, "--use-system-ca", cli];
+}
+
+/**
+ * Ephemerally override pi's npm command with the bundled Node+npm WITHOUT
+ * persisting an absolute, version-specific path into the user's settings.json
+ * (which would go stale on the next app update and break the standalone pi
+ * CLI). A user-configured `npmCommand` always wins.
+ */
+function applyBundledNpm(settingsManager: SettingsManager): void {
+	const bundled = bundledNpmCommand();
+	if (!bundled) return;
+	const sm = settingsManager as unknown as { getNpmCommand(): string[] | undefined };
+	const orig = sm.getNpmCommand.bind(sm);
+	sm.getNpmCommand = () => {
+		const configured = orig();
+		return configured && configured.length > 0 ? configured : bundled;
+	};
 }
 
 function sourceOf(spec: string): ExtensionSource {
@@ -254,6 +300,41 @@ function readExtensionMeta(installPath: string): {
 // ─── Install / uninstall (pi-native) ─────────────────────────────────
 
 /**
+ * Normalise an install source so pi's package manager classifies it correctly.
+ *
+ * The Extensions tab installs npm packages, but the UI hands us the BARE package
+ * name (e.g. `@scope/name` or `foo`). pi only treats a source as npm when it's
+ * prefixed with `npm:` — a bare name falls through to pi's "local path" branch,
+ * which resolves it against the working dir (the user's home) and throws
+ * `Path does not exist: /Users/<user>/@scope/name`. This hits every user who
+ * installs from the tab (there's no matching local folder on a fresh machine).
+ *
+ * So: prefix bare npm names with `npm:`. Already-schemed sources (npm:/git:/URL)
+ * and genuine local paths (`.`, `/`, `~`, `X:\`) are left untouched.
+ */
+export function normalizeInstallSource(source: string): string {
+	const s = source.trim();
+	if (
+		s.startsWith("npm:") ||
+		s.startsWith("git:") ||
+		s.startsWith("git+") ||
+		s.startsWith("github:") ||
+		s.startsWith("http://") ||
+		s.startsWith("https://") ||
+		s.startsWith("ssh://") ||
+		s.startsWith("git@")
+	) {
+		return s;
+	}
+	// Genuine local paths: relative, absolute, home-relative, or Windows drive.
+	if (s.startsWith(".") || s.startsWith("/") || s.startsWith("~") || /^[a-zA-Z]:[\\/]/.test(s)) {
+		return s;
+	}
+	// Bare npm package name (scoped `@x/y` or plain `x`) → npm scheme.
+	return `npm:${s}`;
+}
+
+/**
  * Install via pi's package manager and persist to settings — identical to
  * `pi install` (global) / `pi install -l` (project). pi owns placement, so the
  * old `npm pack` drop-in (and its duplicate-tool "conflicts" hazard) is gone.
@@ -265,24 +346,25 @@ export async function installExtension(
 	cwd: string = homedir(),
 	local = false,
 ): Promise<ZemExtension> {
-	const spec = ref && source.startsWith("npm:") ? `${source}@${ref}` : source;
+	const normalized = normalizeInstallSource(source);
+	const spec = ref && normalized.startsWith("npm:") ? `${normalized}@${ref}` : normalized;
 	const pm = makePackageManager(cwd);
 	await pm.installAndPersist(spec, { local });
 
 	const list = await discoverExtensions(zosmaDir, cwd);
-	const bare = source.replace(/^npm:/, "");
+	const bare = normalized.replace(/^npm:/, "");
 	const match =
-		list.find((e) => e.id === source || e.id === spec) ??
+		list.find((e) => e.id === normalized || e.id === spec || e.id === source) ??
 		list.find((e) => e.source.value === bare || e.id.includes(bare));
 	if (match) return match;
 
 	// Fallback: report success even if re-resolution missed it (rare).
 	return {
-		id: source,
+		id: normalized,
 		name: bare,
 		version: "0.0.0",
 		description: "",
-		source: sourceOf(source),
+		source: sourceOf(normalized),
 		capabilities: {},
 		runtime: "pi",
 		installed: true,

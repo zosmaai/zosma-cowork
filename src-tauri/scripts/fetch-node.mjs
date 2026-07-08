@@ -5,7 +5,7 @@
 // Always creates stub placeholders for all variants so Tauri resource validation passes.
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, copyFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, copyFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { platform, arch } from "node:os";
 
@@ -134,6 +134,25 @@ function downloadOne(config, binariesDir) {
 		execSync(`chmod +x "${destPath}"`, { stdio: "inherit" });
 	}
 
+	// Bundle npm (platform-independent JS) alongside node so the shipped app can
+	// install extensions on machines with NO system Node/npm. npm ships vendored
+	// inside every Node distribution; we just copy it out once. Layout differs by
+	// OS: win dist = `<root>/node_modules/npm`, unix dist = `<root>/lib/node_modules/npm`.
+	try {
+		const distRoot = config.binaryPath.split(/[\\/]/)[0];
+		const isWinTarget = config.nodeTarget.startsWith("win");
+		const npmSrc = isWinTarget
+			? join(tmpDir, distRoot, "node_modules", "npm")
+			: join(tmpDir, distRoot, "lib", "node_modules", "npm");
+		const npmDest = join(binariesDir, "npm");
+		if (existsSync(npmSrc) && !existsSync(join(npmDest, "bin", "npm-cli.js"))) {
+			cpSync(npmSrc, npmDest, { recursive: true });
+			console.log(`[fetch-node]   ✅ Bundled npm from ${config.nodeTarget}`);
+		}
+	} catch (err) {
+		console.warn(`[fetch-node]   ⚠️  Could not bundle npm: ${err.message}`);
+	}
+
 	// Clean up temp files
 	try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 
@@ -212,6 +231,16 @@ function downloadAndExtract(targetTriple) {
 			copyFileSync(nodeExe, nodeCopy);
 			console.log(`[fetch-node]   ✅ Copied node.exe → node for Tauri resource bundling`);
 		}
+	}
+
+	// Ensure `binaries/npm` exists so Tauri's `binaries/npm/**/*` resource glob
+	// validates even on the rare dist layout where the copy above was skipped. A
+	// bare placeholder (NO bin/npm-cli.js) means the Rust host won't advertise a
+	// bundled npm and the sidecar falls back to system npm — never a broken stub.
+	const npmDir = join(binariesDir, "npm");
+	if (!existsSync(npmDir)) {
+		mkdirSync(npmDir, { recursive: true });
+		writeFileSync(join(npmDir, ".placeholder"), "npm not bundled for this build\n");
 	}
 
 	// Create stub placeholders for any STILL-missing variants so Tauri

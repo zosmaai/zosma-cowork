@@ -18,19 +18,7 @@
 
 <br/>
 
-<div align="center">
-  <a href="https://github.com/zosmaai/zosma-cowork/stargazers">
-    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring Zosma Cowork!" width="100%" />
-  </a>
-  <br/>
-  <sub>
-    If you find Zosma Cowork useful,
-    <a href="https://github.com/zosmaai/zosma-cowork">⭐ star the repo</a> —
-    it lets us know we're building something that matters.
-  </sub>
-</div>
 
-<br/>
 
 > A desktop agentic work harness built on [pi](https://github.com/earendil-works/pi-coding-agent), the minimal, language-agnostic coding agent harness. Streaming, thinking, tool calls, multi-turn sessions — all free, all open-source, all local.
 >
@@ -244,17 +232,19 @@ zosma-cowork/
 > **Building UI?** Follow the [Design Guidelines](docs/DESIGN.md) — the global
 > standard for Zosma's elevated blue-glass design system.
 
----
+<div align="center">
+  <a href="https://github.com/zosmaai/zosma-cowork/stargazers">
+    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring Zosma Cowork!" width="100%" />
+  </a>
+  <br/>
+  <sub>
+    If you find Zosma Cowork useful,
+    <a href="https://github.com/zosmaai/zosma-cowork">⭐ star the repo</a> —
+    it lets us know we're building something that matters.
+  </sub>
+</div>
 
-## Star History
-
-<a href="https://star-history.com/#zosmaai/zosma-cowork&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=zosmaai/zosma-cowork&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=zosmaai/zosma-cowork&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=zosmaai/zosma-cowork&type=Date" width="100%" />
-  </picture>
-</a>
+<br/>
 
 ## Contributors
 
