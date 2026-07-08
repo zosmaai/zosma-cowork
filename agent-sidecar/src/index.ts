@@ -189,6 +189,7 @@ import {
 	saveSettings as saveSettingsStore,
 } from "./settings-store.js";
 import { handleClearQueueCommand, handleFollowUpCommand, handleSteerCommand } from "./steering.js";
+import { CONTINUATION_MSG, MAX_CONTINUATIONS, shouldContinue } from "./continuation.js";
 import { runTaskFire } from "./task-fire.js";
 import {
 	deleteTask,
@@ -1992,17 +1993,26 @@ async function main() {
 		const STARTUP_TIMEOUT_MS = 20_000;
 		currentPromptStartedAt = Date.now();
 		promptHasEmitted = false;
+		// Tracks whether a timeout or user abort fired during this prompt task.
+		// Checked by the continuation loop so narration-stops are not re-prompted
+		// after an intentional abort.
+		let abortFired = false;
+		const safeAbort = () => {
+			abortFired = true;
+			try {
+				activeSession.abort();
+			} catch {
+				// ignore if session already completed
+			}
+		};
+
 		const startupTimer = setTimeout(() => {
 			if (promptHasEmitted) return;
 			log(
 				"prompt: no events within %dms — aborting (model may have failed to load)",
 				STARTUP_TIMEOUT_MS,
 			);
-			try {
-				activeSession.abort();
-			} catch {
-				// ignore if session already completed
-			}
+			safeAbort();
 		}, STARTUP_TIMEOUT_MS);
 
 		// Auto-abort timeout: prevents the UI from staying in "thinking" state
@@ -2014,17 +2024,36 @@ async function main() {
 		// allowing the "done" event to be sent.
 		const abortTimeout = setTimeout(() => {
 			log("prompt: timeout after %dms — aborting session", PROMPT_TIMEOUT_MS);
-			try {
-				activeSession.abort();
-			} catch {
-				// ignore if session already completed
-			}
+			safeAbort();
 		}, PROMPT_TIMEOUT_MS);
 
 		const isRemote = cmd._origin === "remote";
 
 		try {
 			await activeSession.prompt(cmd.text);
+
+			// Continuation loop — recovers from models (e.g. DeepSeek V4 Flash)
+			// that emit narration text mid-workflow instead of calling the next
+			// tool. Fires only when: the last assistant message is text-only stop,
+			// at least one prior tool call exists (we're mid-workflow, not pure
+			// chat), and no abort has been signalled (#325).
+			let continuations = 0;
+			while (
+				continuations < MAX_CONTINUATIONS &&
+				!abortFired &&
+				shouldContinue(activeSession)
+			) {
+				log(
+					"prompt: model narrated mid-workflow — auto-continuing (%d/%d)",
+					continuations + 1,
+					MAX_CONTINUATIONS,
+				);
+				await activeSession.prompt(CONTINUATION_MSG);
+				continuations++;
+			}
+			if (continuations > 0) {
+				log("prompt: auto-continuation complete after %d re-prompt(s)", continuations);
+			}
 		} catch (err) {
 			// Surface SDK errors back to the UI instead of swallowing them
 			// silently with just a "done" event.
