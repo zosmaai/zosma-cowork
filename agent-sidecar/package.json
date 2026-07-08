@@ -8,7 +8,7 @@
     "vendor:latest": "node scripts/vendor-latest.mjs",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs --external:@opentelemetry/api",
     "start": "node dist/bundle.cjs",
     "test": "vitest run --config vitest.config.ts"
   },
