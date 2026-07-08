@@ -10,6 +10,13 @@ interface ModelSelectorProps {
 	/** Active model identity as a `provider/id` key (see lib/model-key). */
 	currentModelId?: string;
 	onSelect: (provider: string, modelId: string) => void;
+	/**
+	 * Controlled open state. When provided the trigger still works but the
+	 * parent can also open the dropdown programmatically (e.g. `/model` with
+	 * no args from the slash-command palette).
+	 */
+	open?: boolean;
+	onOpenChange?: (open: boolean) => void;
 }
 
 /** Short readable provider label */
@@ -17,8 +24,21 @@ function providerShort(provider: string): string {
 	return provider.replace(/-?(api|ai|platform|provider)$/i, "").split("-")[0];
 }
 
-export function ModelSelector({ models, currentModelId, onSelect }: ModelSelectorProps) {
-	const [open, setOpen] = useState(false);
+export function ModelSelector({
+	models,
+	currentModelId,
+	onSelect,
+	open: controlledOpen,
+	onOpenChange,
+}: ModelSelectorProps) {
+	const [internalOpen, setInternalOpen] = useState(false);
+	// Use controlled value when provided, otherwise fall back to internal state.
+	const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+
+	const setOpen = (value: boolean) => {
+		setInternalOpen(value);
+		onOpenChange?.(value);
+	};
 	const [query, setQuery] = useState("");
 	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 	// Max height of the whole dropdown box, clamped to the space actually
@@ -125,6 +145,8 @@ export function ModelSelector({ models, currentModelId, onSelect }: ModelSelecto
 			<button
 				ref={triggerRef}
 				type="button"
+				aria-haspopup="listbox"
+				aria-expanded={open}
 				onClick={open ? () => setOpen(false) : handleOpen}
 				className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors
 				           text-muted-foreground hover:text-foreground hover:bg-accent/60"
@@ -150,6 +172,8 @@ export function ModelSelector({ models, currentModelId, onSelect }: ModelSelecto
 					{open && (
 						<motion.div
 							data-model-dropdown=""
+							role="listbox"
+							aria-label="Select a model"
 							initial={{ opacity: 0, y: 6, scale: 0.97 }}
 							animate={{ opacity: 1, y: 0, scale: 1 }}
 							exit={{ opacity: 0, y: 6, scale: 0.97 }}
@@ -173,6 +197,7 @@ export function ModelSelector({ models, currentModelId, onSelect }: ModelSelecto
 									value={query}
 									onChange={(e) => setQuery(e.target.value)}
 									onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+									aria-label="Search models"
 									className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
 								/>
 								{query && (
@@ -206,6 +231,8 @@ export function ModelSelector({ models, currentModelId, onSelect }: ModelSelecto
 													<button
 														key={modelKey(model.provider, model.id)}
 														type="button"
+														role="option"
+														aria-selected={isActive}
 														onClick={() => {
 															onSelect(model.provider, model.id);
 															setOpen(false);

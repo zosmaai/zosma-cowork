@@ -19,8 +19,6 @@ export interface CommandContext {
 	openSessions: () => void;
 	/** Open the model selector UI. */
 	openModelSelector: () => void;
-	/** Switch to a model by id. */
-	setModel: (modelId: string) => void;
 	/** Open the settings view. */
 	openSettings: () => void;
 	/** Show the list of available commands. */
@@ -59,11 +57,8 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		name: "model",
 		description: "Switch the model",
 		category: "model",
-		argHint: "model-id (optional)",
-		run: (ctx, args) => {
-			const id = args.trim();
-			if (id) ctx.setModel(id);
-			else ctx.openModelSelector();
+		run: (_ctx, _args) => {
+			_ctx.openModelSelector();
 		},
 	},
 	{

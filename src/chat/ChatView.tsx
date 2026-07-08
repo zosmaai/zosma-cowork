@@ -26,6 +26,8 @@ interface ChatViewProps {
 	models?: ModelInfo[];
 	currentModelId?: string;
 	onModelSelect?: (provider: string, modelId: string) => void;
+	modelSelectorOpen?: boolean;
+	onModelSelectorOpenChange?: (open: boolean) => void;
 	toolPhase?: ToolPhase | null;
 	/** Changing this remounts the input, retriggering its entrance animation */
 	sessionKey?: string;
@@ -62,6 +64,8 @@ export function ChatView({
 	models,
 	currentModelId,
 	onModelSelect,
+	modelSelectorOpen,
+	onModelSelectorOpenChange,
 	toolPhase,
 	sessionKey,
 	draft,
@@ -370,6 +374,8 @@ export function ChatView({
 					models={models}
 					currentModelId={currentModelId}
 					onModelSelect={onModelSelect}
+					modelSelectorOpen={modelSelectorOpen}
+					onModelSelectorOpenChange={onModelSelectorOpenChange}
 					draft={draft}
 					commands={commands}
 					onRunCommand={onRunCommand}

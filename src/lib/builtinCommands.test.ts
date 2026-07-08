@@ -14,7 +14,7 @@ function mockCtx(): CommandContext {
 		newSession: vi.fn(),
 		openSessions: vi.fn(),
 		openModelSelector: vi.fn(),
-		setModel: vi.fn(),
+
 		openSettings: vi.fn(),
 		showHelp: vi.fn(),
 	};
@@ -74,18 +74,16 @@ describe("runBuiltinCommand dispatch", () => {
 		expect(ctx.openSessions).toHaveBeenCalledTimes(1);
 	});
 
-	it("/model with no args opens the model selector", () => {
+	it("/model always opens the model selector (args ignored — ID matching is too fragile across providers)", () => {
 		const ctx = mockCtx();
 		runBuiltinCommand(ctx, cmd("model"), "");
 		expect(ctx.openModelSelector).toHaveBeenCalledTimes(1);
-		expect(ctx.setModel).not.toHaveBeenCalled();
 	});
 
-	it("/model <id> sets the model directly", () => {
+	it("/model ignores any trailing args and still opens the selector", () => {
 		const ctx = mockCtx();
-		runBuiltinCommand(ctx, cmd("model"), " gpt-4o ");
-		expect(ctx.setModel).toHaveBeenCalledWith("gpt-4o");
-		expect(ctx.openModelSelector).not.toHaveBeenCalled();
+		runBuiltinCommand(ctx, cmd("model"), "gpt-4o");
+		expect(ctx.openModelSelector).toHaveBeenCalledTimes(1);
 	});
 
 	it("/settings opens settings", () => {

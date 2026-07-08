@@ -1,6 +1,7 @@
 import { ChatView } from "@/chat/ChatView";
 import { ChatWidthToggle } from "@/components/ChatWidthToggle";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
+import { HelpDialog } from "@/components/HelpDialog";
 import { HomeView } from "@/components/HomeView";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileTopBar } from "@/components/MobileTopBar";
@@ -128,6 +129,8 @@ function App() {
 		onRetryRoutines: routines.retry,
 	};
 	const [showSettings, setShowSettings] = useState(false);
+	const [showModelSelector, setShowModelSelector] = useState(false);
+	const [showHelp, setShowHelp] = useState(false);
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	// True iff at least one subscription (OAuth) provider is signed in.
 	// Drives the "Skip" → "Continue" label flip on the Connect modal —
@@ -631,8 +634,6 @@ function App() {
 
 	// Slash-command dispatch (epic #179). Built-in commands close over these
 	// GUI actions; the registry itself is pure (src/lib/builtinCommands.ts).
-	// Interim: bare `/model` and `/help` open Settings until dedicated UI lands
-	// (see docs/plans/slash-commands-roadmap.md A2b).
 	const handleRunCommand = useCallback(
 		(cmd: Command, args: string) => {
 			const builtin = findBuiltinCommand(cmd.name);
@@ -644,19 +645,13 @@ function App() {
 			const ctx: CommandContext = {
 				newSession: () => handleNewSessionPrompt(),
 				openSessions: () => setSidebarView("chats"),
-				openModelSelector: openSettings,
-				setModel: (modelId) => {
-					const match = models.find(
-						(m) => m.id === modelId || modelKey(m.provider, m.id) === modelId,
-					);
-					if (match) handleModelSelect(match.provider, match.id);
-				},
+				openModelSelector: () => setShowModelSelector(true),
 				openSettings,
-				showHelp: openSettings,
+				showHelp: () => setShowHelp(true),
 			};
 			runBuiltinCommand(ctx, builtin, args);
 		},
-		[handleNewSessionPrompt, handleModelSelect, models],
+		[handleNewSessionPrompt],
 	);
 
 	// Load the sidecar's active workspace once it's ready, so the sidebar can
@@ -879,6 +874,8 @@ function App() {
 					if (pendingRename) handleRenameSession(pendingRename.file, title);
 				}}
 			/>
+
+			<HelpDialog open={showHelp} commands={BUILTIN_COMMANDS} onClose={() => setShowHelp(false)} />
 
 			{/* Telemetry consent dialog (overlays everything on first launch) */}
 			{showTelemetryConsent && (
@@ -1114,6 +1111,8 @@ function App() {
 								models={models}
 								currentModelId={activeModelId}
 								onModelSelect={handleModelSelect}
+								modelSelectorOpen={showModelSelector}
+								onModelSelectorOpenChange={setShowModelSelector}
 								toolPhase={toolPhase}
 								draft={composerDraft}
 								commands={BUILTIN_COMMANDS}

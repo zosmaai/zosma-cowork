@@ -3,7 +3,7 @@ import { BRAND_LINKS } from "./brand-links";
 
 describe("BRAND_LINKS", () => {
 	it("exposes the community Discord invite", () => {
-		expect(BRAND_LINKS.discord).toBe("https://discord.gg/c5vadsv9");
+		expect(BRAND_LINKS.discord).toBe("https://discord.com/invite/HQcyTD5jHA");
 	});
 
 	it("points new-issue at the GitHub issue template chooser", () => {

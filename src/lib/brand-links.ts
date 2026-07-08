@@ -18,7 +18,7 @@ export const BRAND_LINKS = {
 	/** Latest published release + changelog. */
 	releases: "https://github.com/zosmaai/zosma-cowork/releases/latest",
 	/** Community chat. */
-	discord: "https://discord.gg/c5vadsv9",
+	discord: "https://discord.com/invite/HQcyTD5jHA",
 	/** Showcase gallery of what Cowork can build. */
 	gallery: "https://www.zosma.ai/zosma-cowork/gallery",
 	/** The pi engine Cowork is built on. */

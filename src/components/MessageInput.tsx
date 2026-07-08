@@ -32,6 +32,9 @@ interface MessageInputProps {
 	models?: ModelInfo[];
 	currentModelId?: string;
 	onModelSelect?: (provider: string, modelId: string) => void;
+	/** Controlled open state for ModelSelector — set by `/model` (no args). */
+	modelSelectorOpen?: boolean;
+	onModelSelectorOpenChange?: (open: boolean) => void;
 	/**
 	 * External draft to load into the composer (e.g. a prompt template).
 	 * Setting a new `nonce` fills the textarea with `text` and focuses it,
@@ -93,6 +96,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			models,
 			currentModelId,
 			onModelSelect,
+			modelSelectorOpen,
+			onModelSelectorOpenChange,
 			draft,
 			commands,
 			onRunCommand,
@@ -494,6 +499,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 									models={models}
 									currentModelId={currentModelId}
 									onSelect={onModelSelect}
+									open={modelSelectorOpen}
+									onOpenChange={onModelSelectorOpenChange}
 								/>
 							) : (
 								<span
