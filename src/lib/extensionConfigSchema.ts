@@ -95,8 +95,12 @@ function toField(key: string, rawDesc: unknown, requiredKeys: Set<string>): Conf
 		(typeof desc.help === "string" && desc.help) ||
 		undefined;
 
+	// Enum choices may be declared as strings or numbers; accept both and
+	// normalize to strings so the <select> can render them uniformly.
 	const enumValues = Array.isArray(desc.enum)
-		? desc.enum.filter((e): e is string => typeof e === "string")
+		? desc.enum
+				.filter((e): e is string | number => typeof e === "string" || typeof e === "number")
+				.map((e) => String(e))
 		: undefined;
 
 	const placeholder =

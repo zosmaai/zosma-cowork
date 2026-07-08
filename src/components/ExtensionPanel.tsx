@@ -353,11 +353,16 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										version={pkg.version}
 										description={pkg.description}
 										onOpen={() => showApp(appFromPkg(pkg.name, pkg))}
-										onSettings={
-											getExtensionSetup({ name: pkg.name, source: { value: pkg.name } })
-												? () => showApp(appFromPkg(pkg.name, pkg), "setup")
-												: undefined
-										}
+										onSettings={(() => {
+											const app = appFromPkg(pkg.name, pkg);
+											const setupTarget = app.ext ?? {
+												name: pkg.name,
+												source: { value: pkg.name },
+											};
+											return getExtensionSetup(setupTarget) || hasConfigSchema(app.ext)
+												? () => showApp(app, "setup")
+												: undefined;
+										})()}
 										action={
 											isInstalled(pkg.name) ? (
 												<span className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-primary/10 text-primary">
@@ -404,19 +409,21 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 												}),
 											)
 										}
-										onSettings={
-											getExtensionSetup({ name: f.label, source: { value: f.pkg } })
-												? (p) =>
-														showApp(
-															appFromPkg(p, {
-																name: f.label,
-																description: f.blurb,
-																category: f.category,
-															}),
-															"setup",
-														)
-												: undefined
-										}
+										onSettings={(() => {
+											const meta = {
+												name: f.label,
+												description: f.blurb,
+												category: f.category,
+											};
+											const app = appFromPkg(f.pkg, meta);
+											const setupTarget = app.ext ?? {
+												name: f.label,
+												source: { value: f.pkg },
+											};
+											return getExtensionSetup(setupTarget) || hasConfigSchema(app.ext)
+												? (p: string) => showApp(appFromPkg(p, meta), "setup")
+												: undefined;
+										})()}
 									/>
 								))}
 							</div>
@@ -447,7 +454,7 @@ export function ExtensionPanel({ onReload }: ExtensionPanelProps) {
 										version={ext.version}
 										description={ext.description}
 										onOpen={() => showApp(appFromExt(ext))}
-										needsConfig={isConfigIncomplete(appFromExt(ext))}
+										needsConfig={isConfigIncomplete(ext)}
 										onSettings={
 											getExtensionSetup(ext) || hasConfigSchema(ext)
 												? () => showApp(appFromExt(ext), "setup")
@@ -824,5 +831,5 @@ function SetupTab({
 		return <SetupComponent ext={app.ext} configKey={setup.key} />;
 	}
 
-	return <ExtensionConfigForm ext={app.ext} onSave={onSaveConfig} />;
+	return <ExtensionConfigForm key={app.ext.id} ext={app.ext} onSave={onSaveConfig} />;
 }

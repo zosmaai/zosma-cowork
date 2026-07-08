@@ -53,6 +53,15 @@ describe("parseConfigSchema", () => {
 		expect(byKey(fields, "region").enumValues).toEqual(["us", "eu"]);
 	});
 
+	it("accepts numeric enum values and normalizes them to strings", () => {
+		const fields = parseConfigSchema({
+			timeout: { type: "number", enum: [30, 60, 120] },
+			mode: { type: "string", enum: ["a", 2, "c"] },
+		});
+		expect(byKey(fields, "timeout").enumValues).toEqual(["30", "60", "120"]);
+		expect(byKey(fields, "mode").enumValues).toEqual(["a", "2", "c"]);
+	});
+
 	it("infers secret from the key name when no type is declared", () => {
 		const fields = parseConfigSchema({ properties: { access_token: {}, name: {} } });
 		expect(byKey(fields, "access_token").type).toBe("secret");
