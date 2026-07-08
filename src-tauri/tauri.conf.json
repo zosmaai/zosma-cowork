@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/ensure-dev-resources.mjs && npm run dev:frontend",
-    "beforeBuildCommand": "node src-tauri/scripts/fetch-node.mjs && node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/prebuild.mjs && npm run build:frontend"
+    "beforeDevCommand": "node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/ensure-dev-resources.mjs && pnpm run dev:frontend",
+    "beforeBuildCommand": "node src-tauri/scripts/fetch-node.mjs && node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/prebuild.mjs && pnpm run build:frontend"
   },
   "app": {
     "windows": [

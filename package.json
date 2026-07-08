@@ -16,7 +16,7 @@
 		"test": "vitest run --passWithNoTests",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
-		"validate": "npm run lint && npm run lint:styles && npm run typecheck && npm run test",
+		"validate": "pnpm run lint && pnpm run lint:styles && pnpm run typecheck && pnpm run test",
 		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd .."
 	},
 	"dependencies": {
