@@ -25,7 +25,12 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' tauri: asset:",
+        "connect-src": "ipc: http://ipc.localhost https://auth.zosma.ai https://api.zosma.ai",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'"
+      }
     }
   },
   "plugins": {

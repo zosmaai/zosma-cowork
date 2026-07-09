@@ -24,6 +24,13 @@
     "updater:default",
     "process:allow-restart",
     "process:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://auth.zosma.ai/*" },
+        { "url": "https://api.zosma.ai/*" }
+      ]
+    },
     { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
     { "identifier": "fs:allow-write-text-file", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
     { "identifier": "fs:allow-read-dir", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },

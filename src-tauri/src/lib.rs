@@ -3,6 +3,7 @@
 //! A thin relay between the React frontend and the Node.js agent sidecar.
 
 mod analytics;
+mod auth;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -2436,6 +2437,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_http::init())
         .manage(TelemetryState {
             enabled: Arc::new(AtomicBool::new(false)),
         });
@@ -2623,6 +2625,9 @@ pub fn run() {
             crate::analytics::set_analytics_enabled,
             set_telemetry_enabled,
             get_install_context,
+            auth::save_token,
+            auth::load_token,
+            auth::clear_token,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");
