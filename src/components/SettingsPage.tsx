@@ -257,7 +257,7 @@ export function SettingsPage({
 					</nav>
 
 					{/* Feedback + Sign out */}
-					<div className="px-2 py-2 shrink-0 border-t border-[hsl(var(--elev-border)/0.6)] space-y-0.5">
+					<div className="px-2 py-2 shrink-0 border-t border-elev-border/60 space-y-0.5">
 						<motion.button
 							type="button"
 							onClick={() => setShowFeedback(true)}
@@ -285,8 +285,8 @@ export function SettingsPage({
 									reduced
 										? {}
 										: {
-												color: "hsl(var(--destructive))",
-												background: "hsl(var(--destructive) / 0.08)",
+												color: "var(--color-destructive)",
+												background: "color-mix(in srgb, var(--color-destructive) 8%, transparent)",
 											}
 								}
 								whileTap={reduced ? {} : { scale: 0.97 }}
