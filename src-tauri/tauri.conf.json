@@ -27,7 +27,7 @@
     "security": {
       "csp": {
         "default-src": "'self' tauri: asset:",
-        "connect-src": "ipc: http://ipc.localhost https://auth.zosma.ai https://api.zosma.ai",
+        "connect-src": "ipc: http://ipc.localhost https://auth.zosma.ai https://api.zosma.ai http://localhost:3000 http://localhost:1420",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'"
       }
@@ -43,13 +43,32 @@
       "endpoints": [
         "https://github.com/zosmaai/zosma-cowork/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "zosma-cowork"
+        ]
+      }
     }
   },
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "resources": ["agent-sidecar/index.cjs", "binaries/node", "binaries/node-arm64", "binaries/node-x64", "binaries/npm/**/*", "binaries/gh/gh", "binaries/gh/gh-arm64", "binaries/gh/gh-x64", "binaries/git/git", "binaries/git/git-arm64", "binaries/git/git-x64"],
+    "resources": [
+      "agent-sidecar/index.cjs",
+      "binaries/node",
+      "binaries/node-arm64",
+      "binaries/node-x64",
+      "binaries/npm/**/*",
+      "binaries/gh/gh",
+      "binaries/gh/gh-arm64",
+      "binaries/gh/gh-x64",
+      "binaries/git/git",
+      "binaries/git/git-arm64",
+      "binaries/git/git-x64"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

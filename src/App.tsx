@@ -3,6 +3,7 @@ import { ChatWidthToggle } from "@/components/ChatWidthToggle";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { HelpDialog } from "@/components/HelpDialog";
 import { HomeView } from "@/components/HomeView";
+import { LoginScreen } from "@/components/LoginScreen";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileTopBar } from "@/components/MobileTopBar";
 import { RemoteConnectionBar } from "@/components/RemoteConnectionBar";
@@ -18,6 +19,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RenameDialog } from "@/components/ui/rename-dialog";
 import { useUpdate } from "@/contexts/UpdateProvider";
 import { useAuth } from "@/hooks/useAuth";
+import { useZosmaAuth } from "@/hooks/use-zosma-auth";
 import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
 import { useRoutinesExtension } from "@/hooks/useRoutinesExtension";
@@ -87,6 +89,12 @@ function App() {
 	// (Context menu prevention removed intentionally.)
 	const { models } = useProviders();
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
+	// Zosma account session (zosma-cowork-auth server — bearer token in OS keychain).
+	const {
+		isAuthenticated: zosmaAuthenticated,
+		loading: zosmaLoading,
+		signOut: zosmaSignOut,
+	} = useZosmaAuth();
 	// Whether the agent sidecar has finished booting. Until it has,
 	// `has_credentials` always resolves to false (see src-tauri lib.rs), so we
 	// can't yet tell authenticated users apart from new ones. We track this to
@@ -235,7 +243,9 @@ function App() {
 	// `authLoading` in the condition avoids a one-frame onboarding flash during
 	// the credentials re-check that fires right after the sidecar becomes ready.
 	const initializing =
-		telemetryUndecided || (!sidecarReady && (authLoading || hasCredentials !== true));
+		telemetryUndecided ||
+		zosmaLoading ||
+		(!sidecarReady && (authLoading || hasCredentials !== true));
 	// Whether to render the Connect / API-key modal. Either we're forcing
 	// it (initial onboarding, unless the user explicitly skipped) or the
 	// user opened "Change API Key" from Settings.
@@ -823,7 +833,9 @@ function App() {
 	// Hide the app chrome (sidebar, mobile bars, share button) whenever the
 	// main pane is showing a full-screen state: onboarding, settings, or the
 	// startup loading splash (#169).
-	const hideChrome = showConnectModal || showSettings || initializing;
+	// Show the login screen when the user has no active Zosma account session.
+	const showLoginScreen = !initializing && !zosmaAuthenticated;
+	const hideChrome = showConnectModal || showSettings || initializing || showLoginScreen;
 
 	const sidebarSessions = sessionEntries.map((s) => ({
 		id: s.file,
@@ -1020,7 +1032,9 @@ function App() {
 						key={
 							initializing
 								? "splash"
-								: showConnectModal
+								: showLoginScreen
+									? "login"
+									: showConnectModal
 									? "connect"
 									: showSettings
 										? "settings"
@@ -1034,6 +1048,8 @@ function App() {
 					>
 						{initializing ? (
 							<SplashScreen />
+						) : showLoginScreen ? (
+							<LoginScreen />
 						) : showConnectModal ? (
 							<HomeView
 								onComplete={handleConnectComplete}
@@ -1055,6 +1071,7 @@ function App() {
 								}}
 								fontScale={fontScale}
 								onFontScaleChange={setFontScale}
+								onZosmaSignOut={zosmaSignOut}
 							/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">

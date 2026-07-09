@@ -1,3 +1,18 @@
+// ── Zosma account (Better Auth session) ─────────────────────────────────────
+
+/** User record returned by Better Auth's `getSession().data.user`. */
+export type ZosmaUser = {
+	id: string;
+	name: string;
+	email: string;
+	image?: string | null;
+	emailVerified: boolean;
+	createdAt: Date;
+	updatedAt: Date;
+};
+
+// ── LLM provider credentials ─────────────────────────────────────────────────
+
 /**
  * Shared auth types — mirror of the sidecar's `get_auth_status` response.
  *

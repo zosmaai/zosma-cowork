@@ -20,13 +20,17 @@
 		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd .."
 	},
 	"dependencies": {
+		"@daveyplate/better-auth-tauri": "^0.1.9",
 		"@radix-ui/react-tooltip": "^1.2.8",
 		"@sentry/react": "^10.53.1",
 		"@tauri-apps/api": "~2.10.0",
+		"@tauri-apps/plugin-deep-link": "^2.4.9",
 		"@tauri-apps/plugin-dialog": "^2.7.1",
 		"@tauri-apps/plugin-fs": "^2.5.0",
 		"@tauri-apps/plugin-http": "^2.5.9",
 		"@tauri-apps/plugin-notification": "^2.2.2",
+		"@tauri-apps/plugin-opener": "^2.5.4",
+		"@tauri-apps/plugin-os": "^2.3.2",
 		"@tauri-apps/plugin-process": "^2.3.1",
 		"@tauri-apps/plugin-shell": "^2.2.1",
 		"@tauri-apps/plugin-updater": "^2.10.1",

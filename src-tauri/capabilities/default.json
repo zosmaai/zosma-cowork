@@ -7,6 +7,9 @@
   ],
   "permissions": [
     "core:default",
+    "deep-link:default",
+    "opener:default",
+    "os:default",
     {
       "identifier": "shell:allow-open",
       "allow": [
@@ -28,7 +31,9 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://auth.zosma.ai/*" },
-        { "url": "https://api.zosma.ai/*" }
+        { "url": "https://api.zosma.ai/*" },
+        { "url": "http://localhost:3000/*" },
+        { "url": "http://localhost:1420/*" }
       ]
     },
     { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },

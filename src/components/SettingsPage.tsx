@@ -7,6 +7,7 @@ import {
 	Info,
 	KeyRound,
 	LayoutGrid,
+	LogOut,
 	MessageSquare,
 	Palette,
 	Puzzle,
@@ -33,6 +34,8 @@ interface SettingsPageProps {
 	onTelemetryToggle?: (enabled: boolean) => void;
 	fontScale?: number;
 	onFontScaleChange?: (scale: number) => void;
+	/** B9 — Sign out of the Zosma account (clears keychain token). */
+	onZosmaSignOut?: () => void;
 }
 
 type SectionId =
@@ -97,6 +100,7 @@ export function SettingsPage({
 	onTelemetryToggle,
 	fontScale,
 	onFontScaleChange,
+	onZosmaSignOut,
 }: SettingsPageProps) {
 	const [showFeedback, setShowFeedback] = useState(false);
 	const [activeSection, setActiveSection] = useState<SectionId>("authentication");
@@ -252,8 +256,8 @@ export function SettingsPage({
 						))}
 					</nav>
 
-					{/* Feedback */}
-					<div className="px-2 py-2 shrink-0 border-t border-[hsl(var(--elev-border)/0.6)]">
+					{/* Feedback + Sign out */}
+					<div className="px-2 py-2 shrink-0 border-t border-[hsl(var(--elev-border)/0.6)] space-y-0.5">
 						<motion.button
 							type="button"
 							onClick={() => setShowFeedback(true)}
@@ -272,6 +276,26 @@ export function SettingsPage({
 							<MessageSquare className="w-3.5 h-3.5 shrink-0" />
 							Send Feedback
 						</motion.button>
+						{onZosmaSignOut && (
+							<motion.button
+								type="button"
+								onClick={onZosmaSignOut}
+								className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-muted-foreground"
+								whileHover={
+									reduced
+										? {}
+										: {
+												color: "hsl(var(--destructive))",
+												background: "hsl(var(--destructive) / 0.08)",
+											}
+								}
+								whileTap={reduced ? {} : { scale: 0.97 }}
+								transition={{ duration: 0.14, ease: easeOutExpo }}
+							>
+								<LogOut className="w-3.5 h-3.5 shrink-0" />
+								Sign out
+							</motion.button>
+						)}
 					</div>
 				</motion.aside>
 

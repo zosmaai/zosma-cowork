@@ -34,3 +34,6 @@ git2 = { version = "0.19", features = ["vendored-openssl"] }
 walkdir = "2"
 dir-diff = "0.3"
 tauri-plugin-http = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-os = "2"
