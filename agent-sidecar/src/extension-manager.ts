@@ -19,7 +19,7 @@
  * toggle here. Install truth always comes from pi.
  */
 
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -140,6 +140,36 @@ export function bundledNpmCommand(
 }
 
 /**
+ * User-writable npm global prefix for the BUNDLED npm.
+ *
+ * The bug (extension install fails with `... failed with code 243`): a
+ * system-wide install (Linux `.deb`/AppImage → `/usr/lib/zosma-cowork/binaries`,
+ * Windows → `C:\Program Files\...`) puts the bundled Node in a directory the
+ * unprivileged app user cannot write to. npm derives its *global* prefix from
+ * the Node binary's own location, so `npm install -g <ext>` targets a
+ * root-owned `.../lib/node_modules` and dies with `EACCES` (errno -13, which
+ * npm surfaces as process exit code 243 = 256 - 13). Even a lucky write would
+ * be wiped on the next app update and never survives.
+ *
+ * Fix: when running the bundled npm, pin its prefix to a per-user,
+ * update-surviving directory under the user's home. `npm install -g` writes
+ * there, and pi's discovery (`npm root -g`) reads the SAME prefix because both
+ * run through this env — so installed extensions are found. A user who has
+ * deliberately set `npm_config_prefix` / `NPM_CONFIG_PREFIX` always wins.
+ *
+ * Returns undefined in dev / when no bundle is present → the system npm's own
+ * (writable) global prefix is used, exactly as before.
+ */
+export function bundledNpmPrefix(
+	env: NodeJS.ProcessEnv = process.env,
+	home: string = homedir(),
+): string | undefined {
+	if (!env.ZOSMA_BUNDLED_NPM_CLI) return undefined;
+	if (env.npm_config_prefix || env.NPM_CONFIG_PREFIX) return undefined;
+	return join(home, ".zosma-cowork", "npm-global");
+}
+
+/**
  * Ephemerally override pi's npm command with the bundled Node+npm WITHOUT
  * persisting an absolute, version-specific path into the user's settings.json
  * (which would go stale on the next app update and break the standalone pi
@@ -148,6 +178,20 @@ export function bundledNpmCommand(
 function applyBundledNpm(settingsManager: SettingsManager): void {
 	const bundled = bundledNpmCommand();
 	if (!bundled) return;
+	// Pin the bundled npm's global prefix to a user-writable dir so `install -g`
+	// doesn't try to write into the root-owned app install dir (EACCES / exit
+	// 243). Set it on process.env so it's inherited by every npm child pi spawns
+	// (install AND `npm root -g` discovery) — keeping the two consistent.
+	const prefix = bundledNpmPrefix();
+	if (prefix) {
+		try {
+			mkdirSync(prefix, { recursive: true });
+			process.env.npm_config_prefix = prefix;
+		} catch {
+			// If we can't create the prefix dir, leave npm's default behavior in
+			// place rather than pointing it at a path it also can't use.
+		}
+	}
 	const sm = settingsManager as unknown as { getNpmCommand(): string[] | undefined };
 	const orig = sm.getNpmCommand.bind(sm);
 	sm.getNpmCommand = () => {
@@ -416,11 +460,7 @@ export function setExtensionConfig(
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
 
-const DEFAULT_SEARCHES = [
-	"keywords:pi-package",
-	"keywords:pi-extension",
-	"@earendil-works/pi-",
-];
+const DEFAULT_SEARCHES = ["keywords:pi-package", "keywords:pi-extension", "@earendil-works/pi-"];
 void DEFAULT_SEARCHES;
 
 export function buildSearchQuery(query: string): string {
@@ -467,9 +507,7 @@ export async function searchNpmRegistry(query: string): Promise<
 			description: obj.package.description || "",
 			version: obj.package.version,
 			score: Math.round(
-				((obj.score.detail.quality +
-					obj.score.detail.popularity +
-					obj.score.detail.maintenance) /
+				((obj.score.detail.quality + obj.score.detail.popularity + obj.score.detail.maintenance) /
 					3) *
 					100,
 			),

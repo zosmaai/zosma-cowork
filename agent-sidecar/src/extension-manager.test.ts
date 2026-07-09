@@ -18,6 +18,7 @@ vi.mock("node:os", async (orig) => {
 
 import {
 	bundledNpmCommand,
+	bundledNpmPrefix,
 	discoverExtensions,
 	normalizeInstallSource,
 	setExtensionEnabled,
@@ -94,7 +95,11 @@ describe("bundledNpmCommand", () => {
 			"/app/binaries/node",
 			() => true,
 		);
-		expect(cmd).toEqual(["/app/binaries/node", "--use-system-ca", "/app/binaries/npm/bin/npm-cli.js"]);
+		expect(cmd).toEqual([
+			"/app/binaries/node",
+			"--use-system-ca",
+			"/app/binaries/npm/bin/npm-cli.js",
+		]);
 	});
 
 	it("returns undefined when the env var is unset (dev / system npm fallback)", () => {
@@ -107,6 +112,50 @@ describe("bundledNpmCommand", () => {
 				{ ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js" },
 				"/app/binaries/node",
 				() => false,
+			),
+		).toBeUndefined();
+	});
+});
+
+describe("bundledNpmPrefix", () => {
+	// Regression (exit code 243): a system-wide install puts the bundled Node in
+	// a root-owned dir (e.g. /usr/lib/zosma-cowork/binaries). npm derives its
+	// global prefix from the Node binary's location, so `install -g` targets a
+	// root-owned node_modules → EACCES (errno -13 → exit 243). We must point npm
+	// at a USER-WRITABLE, update-surviving prefix in the user's home.
+	it("returns a user-home prefix when the bundled npm is active", () => {
+		expect(
+			bundledNpmPrefix(
+				{ ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js" },
+				"/home/alice",
+			),
+		).toBe(join("/home/alice", ".zosma-cowork", "npm-global"));
+	});
+
+	it("returns undefined in dev (no bundled npm) so system npm's own prefix wins", () => {
+		expect(bundledNpmPrefix({}, "/home/alice")).toBeUndefined();
+	});
+
+	it("respects an explicit user npm_config_prefix override", () => {
+		expect(
+			bundledNpmPrefix(
+				{
+					ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js",
+					npm_config_prefix: "/custom/prefix",
+				},
+				"/home/alice",
+			),
+		).toBeUndefined();
+	});
+
+	it("respects an explicit user NPM_CONFIG_PREFIX override", () => {
+		expect(
+			bundledNpmPrefix(
+				{
+					ZOSMA_BUNDLED_NPM_CLI: "/app/binaries/npm/bin/npm-cli.js",
+					NPM_CONFIG_PREFIX: "/custom/prefix",
+				},
+				"/home/alice",
 			),
 		).toBeUndefined();
 	});

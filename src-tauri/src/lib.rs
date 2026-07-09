@@ -637,6 +637,10 @@ async fn read_stdout(
             "error" => {
                 let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let t = m.get("message").and_then(|v| v.as_str()).unwrap_or("err");
+                // Surface sidecar command errors. Previously these were relayed
+                // to the frontend as a rejected Promise and never logged, so a
+                // failing command (e.g. load_session) was invisible in the logs.
+                log::warn!("sidecar error response id={id}: {t}");
                 if let Some(p) = pr.lock().await.remove(id) {
                     let _ = p.sender.send(Err(t.into()));
                 } else if let Some(p) = pp.lock().await.get(id) {

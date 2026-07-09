@@ -61,6 +61,7 @@
       "binaries/node",
       "binaries/node-arm64",
       "binaries/node-x64",
+      "binaries/node*",
       "binaries/npm/**/*",
       "binaries/gh/gh",
       "binaries/gh/gh-arm64",

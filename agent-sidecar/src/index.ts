@@ -189,6 +189,7 @@ import {
 	saveSettings as saveSettingsStore,
 } from "./settings-store.js";
 import { handleClearQueueCommand, handleFollowUpCommand, handleSteerCommand } from "./steering.js";
+import { CONTINUATION_MSG, MAX_CONTINUATIONS, shouldContinue } from "./continuation.js";
 import { runTaskFire } from "./task-fire.js";
 import {
 	deleteTask,
@@ -1992,17 +1993,26 @@ async function main() {
 		const STARTUP_TIMEOUT_MS = 20_000;
 		currentPromptStartedAt = Date.now();
 		promptHasEmitted = false;
+		// Tracks whether a timeout or user abort fired during this prompt task.
+		// Checked by the continuation loop so narration-stops are not re-prompted
+		// after an intentional abort.
+		let abortFired = false;
+		const safeAbort = () => {
+			abortFired = true;
+			try {
+				activeSession.abort();
+			} catch {
+				// ignore if session already completed
+			}
+		};
+
 		const startupTimer = setTimeout(() => {
 			if (promptHasEmitted) return;
 			log(
 				"prompt: no events within %dms — aborting (model may have failed to load)",
 				STARTUP_TIMEOUT_MS,
 			);
-			try {
-				activeSession.abort();
-			} catch {
-				// ignore if session already completed
-			}
+			safeAbort();
 		}, STARTUP_TIMEOUT_MS);
 
 		// Auto-abort timeout: prevents the UI from staying in "thinking" state
@@ -2014,17 +2024,36 @@ async function main() {
 		// allowing the "done" event to be sent.
 		const abortTimeout = setTimeout(() => {
 			log("prompt: timeout after %dms — aborting session", PROMPT_TIMEOUT_MS);
-			try {
-				activeSession.abort();
-			} catch {
-				// ignore if session already completed
-			}
+			safeAbort();
 		}, PROMPT_TIMEOUT_MS);
 
 		const isRemote = cmd._origin === "remote";
 
 		try {
 			await activeSession.prompt(cmd.text);
+
+			// Continuation loop — recovers from models (e.g. DeepSeek V4 Flash)
+			// that emit narration text mid-workflow instead of calling the next
+			// tool. Fires only when: the last assistant message is text-only stop,
+			// at least one prior tool call exists (we're mid-workflow, not pure
+			// chat), and no abort has been signalled (#325).
+			let continuations = 0;
+			while (
+				continuations < MAX_CONTINUATIONS &&
+				!abortFired &&
+				shouldContinue(activeSession)
+			) {
+				log(
+					"prompt: model narrated mid-workflow — auto-continuing (%d/%d)",
+					continuations + 1,
+					MAX_CONTINUATIONS,
+				);
+				await activeSession.prompt(CONTINUATION_MSG);
+				continuations++;
+			}
+			if (continuations > 0) {
+				log("prompt: auto-continuation complete after %d re-prompt(s)", continuations);
+			}
 		} catch (err) {
 			// Surface SDK errors back to the UI instead of swallowing them
 			// silently with just a "done" event.
@@ -3478,68 +3507,97 @@ async function main() {
 			// ── load_session ───────────────────────────────────────────
 			case "load_session": {
 				try {
+					// 1. DISPLAY DATA — must always succeed and reach the UI. Read
+					//    the saved messages + header first. This is completely
+					//    independent of the agent-context rebuild below. Coupling
+					//    the two used to mean any rebuild failure discarded the
+					//    already-read messages, so selecting a conversation showed
+					//    the empty greeting instead of its history (#history-blank).
 					const messages = loadSessionMessages(zosmaDir, cmd.sessionFile);
-					// Also read the header for metadata
 					const filePath = join(sessionsDir(zosmaDir), cmd.sessionFile);
 					const content = readFileSync(filePath, "utf-8");
 					const header = JSON.parse(content.trim().split("\n")[0]);
 
-					// Resume semantics (like pi's /resume): reload the pi session
-					// so newly added extensions/skills/prompts are picked up
-					// without restarting the app, then continue the saved
-					// conversation inside the reloaded session.
+					// 2. AGENT CONTEXT REBUILD — best-effort. Resume semantics
+					//    (like pi's /resume): reload the pi session so newly added
+					//    extensions/skills/prompts are picked up without restarting
+					//    the app, then continue the saved conversation inside the
+					//    reloaded session. Extensions/skills are bound at
+					//    session-creation time, so the current session can't see
+					//    resources added after it was built. We re-scan the loader
+					//    and rebuild the session. Unlike the `reload` command we do
+					//    NOT call initAgent(): that re-emits `ready` and would reset
+					//    the frontend model selection.
 					//
-					// Extensions/skills are bound at session-creation time, so the
-					// currently-active session can't see resources added after it
-					// was built. We re-scan the loader and rebuild the session.
-					// Unlike the `reload` command we do NOT call initAgent(): that
-					// re-emits `ready` and would reset the frontend model selection.
-					if (authStorage && modelRegistry && settingsManager && resourceLoader) {
-						// 0. Restore the workspace this conversation ran in. Legacy
-						//    sessions have no saved cwd → resolveWorkspace(undefined)
-						//    falls back to the default (home).
-						const sessionCwd = resolveWorkspace(
-							typeof header.cwd === "string" ? header.cwd : undefined,
-							zosmaDir,
+					//    CRITICAL: this whole block is wrapped in its own try/catch.
+					//    If any step throws (a bad workspace, an extension that
+					//    fails to load, a session-rebuild error, …) we log it and
+					//    STILL return the messages below. A failure to restore the
+					//    agent's working context must never stop the user from
+					//    reading their conversation history.
+					try {
+						if (authStorage && modelRegistry && settingsManager && resourceLoader) {
+							// 0. Restore the workspace this conversation ran in.
+							//    Legacy sessions have no saved cwd →
+							//    resolveWorkspace(undefined) falls back to default.
+							const sessionCwd = resolveWorkspace(
+								typeof header.cwd === "string" ? header.cwd : undefined,
+								zosmaDir,
+							);
+							if (sessionCwd !== workspaceCwd) {
+								// Folder changed: rebuild the loader bound to the
+								// restored cwd (also re-scans disk for new
+								// extensions/skills). Build BEFORE committing the new
+								// workspaceCwd so a failed build leaves state coherent.
+								const nextLoader = await buildResourceLoader(sessionCwd);
+								workspaceCwd = sessionCwd;
+								resourceLoader = nextLoader;
+								retargetTasksWatcher(workspaceCwd);
+								log("load_session: workspace → %s", workspaceCwd);
+							} else {
+								// Same folder: just re-scan for newly added resources.
+								await resourceLoader.reload();
+							}
+							// Rebuild the session from the (re)loaded loader.
+							if (session) {
+								session.abort();
+							}
+							const resumedSessionManager = SessionManager.inMemory(workspaceCwd);
+							const resumed = await createAgentSession({
+								cwd: workspaceCwd,
+								authStorage,
+								modelRegistry,
+								sessionManager: resumedSessionManager,
+								settingsManager,
+								resourceLoader,
+							});
+							session = resumed.session;
+							sessionManager = resumedSessionManager;
+							// Re-subscribe so the rebuilt session's events reach stdout.
+							session.subscribe((event) => {
+								send({ type: "event", event });
+							});
+
+							// Re-bind the extension UI bridge for the resumed session.
+							await bindExtensionUi(resumed.session);
+						}
+
+						// 3. Restore the saved conversation into the reloaded session
+						//    so continuing the chat keeps its context.
+						if (session && Array.isArray(messages) && messages.length > 0) {
+							restoreSessionContext(session, messages);
+						}
+					} catch (restoreErr) {
+						// Restore failed — history is still returned below. Log the
+						// full error so this failure is no longer invisible (it was
+						// previously swallowed at all three layers: sidecar, Rust,
+						// and the frontend console).
+						log(
+							"load_session: context restore failed (history still shown): %s",
+							restoreErr instanceof Error
+								? restoreErr.stack || restoreErr.message
+								: String(restoreErr),
 						);
-						if (sessionCwd !== workspaceCwd) {
-							// Folder changed: rebuild the loader bound to the restored
-							// cwd (this also re-scans disk for new extensions/skills).
-							workspaceCwd = sessionCwd;
-							retargetTasksWatcher(workspaceCwd);
-							log("load_session: workspace → %s", workspaceCwd);
-							resourceLoader = await buildResourceLoader(workspaceCwd);
-						} else {
-							// Same folder: just re-scan for newly added resources.
-							await resourceLoader.reload();
-						}
-						// Rebuild the session from the (re)loaded loader.
-						if (session) {
-							session.abort();
-						}
-						const resumedSessionManager = SessionManager.inMemory(workspaceCwd);
-						const resumed = await createAgentSession({
-							cwd: workspaceCwd,
-							authStorage,
-							modelRegistry,
-							sessionManager: resumedSessionManager,
-							settingsManager,
-							resourceLoader,
-						});
-						session = resumed.session;
-						sessionManager = resumedSessionManager;
-						// Re-subscribe so the rebuilt session's events reach stdout.
-						session.subscribe((event) => {
-							send({ type: "event", event });
-						});
-
-						// Re-bind the extension UI bridge for the resumed session.
-						await bindExtensionUi(resumed.session);
-					}
-
-					// 3. Restore the saved conversation into the reloaded session.
-					if (session && Array.isArray(messages) && messages.length > 0) {
-						restoreSessionContext(session, messages);
 					}
 
 					send({
@@ -3554,6 +3612,8 @@ async function main() {
 						},
 					});
 				} catch (err) {
+					// Only reached if reading the messages/header themselves failed
+					// (missing/corrupt file). Genuine error worth surfacing.
 					send({
 						type: "error",
 						id: cmd.id,
