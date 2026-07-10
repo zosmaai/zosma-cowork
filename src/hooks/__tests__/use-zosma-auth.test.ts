@@ -1,9 +1,9 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-vi.mock('@/lib/auth-client', () => ({
+vi.mock("@/lib/auth-client", () => ({
 	authClient: {
 		getSession: vi.fn(),
 		signOut: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock('@/lib/auth-client', () => ({
 	},
 }));
 
-vi.mock('@/lib/token-store', () => ({
+vi.mock("@/lib/token-store", () => ({
 	tokenStore: {
 		load: vi.fn(),
 		save: vi.fn(),
@@ -20,43 +20,45 @@ vi.mock('@/lib/token-store', () => ({
 	},
 }));
 
-// useBetterAuthTauri registers a deep-link listener; capture onSuccess so tests
-// can trigger it manually.
-let capturedOnSuccess: ((url?: string | null) => void) | undefined;
+// Capture the onOpenUrl callback so tests can fire deep-link events manually.
+let capturedUrlHandler: ((urls: string[]) => Promise<void>) | undefined;
+const mockUnlisten = vi.fn();
 
-vi.mock('@daveyplate/better-auth-tauri/react', () => ({
-	useBetterAuthTauri: vi.fn(({ onSuccess }) => {
-		capturedOnSuccess = onSuccess;
+vi.mock("@tauri-apps/plugin-deep-link", () => ({
+	onOpenUrl: vi.fn((handler: (urls: string[]) => Promise<void>) => {
+		capturedUrlHandler = handler;
+		return Promise.resolve(mockUnlisten);
 	}),
 }));
 
-import { useZosmaAuth } from '@/hooks/use-zosma-auth';
-import { authClient } from '@/lib/auth-client';
-import { tokenStore } from '@/lib/token-store';
+import { useZosmaAuth } from "@/hooks/use-zosma-auth";
+import { authClient } from "@/lib/auth-client";
+import { tokenStore } from "@/lib/token-store";
 
 const mockGetSession = vi.mocked(authClient.getSession);
 const mockSignOut = vi.mocked(authClient.signOut);
 const mockLoad = vi.mocked(tokenStore.load);
+const mockSave = vi.mocked(tokenStore.save);
 const mockClear = vi.mocked(tokenStore.clear);
 
-const FAKE_USER = { id: 'u1', email: 'test@zosma.ai', name: 'Test' };
-const FAKE_SESSION = { data: { user: FAKE_USER, session: { id: 's1' } }, error: null };
+const FAKE_USER = { id: "u1", email: "test@zosma.ai", name: "Test" };
+const FAKE_SESSION = { data: { user: FAKE_USER, session: { id: "s1" } }, error: null };
 
 // ── Startup flow ──────────────────────────────────────────────────────────────
 
-describe('useZosmaAuth — startup', () => {
+describe("useZosmaAuth — startup", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		capturedOnSuccess = undefined;
+		capturedUrlHandler = undefined;
 	});
 
-	it('stays loading=true until keychain check resolves', async () => {
+	it("stays loading=true until keychain check resolves", async () => {
 		mockLoad.mockResolvedValue(null);
 		const { result } = renderHook(() => useZosmaAuth());
 		expect(result.current.loading).toBe(true);
 	});
 
-	it('sets loading=false and user=null when no token in keychain', async () => {
+	it("sets loading=false and user=null when no token in keychain", async () => {
 		mockLoad.mockResolvedValue(null);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
@@ -64,8 +66,8 @@ describe('useZosmaAuth — startup', () => {
 		expect(result.current.isAuthenticated).toBe(false);
 	});
 
-	it('restores session when valid token exists in keychain', async () => {
-		mockLoad.mockResolvedValue('tok_valid');
+	it("restores session when valid token exists in keychain", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
@@ -73,8 +75,8 @@ describe('useZosmaAuth — startup', () => {
 		expect(result.current.isAuthenticated).toBe(true);
 	});
 
-	it('clears stale token and shows login when getSession returns no user', async () => {
-		mockLoad.mockResolvedValue('tok_expired');
+	it("clears stale token and shows login when getSession returns no user", async () => {
+		mockLoad.mockResolvedValue("tok_expired");
 		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
@@ -85,35 +87,52 @@ describe('useZosmaAuth — startup', () => {
 
 // ── Google OAuth deep-link callback ──────────────────────────────────────────
 
-describe('useZosmaAuth — Google OAuth (deep-link)', () => {
+describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		capturedOnSuccess = undefined;
+		capturedUrlHandler = undefined;
 	});
 
-	it('sets user after successful deep-link callback', async () => {
+	it("extracts token, saves it, and sets user after deep-link fires", async () => {
 		mockLoad.mockResolvedValue(null);
+		mockSave.mockResolvedValue(undefined);
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
+
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
 
-		// Simulate deep-link OAuth completing.
 		await act(async () => {
-			await capturedOnSuccess?.('/');
+			await capturedUrlHandler?.(["zosma-cowork:///?token=test-bearer-token"]);
 		});
 
+		expect(mockSave).toHaveBeenCalledWith("test-bearer-token");
 		expect(result.current.user).toEqual(FAKE_USER);
 		expect(result.current.isAuthenticated).toBe(true);
 	});
 
-	it('stays unauthenticated when deep-link getSession returns no user', async () => {
+	it("does nothing when deep-link URL has no token param", async () => {
 		mockLoad.mockResolvedValue(null);
-		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
 
 		await act(async () => {
-			await capturedOnSuccess?.('/');
+			await capturedUrlHandler?.(["zosma-cowork:///"]);
+		});
+
+		expect(mockSave).not.toHaveBeenCalled();
+		expect(result.current.user).toBeNull();
+	});
+
+	it("stays unauthenticated when deep-link getSession returns no user", async () => {
+		mockLoad.mockResolvedValue(null);
+		mockSave.mockResolvedValue(undefined);
+		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
+
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		await act(async () => {
+			await capturedUrlHandler?.(["zosma-cowork:///?token=bad-token"]);
 		});
 
 		expect(result.current.user).toBeNull();
@@ -122,11 +141,11 @@ describe('useZosmaAuth — Google OAuth (deep-link)', () => {
 
 // ── Sign out ─────────────────────────────────────────────────────────────────
 
-describe('useZosmaAuth — signOut', () => {
+describe("useZosmaAuth — signOut", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('clears token, calls authClient.signOut, and sets user null', async () => {
-		mockLoad.mockResolvedValue('tok');
+	it("clears token, calls authClient.signOut, and sets user null", async () => {
+		mockLoad.mockResolvedValue("tok");
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		mockSignOut.mockResolvedValue({ data: null, error: null } as never);
 
@@ -146,17 +165,17 @@ describe('useZosmaAuth — signOut', () => {
 
 // ── B10: 401 mid-session ─────────────────────────────────────────────────────
 
-describe('useZosmaAuth — 401 handling', () => {
+describe("useZosmaAuth — 401 handling", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('sets user null when zosma-unauthorized event fires', async () => {
-		mockLoad.mockResolvedValue('tok');
+	it("sets user null when zosma-unauthorized event fires", async () => {
+		mockLoad.mockResolvedValue("tok");
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.user).toEqual(FAKE_USER));
 
 		act(() => {
-			window.dispatchEvent(new CustomEvent('zosma-unauthorized'));
+			window.dispatchEvent(new CustomEvent("zosma-unauthorized"));
 		});
 
 		expect(result.current.user).toBeNull();

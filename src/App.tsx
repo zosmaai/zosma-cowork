@@ -1035,14 +1035,14 @@ function App() {
 								: showLoginScreen
 									? "login"
 									: showConnectModal
-									? "connect"
-									: showSettings
-										? "settings"
-										: loadingSession
-											? "loading"
-											: sidebarView === "tasks"
-												? "tasks"
-												: "chat"
+										? "connect"
+										: showSettings
+											? "settings"
+											: loadingSession
+												? "loading"
+												: sidebarView === "tasks"
+													? "tasks"
+													: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>

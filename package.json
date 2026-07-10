@@ -20,7 +20,6 @@
 		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd .."
 	},
 	"dependencies": {
-		"@daveyplate/better-auth-tauri": "^0.1.9",
 		"@radix-ui/react-tooltip": "^1.2.8",
 		"@sentry/react": "^10.53.1",
 		"@tauri-apps/api": "~2.10.0",

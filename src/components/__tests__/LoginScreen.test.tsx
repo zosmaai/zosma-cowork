@@ -1,81 +1,150 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('@daveyplate/better-auth-tauri', () => ({
-	signInSocial: vi.fn(),
+// ── Boundary mocks ────────────────────────────────────────────────────────────
+// LoginScreen uses authClient.signIn.social() with disableRedirect:true,
+// then passes the returned url to openUrl(). We mock both boundaries.
+
+const { mockOpenUrl, mockSignInSocial } = vi.hoisted(() => ({
+	mockOpenUrl: vi.fn(),
+	mockSignInSocial: vi.fn(),
 }));
 
-vi.mock('@/lib/auth-client', () => ({
-	authClient: {},
+vi.mock("@tauri-apps/plugin-opener", () => ({
+	openUrl: mockOpenUrl,
 }));
 
-import { signInSocial } from '@daveyplate/better-auth-tauri';
-import { LoginScreen } from '@/components/LoginScreen';
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		signIn: { social: mockSignInSocial },
+	},
+	AUTH_URL: "http://localhost:3000",
+}));
 
-const mockSignInSocial = vi.mocked(signInSocial);
+import { LoginScreen } from "@/components/LoginScreen";
 
-describe('LoginScreen', () => {
-	beforeEach(() => vi.clearAllMocks());
+const MOCK_OAUTH_URL = "https://accounts.google.com/o/oauth2/auth?mock=1";
 
-	it('renders the Google sign-in button', () => {
-		render(<LoginScreen />);
-		expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
+const okResult = (url = MOCK_OAUTH_URL) =>
+	Promise.resolve({ data: { url, redirect: true }, error: null });
+
+describe("LoginScreen", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
 	});
 
-	it('renders the brand headline', () => {
+	it("renders the Google sign-in button", () => {
 		render(<LoginScreen />);
-		expect(screen.getByText('Sign in to Zosma')).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /continue with google/i })).toBeInTheDocument();
 	});
 
-	it('calls signInSocial with google provider on click', async () => {
-		mockSignInSocial.mockResolvedValue({ data: null, error: null } as never);
+	it("renders the brand headline", () => {
+		render(<LoginScreen />);
+		expect(screen.getByText("Sign in to Zosma")).toBeInTheDocument();
+	});
+
+	it("calls authClient.signIn.social then opens the OAuth URL via openUrl", async () => {
+		mockSignInSocial.mockReturnValue(okResult());
+		mockOpenUrl.mockResolvedValue(undefined);
 		render(<LoginScreen />);
 
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 		});
 
-		expect(mockSignInSocial).toHaveBeenCalledWith(
-			expect.objectContaining({ provider: 'google' }),
+		expect(mockSignInSocial).toHaveBeenCalledOnce();
+		expect(mockSignInSocial).toHaveBeenCalledWith({
+			provider: "google",
+			callbackURL: "zosma-cowork:///",
+			disableRedirect: true,
+		});
+		expect(mockOpenUrl).toHaveBeenCalledWith(MOCK_OAUTH_URL);
+	});
+
+	it("shows loading state while sign-in is in flight", async () => {
+		let resolve!: (v: unknown) => void;
+		mockSignInSocial.mockReturnValue(
+			new Promise((r) => {
+				resolve = r;
+			}),
 		);
-	});
-
-	it('shows loading state while sign-in is in flight', async () => {
-		let resolve!: () => void;
-		mockSignInSocial.mockReturnValue(new Promise((r) => { resolve = () => r({ data: null, error: null } as never); }));
+		mockOpenUrl.mockResolvedValue(undefined);
 
 		render(<LoginScreen />);
-		fireEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+		fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 
-		expect(await screen.findByText('Opening browser…')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /continue with google/i })).toBeDisabled();
+		expect(await screen.findByText("Opening browser…")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /continue with google/i })).toBeDisabled();
 
-		await act(async () => resolve());
+		await act(async () => resolve(okResult()));
 	});
 
-	it('shows an error message when signInSocial throws', async () => {
-		mockSignInSocial.mockRejectedValue(new Error('opener unavailable'));
+	it("shows error when signIn.social returns no url", async () => {
+		mockSignInSocial.mockReturnValue(Promise.resolve({ data: {}, error: null }));
 		render(<LoginScreen />);
 
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 		});
 
-		expect(screen.getByRole('alert')).toHaveTextContent(/could not open/i);
+		expect(screen.getByRole("alert")).toHaveTextContent(/could not open/i);
 	});
 
-	it('re-enables the button after an error', async () => {
-		mockSignInSocial.mockRejectedValue(new Error('fail'));
+	it("shows error when signIn.social returns an error", async () => {
+		mockSignInSocial.mockReturnValue(
+			Promise.resolve({ data: null, error: { message: "Auth failed" } }),
+		);
 		render(<LoginScreen />);
 
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 		});
 
-		expect(screen.getByRole('button', { name: /continue with google/i })).not.toBeDisabled();
+		expect(screen.getByRole("alert")).toHaveTextContent(/could not open/i);
 	});
 
-	it('does not show an email or password field', () => {
+	it("shows error when signIn.social throws a network error", async () => {
+		mockSignInSocial.mockRejectedValue(new Error("network error"));
+		render(<LoginScreen />);
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+		});
+
+		expect(screen.getByRole("alert")).toHaveTextContent(/could not open/i);
+	});
+
+	it("re-enables the button after an error", async () => {
+		mockSignInSocial.mockRejectedValue(new Error("fail"));
+		render(<LoginScreen />);
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+		});
+
+		expect(screen.getByRole("button", { name: /continue with google/i })).not.toBeDisabled();
+	});
+
+	it("resets spinner and shows error when zosma-auth-failed fires", async () => {
+		mockSignInSocial.mockReturnValue(okResult());
+		mockOpenUrl.mockResolvedValue(undefined);
+		render(<LoginScreen />);
+
+		// Click → loading=true, browser opens
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+		});
+
+		// Deep-link callback fails on the server side
+		await act(async () => {
+			window.dispatchEvent(new CustomEvent("zosma-auth-failed"));
+		});
+
+		expect(screen.getByRole("button", { name: /continue with google/i })).not.toBeDisabled();
+		expect(screen.getByRole("alert")).toHaveTextContent(/sign-in failed/i);
+	});
+
+	it("does not show email or password fields", () => {
 		render(<LoginScreen />);
 		expect(screen.queryByLabelText(/email/i)).toBeNull();
 		expect(screen.queryByLabelText(/password/i)).toBeNull();

@@ -1,26 +1,8 @@
-/**
- * useZosmaAuth
- *
- * Manages the Zosma account session for the desktop app.
- *
- * Sign-in flow (Google OAuth via system browser):
- *   signInSocial({ authClient, provider: 'google' })   ← called from LoginScreen
- *     → opens system browser → Google consent
- *     → auth.zosma.ai processes callback
- *     → deep-links back to  zosma-cowork://api/auth/callback/google?…
- *     → useBetterAuthTauri catches the deep link, calls authClient.$fetch
- *     → auth-client.ts onResponse saves the set-auth-token to OS keychain
- *     → onSuccess fires → we call getSession() → set user
- *
- * Startup flow:
- *   Load token from OS keychain → getSession() to validate → set user
- *   If the token is missing or invalid the user sees LoginScreen.
- */
-import { useBetterAuthTauri } from '@daveyplate/better-auth-tauri/react';
-import { useCallback, useEffect, useState } from 'react';
-import { authClient } from '@/lib/auth-client';
-import { tokenStore } from '@/lib/token-store';
-import type { ZosmaUser } from '@/types/auth';
+import { authClient } from "@/lib/auth-client";
+import { tokenStore } from "@/lib/token-store";
+import type { ZosmaUser } from "@/types/auth";
+import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { useCallback, useEffect, useState } from "react";
 
 export const useZosmaAuth = () => {
 	const [user, setUser] = useState<ZosmaUser | null>(null);
@@ -35,14 +17,11 @@ export const useZosmaAuth = () => {
 				if (!cancelled) setLoading(false);
 				return;
 			}
-			// Token is in memory now (tokenStore.load() puts it there).
-			// Validate it against the server.
 			const { data } = await authClient.getSession();
 			if (cancelled) return;
 			if (data?.user) {
 				setUser(data.user as ZosmaUser);
 			} else {
-				// Token expired or revoked — clear it.
 				await tokenStore.clear();
 			}
 			setLoading(false);
@@ -54,31 +33,46 @@ export const useZosmaAuth = () => {
 	}, []);
 
 	// ── Deep-link OAuth callback (Google) ────────────────────────────────────
-	// useBetterAuthTauri listens for the zosma-cowork:// deep link that the
-	// auth server sends back after Google OAuth.  It calls authClient.$fetch
-	// to finalise the session.  Our auth-client onResponse handler saves the
-	// bearer token to the OS keychain automatically.
-	useBetterAuthTauri({
-		authClient,
-		scheme: 'zosma-cowork',
-		onSuccess: async () => {
-			const { data } = await authClient.getSession();
-			if (data?.user) {
-				setUser(data.user as ZosmaUser);
-				setLoading(false);
+	// The auth server's hooks.after embeds the bearer token as ?token= in the
+	// zosma-cowork:// redirect URL. We extract it directly — no second HTTP call.
+	useEffect(() => {
+		let unlistenFn: (() => void) | undefined;
+
+		onOpenUrl(async (urls) => {
+			const raw = urls[0];
+			if (!raw) return;
+			try {
+				const deepLink = new URL(raw);
+				const token = deepLink.searchParams.get("token");
+				if (!token) return;
+				await tokenStore.save(token);
+				const { data } = await authClient.getSession();
+				if (data?.user) {
+					setUser(data.user as ZosmaUser);
+				} else {
+					// Token rejected or session expired — clear it and let LoginScreen
+					// reset its spinner so the user can try again.
+					await tokenStore.clear();
+					window.dispatchEvent(new CustomEvent("zosma-auth-failed"));
+				}
+			} catch (err) {
+				console.error("[ZosmaAuth] Deep-link callback failed", err);
+				window.dispatchEvent(new CustomEvent("zosma-auth-failed"));
 			}
-		},
-		onError: (error) => {
-			console.error('[ZosmaAuth] OAuth deep-link error', error);
-			setLoading(false);
-		},
-	});
+		}).then((fn) => {
+			unlistenFn = fn;
+		});
+
+		return () => {
+			unlistenFn?.();
+		};
+	}, []);
 
 	// ── B10: React to mid-session 401 (token revoked) ───────────────────────
 	useEffect(() => {
 		const handle = () => setUser(null);
-		window.addEventListener('zosma-unauthorized', handle);
-		return () => window.removeEventListener('zosma-unauthorized', handle);
+		window.addEventListener("zosma-unauthorized", handle);
+		return () => window.removeEventListener("zosma-unauthorized", handle);
 	}, []);
 
 	// ── Sign out ─────────────────────────────────────────────────────────────
