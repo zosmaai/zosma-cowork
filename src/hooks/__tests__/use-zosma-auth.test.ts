@@ -20,6 +20,14 @@ vi.mock("@/lib/token-store", () => ({
 	},
 }));
 
+vi.mock("@/lib/user-cache", () => ({
+	userCache: {
+		save: vi.fn(),
+		load: vi.fn(),
+		clear: vi.fn(),
+	},
+}));
+
 // Capture the onOpenUrl callback so tests can fire deep-link events manually.
 let capturedUrlHandler: ((urls: string[]) => Promise<void>) | undefined;
 const mockUnlisten = vi.fn();
@@ -34,12 +42,16 @@ vi.mock("@tauri-apps/plugin-deep-link", () => ({
 import { useZosmaAuth } from "@/hooks/use-zosma-auth";
 import { authClient } from "@/lib/auth-client";
 import { tokenStore } from "@/lib/token-store";
+import { userCache } from "@/lib/user-cache";
 
 const mockGetSession = vi.mocked(authClient.getSession);
 const mockSignOut = vi.mocked(authClient.signOut);
 const mockLoad = vi.mocked(tokenStore.load);
 const mockSave = vi.mocked(tokenStore.save);
 const mockClear = vi.mocked(tokenStore.clear);
+const mockCacheLoad = vi.mocked(userCache.load);
+const mockCacheSave = vi.mocked(userCache.save);
+const mockCacheClear = vi.mocked(userCache.clear);
 
 const FAKE_USER = { id: "u1", email: "test@zosma.ai", name: "Test" };
 const FAKE_SESSION = { data: { user: FAKE_USER, session: { id: "s1" } }, error: null };
@@ -50,6 +62,7 @@ describe("useZosmaAuth — startup", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		capturedUrlHandler = undefined;
+		mockCacheLoad.mockReturnValue(null); // default: no cached user
 	});
 
 	it("stays loading=true until keychain check resolves", async () => {
@@ -66,8 +79,43 @@ describe("useZosmaAuth — startup", () => {
 		expect(result.current.isAuthenticated).toBe(false);
 	});
 
-	it("restores session when valid token exists in keychain", async () => {
+	it("clears user cache when no token in keychain", async () => {
+		mockLoad.mockResolvedValue(null);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		expect(mockCacheClear).toHaveBeenCalled();
+	});
+
+	it("restores user instantly from cache before getSession resolves", async () => {
 		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(FAKE_USER as never);
+		// getSession takes time — user should already be set from cache
+		mockGetSession.mockImplementation(
+			() => new Promise((resolve) => setTimeout(() => resolve(FAKE_SESSION as never), 50)),
+		);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		// Must be set from cache before server responds
+		expect(result.current.user).toEqual(FAKE_USER);
+		expect(result.current.isAuthenticated).toBe(true);
+	});
+
+	it("updates user from server after background validation completes", async () => {
+		const freshUser = { ...FAKE_USER, name: "Updated Name" };
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(FAKE_USER as never);
+		mockGetSession.mockResolvedValue({
+			data: { user: freshUser, session: { id: "s1" } },
+			error: null,
+		} as never);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.user?.name).toBe("Updated Name"));
+		expect(mockCacheSave).toHaveBeenCalledWith(freshUser);
+	});
+
+	it("restores session from server when no cache exists", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(null);
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
@@ -75,13 +123,71 @@ describe("useZosmaAuth — startup", () => {
 		expect(result.current.isAuthenticated).toBe(true);
 	});
 
-	it("clears stale token and shows login when getSession returns no user", async () => {
+	it("clears stale token when getSession returns no user", async () => {
 		mockLoad.mockResolvedValue("tok_expired");
 		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
 		const { result } = renderHook(() => useZosmaAuth());
 		await waitFor(() => expect(result.current.loading).toBe(false));
 		expect(mockClear).toHaveBeenCalled();
+		expect(mockCacheClear).toHaveBeenCalled();
 		expect(result.current.user).toBeNull();
+	});
+
+	it("clears cache and signs out when cached user exists but getSession returns no user", async () => {
+		mockLoad.mockResolvedValue("tok_expired");
+		mockCacheLoad.mockReturnValue(FAKE_USER as never);
+		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.user).toBeNull());
+		expect(mockClear).toHaveBeenCalled();
+		expect(mockCacheClear).toHaveBeenCalled();
+	});
+
+	it("preserves token and cache when getSession returns a network error", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(FAKE_USER as never);
+		mockGetSession.mockResolvedValue({
+			data: null,
+			error: { status: 0, message: "Network error" },
+		} as never);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		expect(mockClear).not.toHaveBeenCalled();
+		expect(mockCacheClear).not.toHaveBeenCalled();
+		expect(result.current.user).toEqual(FAKE_USER); // cache kept
+	});
+
+	it("preserves token and shows login when getSession returns a network error (no cache)", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(null);
+		mockGetSession.mockResolvedValue({
+			data: null,
+			error: { status: 0, message: "Network error" },
+		} as never);
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		expect(mockClear).not.toHaveBeenCalled();
+		expect(result.current.user).toBeNull();
+	});
+
+	it("preserves token and shows login when getSession throws", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(null);
+		mockGetSession.mockRejectedValue(new Error("ECONNREFUSED"));
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		expect(mockClear).not.toHaveBeenCalled();
+		expect(result.current.user).toBeNull();
+	});
+
+	it("preserves cached user when getSession throws", async () => {
+		mockLoad.mockResolvedValue("tok_valid");
+		mockCacheLoad.mockReturnValue(FAKE_USER as never);
+		mockGetSession.mockRejectedValue(new Error("ECONNREFUSED"));
+		const { result } = renderHook(() => useZosmaAuth());
+		await waitFor(() => expect(result.current.loading).toBe(false));
+		expect(result.current.user).toEqual(FAKE_USER);
+		expect(mockCacheClear).not.toHaveBeenCalled();
 	});
 });
 
@@ -91,9 +197,10 @@ describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		capturedUrlHandler = undefined;
+		mockCacheLoad.mockReturnValue(null);
 	});
 
-	it("extracts token, saves it, and sets user after deep-link fires", async () => {
+	it("extracts token, saves it, caches user, and sets user after deep-link fires", async () => {
 		mockLoad.mockResolvedValue(null);
 		mockSave.mockResolvedValue(undefined);
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
@@ -106,6 +213,7 @@ describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 		});
 
 		expect(mockSave).toHaveBeenCalledWith("test-bearer-token");
+		expect(mockCacheSave).toHaveBeenCalledWith(FAKE_USER);
 		expect(result.current.user).toEqual(FAKE_USER);
 		expect(result.current.isAuthenticated).toBe(true);
 	});
@@ -120,10 +228,11 @@ describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 		});
 
 		expect(mockSave).not.toHaveBeenCalled();
+		expect(mockCacheSave).not.toHaveBeenCalled();
 		expect(result.current.user).toBeNull();
 	});
 
-	it("stays unauthenticated when deep-link getSession returns no user", async () => {
+	it("stays unauthenticated and clears cache when deep-link getSession returns no user", async () => {
 		mockLoad.mockResolvedValue(null);
 		mockSave.mockResolvedValue(undefined);
 		mockGetSession.mockResolvedValue({ data: null, error: null } as never);
@@ -135,6 +244,7 @@ describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 			await capturedUrlHandler?.(["zosma-cowork:///?token=bad-token"]);
 		});
 
+		expect(mockCacheClear).toHaveBeenCalled();
 		expect(result.current.user).toBeNull();
 	});
 });
@@ -142,9 +252,12 @@ describe("useZosmaAuth — Google OAuth (deep-link)", () => {
 // ── Sign out ─────────────────────────────────────────────────────────────────
 
 describe("useZosmaAuth — signOut", () => {
-	beforeEach(() => vi.clearAllMocks());
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCacheLoad.mockReturnValue(null);
+	});
 
-	it("clears token, calls authClient.signOut, and sets user null", async () => {
+	it("clears token, cache, calls authClient.signOut, and sets user null", async () => {
 		mockLoad.mockResolvedValue("tok");
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		mockSignOut.mockResolvedValue({ data: null, error: null } as never);
@@ -158,6 +271,7 @@ describe("useZosmaAuth — signOut", () => {
 
 		expect(mockSignOut).toHaveBeenCalled();
 		expect(mockClear).toHaveBeenCalled();
+		expect(mockCacheClear).toHaveBeenCalled();
 		expect(result.current.user).toBeNull();
 		expect(result.current.isAuthenticated).toBe(false);
 	});
@@ -166,9 +280,12 @@ describe("useZosmaAuth — signOut", () => {
 // ── B10: 401 mid-session ─────────────────────────────────────────────────────
 
 describe("useZosmaAuth — 401 handling", () => {
-	beforeEach(() => vi.clearAllMocks());
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCacheLoad.mockReturnValue(null);
+	});
 
-	it("sets user null when zosma-unauthorized event fires", async () => {
+	it("sets user null and clears cache when zosma-unauthorized event fires", async () => {
 		mockLoad.mockResolvedValue("tok");
 		mockGetSession.mockResolvedValue(FAKE_SESSION as never);
 		const { result } = renderHook(() => useZosmaAuth());
@@ -179,5 +296,6 @@ describe("useZosmaAuth — 401 handling", () => {
 		});
 
 		expect(result.current.user).toBeNull();
+		expect(mockCacheClear).toHaveBeenCalled();
 	});
 });

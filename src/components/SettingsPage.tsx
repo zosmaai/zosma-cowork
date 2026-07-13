@@ -341,7 +341,7 @@ export function SettingsPage({
 				open={showSignOutConfirm}
 				onClose={() => setShowSignOutConfirm(false)}
 				onConfirm={() => onZosmaSignOut?.()}
-				title="Sign out of Zosma?"
+				title="Sign out of Zosma Cowork?"
 				description="You'll be taken back to the login screen. Any active sessions will continue running until you return."
 				confirmLabel="Sign out"
 				cancelLabel="Stay signed in"
