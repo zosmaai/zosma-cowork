@@ -246,98 +246,98 @@ function AuthRow({
 
 	return (
 		<>
-		<div className="glass overflow-hidden">
-			<div className="px-3.5 py-3">
-				<div className="flex items-center gap-3">
-					<Icon className="w-5 h-5 shrink-0 text-foreground/60" />
-					<span className="flex-1 text-[13px] text-foreground min-w-0 truncate">{label}</span>
+			<div className="glass overflow-hidden">
+				<div className="px-3.5 py-3">
+					<div className="flex items-center gap-3">
+						<Icon className="w-5 h-5 shrink-0 text-foreground/60" />
+						<span className="flex-1 text-[13px] text-foreground min-w-0 truncate">{label}</span>
 
-					{isConnected && (
-						<span
-							className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-							style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}
-						>
-							<span className="w-1.5 h-1.5 rounded-full bg-primary" />
-							Connected
-						</span>
-					)}
+						{isConnected && (
+							<span
+								className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+								style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}
+							>
+								<span className="w-1.5 h-1.5 rounded-full bg-primary" />
+								Connected
+							</span>
+						)}
 
-					{isConnected ? (
-						<button
-							type="button"
-							onClick={() => setShowSignOutConfirm(true)}
-							className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
-						>
-							Sign out
-						</button>
-					) : inFlight ? (
-						<button
-							type="button"
-							onClick={handleCancel}
-							className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-						>
-							Cancel
-						</button>
-					) : (
-						<button
-							type="button"
-							onClick={handleSignIn}
-							className="text-[11px] px-2.5 py-1 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-						>
-							Sign in
-						</button>
-					)}
-				</div>
-
-				{statusMessage && <p className="text-xs text-muted-foreground mt-2">{statusMessage}</p>}
-
-				{userCode && (
-					<div
-						className="mt-2 flex items-center gap-2 p-2 rounded-md"
-						style={{
-							background: "hsl(var(--muted) / 0.4)",
-							border: "1px dashed hsl(var(--border))",
-						}}
-					>
-						<code className="text-xs font-mono font-semibold tracking-wider select-all text-foreground">
-							{userCode}
-						</code>
-						<button
-							type="button"
-							onClick={() => navigator.clipboard?.writeText(userCode)}
-							className="text-xs px-2 py-0.5 rounded font-medium text-white bg-primary"
-						>
-							Copy
-						</button>
-						{verificationUrl && (
+						{isConnected ? (
 							<button
 								type="button"
-								onClick={() =>
-									invoke("open_url", { url: verificationUrl }).catch(() =>
-										window.open(verificationUrl, "_blank"),
-									)
-								}
-								className="text-xs underline ml-auto text-primary"
+								onClick={() => setShowSignOutConfirm(true)}
+								className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
 							>
-								Open
+								Sign out
+							</button>
+						) : inFlight ? (
+							<button
+								type="button"
+								onClick={handleCancel}
+								className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+							>
+								Cancel
+							</button>
+						) : (
+							<button
+								type="button"
+								onClick={handleSignIn}
+								className="text-[11px] px-2.5 py-1 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+							>
+								Sign in
 							</button>
 						)}
 					</div>
-				)}
 
-				{error && <p className="text-xs mt-1.5 text-destructive">{error}</p>}
+					{statusMessage && <p className="text-xs text-muted-foreground mt-2">{statusMessage}</p>}
+
+					{userCode && (
+						<div
+							className="mt-2 flex items-center gap-2 p-2 rounded-md"
+							style={{
+								background: "hsl(var(--muted) / 0.4)",
+								border: "1px dashed hsl(var(--border))",
+							}}
+						>
+							<code className="text-xs font-mono font-semibold tracking-wider select-all text-foreground">
+								{userCode}
+							</code>
+							<button
+								type="button"
+								onClick={() => navigator.clipboard?.writeText(userCode)}
+								className="text-xs px-2 py-0.5 rounded font-medium text-white bg-primary"
+							>
+								Copy
+							</button>
+							{verificationUrl && (
+								<button
+									type="button"
+									onClick={() =>
+										invoke("open_url", { url: verificationUrl }).catch(() =>
+											window.open(verificationUrl, "_blank"),
+										)
+									}
+									className="text-xs underline ml-auto text-primary"
+								>
+									Open
+								</button>
+							)}
+						</div>
+					)}
+
+					{error && <p className="text-xs mt-1.5 text-destructive">{error}</p>}
+				</div>
 			</div>
-		</div>
-		<ConfirmDialog
-			open={showSignOutConfirm}
-			onClose={() => setShowSignOutConfirm(false)}
-			onConfirm={handleSignOut}
-			title={`Sign out of ${label}?`}
-			description="Your session token will be removed. You can sign back in at any time."
-			confirmLabel="Sign out"
-			cancelLabel="Keep connected"
-			variant="destructive"
-		/>
+			<ConfirmDialog
+				open={showSignOutConfirm}
+				onClose={() => setShowSignOutConfirm(false)}
+				onConfirm={handleSignOut}
+				title={`Sign out of ${label}?`}
+				description="Your session token will be removed. You can sign back in at any time."
+				confirmLabel="Sign out"
+				cancelLabel="Keep connected"
+				variant="destructive"
+			/>
 		</>
 	);
 }

@@ -15,8 +15,7 @@ import { useCallback, useEffect, useState } from "react";
  * local development when the auth server may not be running.  The app will
  * still restore the session from the local user cache.
  */
-const VALIDATE_ON_STARTUP =
-	import.meta.env.VITE_AUTH_VALIDATE_ON_STARTUP !== "false";
+const VALIDATE_ON_STARTUP = import.meta.env.VITE_AUTH_VALIDATE_ON_STARTUP !== "false";
 
 export const useZosmaAuth = () => {
 	const [user, setUser] = useState<ZosmaUser | null>(null);

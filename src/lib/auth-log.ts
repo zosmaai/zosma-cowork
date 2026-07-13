@@ -9,15 +9,9 @@
  * whole write path is dead-code eliminated by Vite — no fs plugin call, no
  * console noise — unless you explicitly opt in via env var.
  */
-import {
-	BaseDirectory,
-	exists,
-	mkdir,
-	writeTextFile,
-} from "@tauri-apps/plugin-fs";
+import { BaseDirectory, exists, mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
 
-const ENABLED =
-	import.meta.env.DEV || import.meta.env.VITE_AUTH_LOG === "true";
+const ENABLED = import.meta.env.DEV || import.meta.env.VITE_AUTH_LOG === "true";
 
 const LOG_PATH = ".zosmaai/cowork/auth.log";
 
@@ -61,7 +55,9 @@ export const authLog = (msg: string, extra?: unknown): void => {
 	const suffix = extra !== undefined ? ` :: ${safeJson(extra)}` : "";
 	const line = `[${stamp()}] ${msg}${suffix}\n`;
 	console.log(`[ZosmaAuth] ${msg}`, extra ?? "");
-	queue = queue.then(() => doWrite(line)).catch(() => {
-		// logging must never break the traced flow
-	});
+	queue = queue
+		.then(() => doWrite(line))
+		.catch(() => {
+			// logging must never break the traced flow
+		});
 };

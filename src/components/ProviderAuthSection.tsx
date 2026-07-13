@@ -264,142 +264,142 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 
 	return (
 		<>
-		<div
-			className={compact ? "space-y-2" : "w-full rounded-xl border p-4 space-y-3"}
-			style={
-				compact
-					? undefined
-					: {
-							borderColor: "hsl(var(--border))",
-							background: "hsl(var(--muted) / 0.2)",
-						}
-			}
-		>
-			<div className="flex items-start justify-between gap-3">
-				<div className="flex-1 min-w-0">
-					<div
-						className={compact ? "text-xs font-medium" : "text-sm font-semibold"}
-						style={{ color: "hsl(var(--foreground))" }}
-					>
-						Sign in with {label}
+			<div
+				className={compact ? "space-y-2" : "w-full rounded-xl border p-4 space-y-3"}
+				style={
+					compact
+						? undefined
+						: {
+								borderColor: "hsl(var(--border))",
+								background: "hsl(var(--muted) / 0.2)",
+							}
+				}
+			>
+				<div className="flex items-start justify-between gap-3">
+					<div className="flex-1 min-w-0">
+						<div
+							className={compact ? "text-xs font-medium" : "text-sm font-semibold"}
+							style={{ color: "hsl(var(--foreground))" }}
+						>
+							Sign in with {label}
+						</div>
+						{!compact && description && (
+							<p className="text-xs mt-1 text-muted-foreground">{description}</p>
+						)}
 					</div>
-					{!compact && description && (
-						<p className="text-xs mt-1 text-muted-foreground">{description}</p>
-					)}
+					<StatusBadge connected={isConnected} expires={entry?.expires} />
 				</div>
-				<StatusBadge connected={isConnected} expires={entry?.expires} />
-			</div>
 
-			{statusMessage && <p className="text-xs text-muted-foreground">{statusMessage}</p>}
-			{userCode && (
-				<div
-					className="rounded-lg p-3 space-y-2"
-					style={{
-						background: "hsl(var(--muted) / 0.4)",
-						border: "1px dashed hsl(var(--border))",
-					}}
-				>
-					<p className="text-xs text-muted-foreground">In the browser, enter this code:</p>
-					<div className="flex items-center gap-2">
-						<code className="flex-1 text-sm font-mono font-semibold tracking-widest text-center px-2 py-1.5 rounded-md select-all bg-background text-foreground">
-							{userCode}
-						</code>
+				{statusMessage && <p className="text-xs text-muted-foreground">{statusMessage}</p>}
+				{userCode && (
+					<div
+						className="rounded-lg p-3 space-y-2"
+						style={{
+							background: "hsl(var(--muted) / 0.4)",
+							border: "1px dashed hsl(var(--border))",
+						}}
+					>
+						<p className="text-xs text-muted-foreground">In the browser, enter this code:</p>
+						<div className="flex items-center gap-2">
+							<code className="flex-1 text-sm font-mono font-semibold tracking-widest text-center px-2 py-1.5 rounded-md select-all bg-background text-foreground">
+								{userCode}
+							</code>
+							<button
+								type="button"
+								onClick={() => {
+									void navigator.clipboard?.writeText(userCode);
+								}}
+								className="text-xs px-2 py-1.5 rounded-md transition-colors hover:opacity-90 bg-primary text-primary-foreground"
+							>
+								Copy
+							</button>
+						</div>
+						{verificationUrl && (
+							<p className="text-[10px] text-muted-foreground">
+								at{" "}
+								<a
+									href={verificationUrl}
+									onClick={(ev) => {
+										ev.preventDefault();
+										invoke("open_url", { url: verificationUrl }).catch(() => {
+											window.open(verificationUrl, "_blank");
+										});
+									}}
+									className="underline text-primary"
+								>
+									{verificationUrl}
+								</a>
+							</p>
+						)}
+					</div>
+				)}
+				{error && <p className="text-xs text-destructive">{error}</p>}
+
+				<div className="flex gap-2">
+					{!isConnected && !inFlight && (
 						<button
 							type="button"
-							onClick={() => {
-								void navigator.clipboard?.writeText(userCode);
+							onClick={handleSignIn}
+							className={`${
+								compact
+									? "flex-1 text-xs px-3 py-1.5 rounded-lg"
+									: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
+							} transition-all hover:opacity-90 cursor-pointer`}
+							style={{
+								background: "hsl(var(--primary))",
+								color: "hsl(var(--primary-foreground))",
 							}}
-							className="text-xs px-2 py-1.5 rounded-md transition-colors hover:opacity-90 bg-primary text-primary-foreground"
 						>
-							Copy
+							Sign In
 						</button>
-					</div>
-					{verificationUrl && (
-						<p className="text-[10px] text-muted-foreground">
-							at{" "}
-							<a
-								href={verificationUrl}
-								onClick={(ev) => {
-									ev.preventDefault();
-									invoke("open_url", { url: verificationUrl }).catch(() => {
-										window.open(verificationUrl, "_blank");
-									});
-								}}
-								className="underline text-primary"
-							>
-								{verificationUrl}
-							</a>
-						</p>
+					)}
+					{inFlight && (
+						<button
+							type="button"
+							onClick={handleCancel}
+							className={`${
+								compact
+									? "flex-1 text-xs px-3 py-1.5 rounded-lg"
+									: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
+							} transition-all hover:opacity-90 cursor-pointer`}
+							style={{
+								background: "hsl(var(--muted))",
+								color: "hsl(var(--muted-foreground))",
+							}}
+						>
+							Cancel
+						</button>
+					)}
+					{isConnected && !inFlight && (
+						<button
+							type="button"
+							onClick={() => setShowSignOutConfirm(true)}
+							className={`${
+								compact
+									? "flex-1 text-xs px-3 py-1.5 rounded-lg"
+									: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
+							} transition-all hover:opacity-90 cursor-pointer`}
+							style={{
+								background: "hsl(var(--muted))",
+								color: "hsl(var(--foreground))",
+							}}
+						>
+							Sign Out
+						</button>
 					)}
 				</div>
-			)}
-			{error && <p className="text-xs text-destructive">{error}</p>}
-
-			<div className="flex gap-2">
-				{!isConnected && !inFlight && (
-					<button
-						type="button"
-						onClick={handleSignIn}
-						className={`${
-							compact
-								? "flex-1 text-xs px-3 py-1.5 rounded-lg"
-								: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
-						} transition-all hover:opacity-90 cursor-pointer`}
-						style={{
-							background: "hsl(var(--primary))",
-							color: "hsl(var(--primary-foreground))",
-						}}
-					>
-						Sign In
-					</button>
-				)}
-				{inFlight && (
-					<button
-						type="button"
-						onClick={handleCancel}
-						className={`${
-							compact
-								? "flex-1 text-xs px-3 py-1.5 rounded-lg"
-								: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
-						} transition-all hover:opacity-90 cursor-pointer`}
-						style={{
-							background: "hsl(var(--muted))",
-							color: "hsl(var(--muted-foreground))",
-						}}
-					>
-						Cancel
-					</button>
-				)}
-				{isConnected && !inFlight && (
-					<button
-						type="button"
-						onClick={() => setShowSignOutConfirm(true)}
-						className={`${
-							compact
-								? "flex-1 text-xs px-3 py-1.5 rounded-lg"
-								: "flex-1 text-sm px-4 py-2 rounded-xl font-semibold"
-						} transition-all hover:opacity-90 cursor-pointer`}
-						style={{
-							background: "hsl(var(--muted))",
-							color: "hsl(var(--foreground))",
-						}}
-					>
-						Sign Out
-					</button>
-				)}
 			</div>
-		</div>
-		<ConfirmDialog
-			open={showSignOutConfirm}
-			onClose={() => setShowSignOutConfirm(false)}
-			onConfirm={handleSignOut}
-			title={`Sign out of ${PROVIDER_LABELS[provider] ?? provider}?`}
-			description="Your session token will be removed. You can sign back in at any time."
-			confirmLabel="Sign out"
-			cancelLabel="Keep connected"
-			variant="destructive"
-			icon={LogOut}
-		/>
+			<ConfirmDialog
+				open={showSignOutConfirm}
+				onClose={() => setShowSignOutConfirm(false)}
+				onConfirm={handleSignOut}
+				title={`Sign out of ${PROVIDER_LABELS[provider] ?? provider}?`}
+				description="Your session token will be removed. You can sign back in at any time."
+				confirmLabel="Sign out"
+				cancelLabel="Keep connected"
+				variant="destructive"
+				icon={LogOut}
+			/>
 		</>
 	);
 }

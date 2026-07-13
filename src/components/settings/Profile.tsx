@@ -54,9 +54,7 @@ export function Profile({ user }: ProfileProps) {
 		<section className="space-y-5">
 			<div>
 				<h2 className="text-sm font-semibold text-foreground mb-1">My Profile</h2>
-				<p className="text-xs text-muted-foreground">
-					Your Zosma account — signed in via Google.
-				</p>
+				<p className="text-xs text-muted-foreground">Your Zosma account — signed in via Google.</p>
 			</div>
 
 			{/* ── Avatar + name card ── */}
