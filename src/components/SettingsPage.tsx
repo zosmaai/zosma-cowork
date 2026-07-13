@@ -11,21 +11,25 @@ import {
 	MessageSquare,
 	Palette,
 	Puzzle,
+	User,
 	Zap,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "./FeedbackDialog";
+import { ConfirmDialog } from "./ui/confirm-dialog";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
 import { Apps } from "./settings/Apps";
 import { Authentication } from "./settings/Authentication";
 import { Extensions } from "./settings/Extensions";
+import { Profile } from "./settings/Profile";
 import { Instructions } from "./settings/Instructions";
 import { RemoteAccess } from "./settings/RemoteAccess";
 import { Skills } from "./settings/Skills";
 import { Telemetry } from "./settings/Telemetry";
 import { Workspace } from "./settings/Workspace";
+import type { ZosmaUser } from "@/types/auth";
 
 interface SettingsPageProps {
 	onClose: () => void;
@@ -36,10 +40,13 @@ interface SettingsPageProps {
 	onFontScaleChange?: (scale: number) => void;
 	/** B9 — Sign out of the Zosma account (clears keychain token). */
 	onZosmaSignOut?: () => void;
+	/** Signed-in Zosma user — shown in the My Profile section. */
+	user?: ZosmaUser | null;
 }
 
 type SectionId =
-	| "authentication"
+	| "my-profile"
+	| "ai-providers"
 	| "remote-access"
 	| "apps"
 	| "extensions"
@@ -62,7 +69,8 @@ const GROUPS: { label: string; items: Section[] }[] = [
 	{
 		label: "Account",
 		items: [
-			{ id: "authentication", label: "Authentication", Icon: KeyRound },
+			{ id: "my-profile", label: "My Profile", Icon: User },
+			{ id: "ai-providers", label: "AI Providers", Icon: KeyRound },
 			{ id: "remote-access", label: "Remote Access", Icon: Globe },
 		],
 	},
@@ -101,9 +109,11 @@ export function SettingsPage({
 	fontScale,
 	onFontScaleChange,
 	onZosmaSignOut,
+	user,
 }: SettingsPageProps) {
 	const [showFeedback, setShowFeedback] = useState(false);
-	const [activeSection, setActiveSection] = useState<SectionId>("authentication");
+	const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+	const [activeSection, setActiveSection] = useState<SectionId>("my-profile");
 	const [prevIndex, setPrevIndex] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const reduced = useReducedMotion();
@@ -279,7 +289,7 @@ export function SettingsPage({
 						{onZosmaSignOut && (
 							<motion.button
 								type="button"
-								onClick={onZosmaSignOut}
+								onClick={() => setShowSignOutConfirm(true)}
 								className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-muted-foreground"
 								whileHover={
 									reduced
@@ -318,6 +328,7 @@ export function SettingsPage({
 									onTelemetryToggle={onTelemetryToggle}
 									fontScale={fontScale}
 									onFontScaleChange={onFontScaleChange}
+									user={user}
 								/>
 							</div>
 						</motion.div>
@@ -326,6 +337,17 @@ export function SettingsPage({
 			</div>
 
 			<FeedbackDialog open={showFeedback} onClose={() => setShowFeedback(false)} />
+			<ConfirmDialog
+				open={showSignOutConfirm}
+				onClose={() => setShowSignOutConfirm(false)}
+				onConfirm={() => onZosmaSignOut?.()}
+				title="Sign out of Zosma?"
+				description="You'll be taken back to the login screen. Any active sessions will continue running until you return."
+				confirmLabel="Sign out"
+				cancelLabel="Stay signed in"
+				variant="destructive"
+				icon={LogOut}
+			/>
 		</div>
 	);
 }
@@ -338,6 +360,7 @@ function SectionContent({
 	onTelemetryToggle,
 	fontScale,
 	onFontScaleChange,
+	user,
 }: {
 	activeSection: SectionId;
 	onShowKeyEntry?: () => void;
@@ -345,10 +368,12 @@ function SectionContent({
 	onTelemetryToggle?: (enabled: boolean) => void;
 	fontScale?: number;
 	onFontScaleChange?: (scale: number) => void;
+	user?: ZosmaUser | null;
 }) {
 	return (
 		<>
-			{activeSection === "authentication" && <Authentication onShowKeyEntry={onShowKeyEntry} />}
+			{activeSection === "my-profile" && user && <Profile user={user} />}
+			{activeSection === "ai-providers" && <Authentication onShowKeyEntry={onShowKeyEntry} />}
 			{activeSection === "remote-access" && <RemoteAccess />}
 			{activeSection === "apps" && <Apps />}
 			{activeSection === "extensions" && <Extensions />}

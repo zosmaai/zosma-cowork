@@ -8,6 +8,7 @@
  * gh_auth_status until connected.
  */
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useGithub } from "@/hooks/useGithub";
 import { openExternalUrl } from "@/lib/utils";
 import {
@@ -79,6 +80,7 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 	const [copied, setCopied] = useState(false);
 	const [showManual, setShowManual] = useState(false);
 	const [busy, setBusy] = useState(false);
+	const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -203,7 +205,7 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					</div>
 					<button
 						type="button"
-						onClick={disconnect}
+						onClick={() => setShowDisconnectConfirm(true)}
 						disabled={busy}
 						className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
 					>
@@ -472,6 +474,17 @@ export function GithubApp({ onBack }: { onBack: () => void }) {
 					</p>
 				</div>
 			)}
+			<ConfirmDialog
+				open={showDisconnectConfirm}
+				onClose={() => setShowDisconnectConfirm(false)}
+				onConfirm={disconnect}
+				title="Disconnect GitHub?"
+				description="This will remove your GitHub credentials. Any features using GitHub will stop working until you reconnect."
+				confirmLabel="Disconnect"
+				cancelLabel="Keep connected"
+				variant="destructive"
+				icon={LogOut}
+			/>
 		</section>
 	);
 }

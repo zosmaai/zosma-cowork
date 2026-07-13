@@ -8,8 +8,10 @@
  * `oauth_cancelled` emitted by the Rust backend.
  */
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
+import { LogOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AuthStatusEntry = {
@@ -51,6 +53,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 	const [userCode, setUserCode] = useState<string | null>(null);
 	const [verificationUrl, setVerificationUrl] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 
 	const refreshStatus = useCallback(async () => {
@@ -260,6 +263,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 	}
 
 	return (
+		<>
 		<div
 			className={compact ? "space-y-2" : "w-full rounded-xl border p-4 space-y-3"}
 			style={
@@ -369,7 +373,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 				{isConnected && !inFlight && (
 					<button
 						type="button"
-						onClick={handleSignOut}
+						onClick={() => setShowSignOutConfirm(true)}
 						className={`${
 							compact
 								? "flex-1 text-xs px-3 py-1.5 rounded-lg"
@@ -385,6 +389,18 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 				)}
 			</div>
 		</div>
+		<ConfirmDialog
+			open={showSignOutConfirm}
+			onClose={() => setShowSignOutConfirm(false)}
+			onConfirm={handleSignOut}
+			title={`Sign out of ${PROVIDER_LABELS[provider] ?? provider}?`}
+			description="Your session token will be removed. You can sign back in at any time."
+			confirmLabel="Sign out"
+			cancelLabel="Keep connected"
+			variant="destructive"
+			icon={LogOut}
+		/>
+		</>
 	);
 }
 

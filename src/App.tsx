@@ -91,6 +91,7 @@ function App() {
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
 	// Zosma account session (zosma-cowork-auth server — bearer token in OS keychain).
 	const {
+		user: zosmaUser,
 		isAuthenticated: zosmaAuthenticated,
 		loading: zosmaLoading,
 		signOut: zosmaSignOut,
@@ -1072,6 +1073,7 @@ function App() {
 								fontScale={fontScale}
 								onFontScaleChange={setFontScale}
 								onZosmaSignOut={zosmaSignOut}
+								user={zosmaUser}
 							/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">

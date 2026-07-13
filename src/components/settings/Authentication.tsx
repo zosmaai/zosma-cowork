@@ -76,7 +76,7 @@ export function Authentication({ onShowKeyEntry: _onShowKeyEntry }: Props) {
 
 	return (
 		<section>
-			<h2 className="text-sm font-semibold text-foreground mb-1">Authentication</h2>
+			<h2 className="text-sm font-semibold text-foreground mb-1">AI Providers</h2>
 			<p className="text-xs text-muted-foreground mb-5">
 				Connect your AI subscriptions — no keys stored in the cloud.
 			</p>
@@ -122,6 +122,7 @@ function AuthRow({
 	const [userCode, setUserCode] = useState<string | null>(null);
 	const [verificationUrl, setVerificationUrl] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
 	const entry = useMemo(
 		() => authStatus?.providers.find((p) => p.id === provider) ?? null,
@@ -244,6 +245,7 @@ function AuthRow({
 	if (!supported) return null;
 
 	return (
+		<>
 		<div className="glass overflow-hidden">
 			<div className="px-3.5 py-3">
 				<div className="flex items-center gap-3">
@@ -263,8 +265,8 @@ function AuthRow({
 					{isConnected ? (
 						<button
 							type="button"
-							onClick={handleSignOut}
-							className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+							onClick={() => setShowSignOutConfirm(true)}
+							className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
 						>
 							Sign out
 						</button>
@@ -326,6 +328,17 @@ function AuthRow({
 				{error && <p className="text-xs mt-1.5 text-destructive">{error}</p>}
 			</div>
 		</div>
+		<ConfirmDialog
+			open={showSignOutConfirm}
+			onClose={() => setShowSignOutConfirm(false)}
+			onConfirm={handleSignOut}
+			title={`Sign out of ${label}?`}
+			description="Your session token will be removed. You can sign back in at any time."
+			confirmLabel="Sign out"
+			cancelLabel="Keep connected"
+			variant="destructive"
+		/>
+		</>
 	);
 }
 

@@ -102,7 +102,8 @@ describe("SettingsPage", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
 		// Desktop sidebar nav buttons - they'll have duplicates from mobile bar,
 		// but at least one instance of each must exist
-		expect(screen.getAllByRole("button", { name: "Authentication" }).length).toBeGreaterThanOrEqual(
+		expect(screen.getAllByRole("button", { name: "My Profile" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "AI Providers" }).length).toBeGreaterThanOrEqual(
 			1,
 		);
 		expect(screen.getAllByRole("button", { name: "Extensions" }).length).toBeGreaterThanOrEqual(1);
@@ -129,9 +130,15 @@ describe("SettingsPage", () => {
 		expect(screen.getByRole("heading", { name: "Apps" })).toBeDefined();
 	});
 
-	it("shows Authentication content by default", () => {
+	it("shows My Profile nav item selected by default", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		// Default section is Authentication — its content should render (3 provider rows)
+		// My Profile is the first section — its nav button should be present
+		expect(screen.getAllByRole("button", { name: "My Profile" }).length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("shows AI Providers content when navigated to", () => {
+		render(<SettingsPage onClose={vi.fn()} />);
+		clickNavButton("AI Providers");
 		expect(screen.getAllByText("AUTH_SECTION_MOCK").length).toBeGreaterThanOrEqual(1);
 	});
 
