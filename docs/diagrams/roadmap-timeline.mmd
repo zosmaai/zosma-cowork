@@ -1,0 +1,44 @@
+gantt
+    title Zosma Cowork Roadmap (28 Weeks)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+
+    section Phase 1: Core Polish
+    Conversation search       :done, p1a, 2026-07-14, 1d
+    Drag & drop polish        :done, p1b, 2026-07-14, 2d
+
+    section Phase 2: Extensions
+    @zosmaai/pi-jira          :crit, p2a, after p1b, 5d
+    @zosmaai/pi-github        :crit, p2b, after p1b, 3d
+    @zosmaai/pi-notion        :crit, p2c, after p1b, 3d
+    Messenger setup wizard    :p2d, after p2a, 2d
+    @zosmaai/pi-slack-ops     :p2e, after p2d, 2d
+    @zosmaai/pi-teams         :p2f, after p2d, 3d
+    @zosmaai/pi-postgres      :p2g, after p2e, 1d
+
+    section Phase 3: Design Studio
+    Skill absorption (OD)     :p3a, after p2f, 2d
+    DESIGN.md schema          :p3b, after p3a, 1d
+    Craft references          :p3c, after p3b, 1d
+    Prompt composition        :p3d, after p3c, 2d
+    Artifact preview          :p3e, after p3d, 3d
+    Export pipeline           :p3f, after p3e, 2d
+
+    section Phase 4: Mobile
+    PWA manifest              :p4a, after p3f, 1h
+    Responsive layout         :crit, p4b, after p4a, 3d
+    Kill mobile/index.html    :p4c, after p4b, 0.5d
+    Touch composer            :p4d, after p4c, 2d
+    Security audit            :crit, p4e, after p4d, 2d
+
+    section Phase 5: Office Docs
+    Design rules as skills    :p5a, after p4e, 2d
+    Template packs            :p5b, after p5a, 3d
+    QA loop                   :p5c, after p5b, 2d
+
+    section Phase 6: Distribution
+    macOS code signing        :crit, p6a, after p5c, 1d
+    Windows EV signing        :crit, p6b, after p6a, 1d
+    Flatpak / Snap            :p6c, after p6b, 2d
+    Documentation site        :p6d, after p6c, 3d
+    Public launch             :milestone, p6e, after p6d, 0d

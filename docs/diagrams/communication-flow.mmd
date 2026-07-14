@@ -1,0 +1,34 @@
+sequenceDiagram
+    actor User
+    participant React as React Frontend
+    participant Rust as Rust Backend<br/>(lib.rs)
+    participant Sidecar as Node.js Sidecar
+    participant PiSDK as pi-mono SDK
+    participant LLM as LLM Provider
+
+    User->>React: Type message + Enter
+    React->>Rust: invoke("send_prompt", {text})
+    Rust->>Sidecar: stdin: {"type":"prompt","id":"...","text":"..."}
+    Sidecar->>PiSDK: session.prompt(text)
+    PiSDK->>LLM: API request (streaming)
+
+    loop Streaming
+        LLM-->>PiSDK: token delta
+        PiSDK-->>Sidecar: event: {kind:"text_delta", content:"..."}
+        Sidecar-->>Rust: stdout: {"type":"event","event":{...}}
+        Rust-->>React: Channel<Value>: streaming event
+        React-->>User: Live token display
+    end
+
+    PiSDK->>PiSDK: Tool call needed
+    PiSDK->>LLM: Tool result
+    LLM-->>PiSDK: Continue response
+    PiSDK-->>Sidecar: event: {kind:"tool_result",...}
+    Sidecar-->>Rust: stdout: {"type":"event","event":{...}}
+    Rust-->>React: Channel<Value>: tool event
+    React-->>User: Tool call timeline
+
+    PiSDK-->>Sidecar: event: {kind:"done"}
+    Sidecar-->>Rust: stdout: {"type":"done","id":"..."}
+    Rust-->>React: Channel<Value>: done event
+    React-->>User: Final message
