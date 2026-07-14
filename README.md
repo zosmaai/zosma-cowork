@@ -73,7 +73,7 @@ The diagram is generated from <code>assets/architecture.mmd</code>. To update:
 
 ```bash
 # Edit assets/architecture.mmd, then re-render:
-mmdc -i assets/architecture.mmd -o assets/architecture.png -t dark -b '#1a1a2e' -w 1400 -H 900 -s 2
+mmdc -i assets/architecture.mmd -o assets/architecture.png -t default -b white -w 900 -H 700 -s 2
 ```
 </details>
 
@@ -83,14 +83,29 @@ See the full [**Product Roadmap**](ROADMAP.md) for phased plans, competitive pos
 <details>
 <summary>Architecture diagrams (6 views)</summary>
 
-| Diagram | Description |
-|---------|-------------|
-| [System Architecture](docs/diagrams/system-architecture.svg) | Full stack: React → Rust → Node sidecar → pi SDK |
-| [Communication Flow](docs/diagrams/communication-flow.svg) | Sequence diagram: streaming events pipeline |
-| [Extension Ecosystem](docs/diagrams/extension-ecosystem.svg) | 4 tiers: installed, vendored, planned, future |
-| [Competitive Positioning](docs/diagrams/competitive-positioning.svg) | Quadrant chart vs Cursor, Hermes, Slack AI |
-| [Roadmap Timeline](docs/diagrams/roadmap-timeline.svg) | Gantt chart: 6 phases, 28 weeks |
-| [Data Flow](docs/diagrams/data-flow.svg) | User → App → Agent → Storage layers |
+**System Architecture** — Full stack: React → Rust → Node sidecar → pi SDK
+
+<img src="docs/diagrams/system-architecture.png" width="100%" alt="System Architecture" />
+
+**Communication Flow** — Sequence diagram: streaming events pipeline
+
+<img src="docs/diagrams/communication-flow.png" width="100%" alt="Communication Flow" />
+
+**Extension Ecosystem** — 4 tiers: installed, vendored, planned, future
+
+<img src="docs/diagrams/extension-ecosystem.png" width="100%" alt="Extension Ecosystem" />
+
+**Competitive Positioning** — Quadrant chart vs Cursor, Hermes, Slack AI
+
+<img src="docs/diagrams/competitive-positioning.png" width="100%" alt="Competitive Positioning" />
+
+**Roadmap Timeline** — Gantt chart: 6 phases, 28 weeks
+
+<img src="docs/diagrams/roadmap-timeline.png" width="100%" alt="Roadmap Timeline" />
+
+**Data Flow** — User → App → Agent → Storage layers
+
+<img src="docs/diagrams/data-flow.png" width="100%" alt="Data Flow" />
 
 </details>
 
