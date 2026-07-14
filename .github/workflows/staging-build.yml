@@ -164,6 +164,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate unreleased changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx git-cliff --unreleased --strip header > staging-changelog.md
+          echo "── Unreleased changelog ──"
+          cat staging-changelog.md
+
       # Tell Tauri's macOS bundler to skip codesigning explicitly. Without
       # this, tauri-action sees an empty APPLE_SIGNING_IDENTITY env var and
       # tries to sign with the default identity, which fails on a runner
@@ -262,6 +270,14 @@ jobs:
             find target -path '*/release/bundle/*' -type f | head -50 || true
             exit 1
           fi
+
+      - name: Upload changelog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-changelog-${{ github.event.pull_request.head.sha || github.sha }}
+          path: staging-changelog.md
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

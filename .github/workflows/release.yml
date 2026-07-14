@@ -266,6 +266,41 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history needed for git-cliff to walk tags
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate changelog for release
+        id: changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          CHANGELOG=$(npx git-cliff --unreleased --tag "$TAG" --strip header 2>/dev/null)
+          echo "Generated changelog:"
+          echo "$CHANGELOG"
+          # Store as a file for use in later steps
+          echo "$CHANGELOG" > /tmp/release-body.md
+          # Also set as output (for logging)
+          echo "body<<__EOF__" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "__EOF__" >> "$GITHUB_OUTPUT"
+
       - name: Promote draft → published
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -311,5 +346,26 @@ jobs:
             echo "::error::latest.json manifest missing — updater signing key not configured (see #271)"
             exit 1
           fi
-          gh release edit "$TAG" --repo "${GITHUB_REPOSITORY}" --draft=false
+          # Update release body with the generated changelog
+          gh release edit "$TAG" --repo "${GITHUB_REPOSITORY}" \
+            --notes-file /tmp/release-body.md \
+            --draft=false
           echo "✅ $TAG promoted to published"
+
+      - name: Commit CHANGELOG.md to main
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Regenerate the full changelog from all tags and commit it
+          npx git-cliff --topo-order -o CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "ℹ️ CHANGELOG.md unchanged — nothing to commit"
+          else
+            git commit -m "chore: update CHANGELOG.md for $TAG"
+            git push origin HEAD:main
+            echo 

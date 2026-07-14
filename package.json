@@ -17,7 +17,10 @@
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
 		"validate": "pnpm run lint && pnpm run lint:styles && pnpm run typecheck && pnpm run test",
-		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd .."
+		"install:deps": "pnpm install && cd agent-sidecar && pnpm install && cd ..",
+		"changelog": "git-cliff --topo-order -o CHANGELOG.md",
+		"changelog:unreleased": "git-cliff --unreleased",
+		"changelog:latest": "git-cliff --latest --strip header"
 	},
 	"dependencies": {
 		"@radix-ui/react-tooltip": "^1.2.8",
@@ -58,6 +61,7 @@
 		"@vitejs/plugin-react": "^4.4.0",
 		"audit-ci": "^7.1.0",
 		"autoprefixer": "^10.4.21",
+		"git-cliff": "^2.13.1",
 		"jsdom": "^29.1.0",
 		"postcss": "^8.5.3",
 		"tailwindcss": "^4.1.4",
@@ -66,8 +70,7 @@
 		"vite-plugin-pwa": "^1.3.0",
 		"vitest": "^4.1.5"
 	},
-	"allowScripts": {
-		"esbuild@0.25.12": true,
-		"fsevents@2.3.3": true
+	"pnpm": {
+		"onlyBuiltDependencies": ["@biomejs/biome", "esbuild", "fsevents", "git-cliff"]
 	}
 }
