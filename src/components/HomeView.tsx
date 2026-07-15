@@ -8,8 +8,10 @@
  * Designed to disappear: get the user connected and into the app fast.
  */
 
+import { authClient } from "@/lib/auth-client";
 import { checkKeyFormat } from "@/lib/key-format";
-import type { ApiKeyProvider, AuthStatus } from "@/types/auth";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import type { ApiKeyProvider, AuthStatus, ZosmaUser } from "@/types/auth";
 import { invoke } from "@tauri-apps/api/core";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -24,7 +26,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClaudeIcon, GitHubIcon, OpenAIIcon } from "./BrandIcons";
+import { ClaudeIcon, GitHubIcon, GoogleIcon, OpenAIIcon } from "./BrandIcons";
 import { ProviderAuthSection } from "./ProviderAuthSection";
 import { CustomProviderRow } from "./settings/CustomProviderRow";
 
@@ -33,6 +35,8 @@ interface OnboardingProps {
 	onSkipToSettings?: () => void;
 	onDismiss?: () => void;
 	hasSubscription?: boolean;
+	/** Currently signed-in Zosma user (if any). */
+	zosmaUser?: ZosmaUser | null;
 }
 
 /** Provider id pre-selected in the API-key picker (issue #150). */
@@ -66,6 +70,7 @@ export function HomeView({
 	onSkipToSettings,
 	onDismiss,
 	hasSubscription,
+	zosmaUser,
 }: OnboardingProps) {
 	const [step, setStep] = useState<Step>("splash");
 	const [apiKey, setApiKey] = useState("");
@@ -79,6 +84,18 @@ export function HomeView({
 	const [appVersion, setAppVersion] = useState<string | null>(null);
 	const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
 	const [provider, setProvider] = useState<string>("");
+	const [zosmaSignInLoading, setZosmaSignInLoading] = useState(false);
+	const [zosmaSignInError, setZosmaSignInError] = useState<string | null>(null);
+
+	// Reset Zosma sign-in spinner on auth failure (deep-link callback rejected).
+	useEffect(() => {
+		const handle = () => {
+			setZosmaSignInLoading(false);
+			setZosmaSignInError("Sign-in failed. Please try again.");
+		};
+		window.addEventListener("zosma-auth-failed", handle);
+		return () => window.removeEventListener("zosma-auth-failed", handle);
+	}, []);
 
 	useEffect(() => {
 		import("@tauri-apps/api/app")
@@ -209,6 +226,25 @@ export function HomeView({
 		setExpandedProvider((prev) => (prev === id ? null : id));
 	}, []);
 
+	const handleZosmaSignIn = useCallback(async () => {
+		setZosmaSignInLoading(true);
+		setZosmaSignInError(null);
+		try {
+			const { data, error: signInError } = await authClient.signIn.social({
+				provider: "google",
+				callbackURL: "zosma-cowork:///",
+				disableRedirect: true,
+			});
+			if (signInError) throw new Error(signInError.message ?? "Sign-in failed");
+			if (!data?.url) throw new Error("No OAuth URL returned");
+			await openUrl(data.url);
+			// loading stays true until the deep-link callback fires
+		} catch {
+			setZosmaSignInError("Could not open sign-in page. Please try again.");
+			setZosmaSignInLoading(false);
+		}
+	}, []);
+
 	// ── Splash ──────────────────────────────────────────────────
 	if (step === "splash") {
 		return (
@@ -288,6 +324,51 @@ export function HomeView({
 				<p className="text-xs mb-5 text-muted-foreground">Pick one option below.</p>
 
 				<div className="space-y-4">
+					{/* ═══ Zosma AI ═══ */}
+					<div className={`rounded-xl border p-4 space-y-3 ${zosmaUser ? "border-primary/40" : "border-border"}`}>
+						<div className="flex items-center gap-2">
+							<img src="/zosma-mark.png" alt="" className="w-4 h-4 rounded" aria-hidden="true" />
+							<span className="text-sm font-medium text-foreground">Zosma AI</span>
+							<span className="text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto bg-primary/10 text-primary">
+								recommended
+							</span>
+						</div>
+						<p className="text-xs text-muted-foreground">Access Zosma's AI models — no API key needed.</p>
+						{zosmaUser ? (
+							<div className="flex items-center gap-2 text-xs text-primary">
+								<span>✓</span>
+								<span>Signed in as {zosmaUser.email}</span>
+							</div>
+						) : (
+							<>
+								<button
+									type="button"
+									onClick={handleZosmaSignIn}
+									disabled={zosmaSignInLoading}
+									aria-label="Continue with Google"
+									className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background hover:bg-muted/50 text-sm font-medium text-foreground transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+								>
+									{zosmaSignInLoading ? (
+										<div className="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+									) : (
+										<GoogleIcon className="w-4 h-4 shrink-0" />
+									)}
+									{zosmaSignInLoading ? "Opening browser…" : "Continue with Google"}
+								</button>
+								{zosmaSignInError && (
+									<p role="alert" className="text-xs text-destructive text-center">{zosmaSignInError}</p>
+								)}
+							</>
+						)}
+					</div>
+
+					{/* ─── divider ─── */}
+					<div className="flex items-center gap-3">
+						<div className="flex-1 h-px bg-border" />
+						<span className="text-[10px] uppercase tracking-wider shrink-0 text-muted-foreground/70">or add your own</span>
+						<div className="flex-1 h-px bg-border" />
+					</div>
+
 					{/* ═══ API Key quick-start ═══ */}
 					<div className="rounded-xl border p-4 space-y-3 border-border">
 						<div className="flex items-center gap-2">

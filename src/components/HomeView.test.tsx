@@ -17,6 +17,12 @@ import { HomeView } from "./HomeView";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@/lib/auth-client", () => ({
+	authClient: { signIn: { social: vi.fn() } },
+	AUTH_URL: "http://localhost:3000",
+}));
+
 const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),

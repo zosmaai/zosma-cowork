@@ -3,7 +3,6 @@ import { ChatWidthToggle } from "@/components/ChatWidthToggle";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { HelpDialog } from "@/components/HelpDialog";
 import { HomeView } from "@/components/HomeView";
-import { LoginScreen } from "@/components/LoginScreen";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileTopBar } from "@/components/MobileTopBar";
 import { RemoteConnectionBar } from "@/components/RemoteConnectionBar";
@@ -250,7 +249,8 @@ function App() {
 	// Whether to render the Connect / API-key modal. Either we're forcing
 	// it (initial onboarding, unless the user explicitly skipped) or the
 	// user opened "Change API Key" from Settings.
-	const showConnectModal = (needsOnboarding && !skipOnboarding) || showKeyEntry;
+	// Zosma-authenticated users get access to Zosma AI models — skip the API-key prompt.
+	const showConnectModal = (needsOnboarding && !skipOnboarding && !zosmaAuthenticated) || showKeyEntry;
 
 	// Settings persistence
 	const settingsLoadedRef = useRef(false);
@@ -834,9 +834,7 @@ function App() {
 	// Hide the app chrome (sidebar, mobile bars, share button) whenever the
 	// main pane is showing a full-screen state: onboarding, settings, or the
 	// startup loading splash (#169).
-	// Show the login screen when the user has no active Zosma account session.
-	const showLoginScreen = !initializing && !zosmaAuthenticated;
-	const hideChrome = showConnectModal || showSettings || initializing || showLoginScreen;
+	const hideChrome = showConnectModal || showSettings || initializing;
 
 	const sidebarSessions = sessionEntries.map((s) => ({
 		id: s.file,
@@ -1033,10 +1031,8 @@ function App() {
 						key={
 							initializing
 								? "splash"
-								: showLoginScreen
-									? "login"
-									: showConnectModal
-										? "connect"
+								: showConnectModal
+									? "connect"
 										: showSettings
 											? "settings"
 											: loadingSession
@@ -1049,14 +1045,13 @@ function App() {
 					>
 						{initializing ? (
 							<SplashScreen />
-						) : showLoginScreen ? (
-							<LoginScreen />
 						) : showConnectModal ? (
 							<HomeView
 								onComplete={handleConnectComplete}
 								onSkipToSettings={handleSkipToSettings}
 								onDismiss={handleDismissConnect}
 								hasSubscription={hasSubscription}
+								zosmaUser={zosmaUser}
 							/>
 						) : showSettings ? (
 							<SettingsPage
@@ -1073,8 +1068,7 @@ function App() {
 								fontScale={fontScale}
 								onFontScaleChange={setFontScale}
 								onZosmaSignOut={zosmaSignOut}
-								user={zosmaUser}
-							/>
+										/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />

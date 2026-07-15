@@ -19,6 +19,15 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@/lib/auth-client", () => ({
+	authClient: { signIn: { social: vi.fn() } },
+	AUTH_URL: "http://localhost:3000",
+}));
+vi.mock("@/hooks/use-zosma-auth", () => ({
+	useZosmaAuth: () => ({ user: null, isAuthenticated: false, loading: false, signOut: vi.fn() }),
+}));
+
 const mockListen = vi.fn();
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: (...args: unknown[]) => mockListen(...args),

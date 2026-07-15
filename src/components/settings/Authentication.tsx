@@ -1,12 +1,15 @@
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { authClient } from "@/lib/auth-client";
 import { checkKeyFormat } from "@/lib/key-format";
 import type { AuthStatus } from "@/types/auth";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useZosmaAuth } from "@/hooks/use-zosma-auth";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { AlertTriangle, Check, ChevronDown, Eye, EyeOff, Key, Loader2, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ClaudeIcon, GeminiIcon, GitHubIcon, OpenAIIcon } from "../BrandIcons";
+import { ClaudeIcon, GeminiIcon, GitHubIcon, GoogleIcon, OpenAIIcon } from "../BrandIcons";
 import { CustomProviderRow } from "./CustomProviderRow";
 
 // onShowKeyEntry kept for API compat but no longer used — key entry is inline
@@ -81,6 +84,7 @@ export function Authentication({ onShowKeyEntry: _onShowKeyEntry }: Props) {
 				Connect your AI subscriptions — no keys stored in the cloud.
 			</p>
 			<div className="space-y-2">
+				<ZosmaAuthRow />
 				{PROVIDERS_CONFIG.map((p) => (
 					<AuthRow
 						key={p.id}
@@ -99,6 +103,117 @@ export function Authentication({ onShowKeyEntry: _onShowKeyEntry }: Props) {
 				<CustomProviderRow onChange={refreshStatus} />
 			</div>
 		</section>
+	);
+}
+
+// ─── Zosma AI row (better-auth Google OAuth) ───────────────────────────────
+
+function ZosmaAuthRow() {
+	const { user, signOut } = useZosmaAuth();
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+
+	// Clear loading when deep-link callback delivers the user
+	useEffect(() => {
+		if (user) setLoading(false);
+	}, [user]);
+
+	// Reset spinner when the auth callback fails
+	useEffect(() => {
+		const handle = () => {
+			setLoading(false);
+			setError("Sign-in failed. Please try again.");
+		};
+		window.addEventListener("zosma-auth-failed", handle);
+		return () => window.removeEventListener("zosma-auth-failed", handle);
+	}, []);
+
+	const handleSignIn = useCallback(async () => {
+		setLoading(true);
+		setError(null);
+		try {
+			const { data, error: e } = await authClient.signIn.social({
+				provider: "google",
+				callbackURL: "zosma-cowork:///",
+				disableRedirect: true,
+			});
+			if (e) throw new Error(e.message ?? "Sign-in failed");
+			if (!data?.url) throw new Error("No OAuth URL returned");
+			await openUrl(data.url);
+			// loading stays true until deep-link callback fires
+		} catch {
+			setError("Could not open sign-in page. Please try again.");
+			setLoading(false);
+		}
+	}, []);
+
+	return (
+		<>
+			<div className="glass overflow-hidden">
+				<div className="px-3.5 py-3">
+					<div className="flex items-center gap-3">
+						<img src="/zosma-mark.png" alt="" aria-hidden="true" className="w-5 h-5 rounded shrink-0" />
+						<div className="flex-1 min-w-0">
+							<span className="text-[13px] text-foreground truncate block">Zosma AI</span>
+							{user && (
+								<span className="text-[11px] text-muted-foreground truncate block">{user.email}</span>
+							)}
+						</div>
+
+						{user && (
+							<span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/12 text-primary">
+								<span className="w-1.5 h-1.5 rounded-full bg-primary" />
+								Connected
+							</span>
+						)}
+
+						{user ? (
+							<button
+								type="button"
+								onClick={() => setShowSignOutConfirm(true)}
+								className="text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
+							>
+								Sign out
+							</button>
+						) : loading ? (
+							<button
+								type="button"
+								onClick={() => setLoading(false)}
+								className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+							>
+								Cancel
+							</button>
+						) : (
+							<button
+								type="button"
+								onClick={handleSignIn}
+								className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+							>
+								<GoogleIcon className="w-3.5 h-3.5 shrink-0" />
+								Connect
+							</button>
+						)}
+					</div>
+
+					{loading && !user && (
+						<p className="text-xs text-muted-foreground mt-2">Opening browser…</p>
+					)}
+					{error && <p className="text-xs mt-1.5 text-destructive">{error}</p>}
+				</div>
+			</div>
+
+			<ConfirmDialog
+				open={showSignOutConfirm}
+				onClose={() => setShowSignOutConfirm(false)}
+				onConfirm={async () => { await signOut(); setShowSignOutConfirm(false); }}
+				title="Sign out of Zosma AI?"
+				description="You can sign back in at any time using Google."
+				confirmLabel="Sign out"
+				cancelLabel="Stay connected"
+				variant="destructive"
+			/>
+		</>
 	);
 }
 

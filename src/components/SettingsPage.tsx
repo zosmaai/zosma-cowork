@@ -11,7 +11,6 @@ import {
 	MessageSquare,
 	Palette,
 	Puzzle,
-	User,
 	Zap,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
@@ -23,14 +22,11 @@ import { Appearance } from "./settings/Appearance";
 import { Apps } from "./settings/Apps";
 import { Authentication } from "./settings/Authentication";
 import { Extensions } from "./settings/Extensions";
-import { Profile } from "./settings/Profile";
 import { Instructions } from "./settings/Instructions";
 import { RemoteAccess } from "./settings/RemoteAccess";
 import { Skills } from "./settings/Skills";
 import { Telemetry } from "./settings/Telemetry";
 import { Workspace } from "./settings/Workspace";
-import type { ZosmaUser } from "@/types/auth";
-
 interface SettingsPageProps {
 	onClose: () => void;
 	onShowKeyEntry?: () => void;
@@ -40,12 +36,9 @@ interface SettingsPageProps {
 	onFontScaleChange?: (scale: number) => void;
 	/** B9 — Sign out of the Zosma account (clears keychain token). */
 	onZosmaSignOut?: () => void;
-	/** Signed-in Zosma user — shown in the My Profile section. */
-	user?: ZosmaUser | null;
 }
 
 type SectionId =
-	| "my-profile"
 	| "ai-providers"
 	| "remote-access"
 	| "apps"
@@ -69,7 +62,6 @@ const GROUPS: { label: string; items: Section[] }[] = [
 	{
 		label: "Account",
 		items: [
-			{ id: "my-profile", label: "My Profile", Icon: User },
 			{ id: "ai-providers", label: "AI Providers", Icon: KeyRound },
 			{ id: "remote-access", label: "Remote Access", Icon: Globe },
 		],
@@ -109,11 +101,10 @@ export function SettingsPage({
 	fontScale,
 	onFontScaleChange,
 	onZosmaSignOut,
-	user,
 }: SettingsPageProps) {
 	const [showFeedback, setShowFeedback] = useState(false);
 	const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
-	const [activeSection, setActiveSection] = useState<SectionId>("my-profile");
+	const [activeSection, setActiveSection] = useState<SectionId>("ai-providers");
 	const [prevIndex, setPrevIndex] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const reduced = useReducedMotion();
@@ -328,7 +319,6 @@ export function SettingsPage({
 									onTelemetryToggle={onTelemetryToggle}
 									fontScale={fontScale}
 									onFontScaleChange={onFontScaleChange}
-									user={user}
 								/>
 							</div>
 						</motion.div>
@@ -360,7 +350,6 @@ function SectionContent({
 	onTelemetryToggle,
 	fontScale,
 	onFontScaleChange,
-	user,
 }: {
 	activeSection: SectionId;
 	onShowKeyEntry?: () => void;
@@ -368,11 +357,9 @@ function SectionContent({
 	onTelemetryToggle?: (enabled: boolean) => void;
 	fontScale?: number;
 	onFontScaleChange?: (scale: number) => void;
-	user?: ZosmaUser | null;
 }) {
 	return (
 		<>
-			{activeSection === "my-profile" && user && <Profile user={user} />}
 			{activeSection === "ai-providers" && <Authentication onShowKeyEntry={onShowKeyEntry} />}
 			{activeSection === "remote-access" && <RemoteAccess />}
 			{activeSection === "apps" && <Apps />}

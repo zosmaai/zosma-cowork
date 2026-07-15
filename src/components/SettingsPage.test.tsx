@@ -102,7 +102,6 @@ describe("SettingsPage", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
 		// Desktop sidebar nav buttons - they'll have duplicates from mobile bar,
 		// but at least one instance of each must exist
-		expect(screen.getAllByRole("button", { name: "My Profile" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "AI Providers" }).length).toBeGreaterThanOrEqual(
 			1,
 		);
@@ -130,10 +129,10 @@ describe("SettingsPage", () => {
 		expect(screen.getByRole("heading", { name: "Apps" })).toBeDefined();
 	});
 
-	it("shows My Profile nav item selected by default", () => {
+	it("shows AI Providers nav item selected by default", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		// My Profile is the first section — its nav button should be present
-		expect(screen.getAllByRole("button", { name: "My Profile" }).length).toBeGreaterThanOrEqual(1);
+		// AI Providers is now the first section
+		expect(screen.getAllByRole("button", { name: "AI Providers" }).length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("shows AI Providers content when navigated to", () => {
