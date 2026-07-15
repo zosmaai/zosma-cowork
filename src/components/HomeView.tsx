@@ -325,7 +325,9 @@ export function HomeView({
 
 				<div className="space-y-4">
 					{/* ═══ Zosma AI ═══ */}
-					<div className={`rounded-xl border p-4 space-y-3 ${zosmaUser ? "border-primary/40" : "border-border"}`}>
+					<div
+						className={`rounded-xl border p-4 space-y-3 ${zosmaUser ? "border-primary/40" : "border-border"}`}
+					>
 						<div className="flex items-center gap-2">
 							<img src="/zosma-mark.png" alt="" className="w-4 h-4 rounded" aria-hidden="true" />
 							<span className="text-sm font-medium text-foreground">Zosma AI</span>
@@ -333,7 +335,9 @@ export function HomeView({
 								recommended
 							</span>
 						</div>
-						<p className="text-xs text-muted-foreground">Access Zosma's AI models — no API key needed.</p>
+						<p className="text-xs text-muted-foreground">
+							Access Zosma's AI models — no API key needed.
+						</p>
 						{zosmaUser ? (
 							<div className="flex items-center gap-2 text-xs text-primary">
 								<span>✓</span>
@@ -356,7 +360,9 @@ export function HomeView({
 									{zosmaSignInLoading ? "Opening browser…" : "Continue with Google"}
 								</button>
 								{zosmaSignInError && (
-									<p role="alert" className="text-xs text-destructive text-center">{zosmaSignInError}</p>
+									<p role="alert" className="text-xs text-destructive text-center">
+										{zosmaSignInError}
+									</p>
 								)}
 							</>
 						)}
@@ -365,7 +371,9 @@ export function HomeView({
 					{/* ─── divider ─── */}
 					<div className="flex items-center gap-3">
 						<div className="flex-1 h-px bg-border" />
-						<span className="text-[10px] uppercase tracking-wider shrink-0 text-muted-foreground/70">or add your own</span>
+						<span className="text-[10px] uppercase tracking-wider shrink-0 text-muted-foreground/70">
+							or add your own
+						</span>
 						<div className="flex-1 h-px bg-border" />
 					</div>
 

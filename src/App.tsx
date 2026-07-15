@@ -250,7 +250,8 @@ function App() {
 	// it (initial onboarding, unless the user explicitly skipped) or the
 	// user opened "Change API Key" from Settings.
 	// Zosma-authenticated users get access to Zosma AI models — skip the API-key prompt.
-	const showConnectModal = (needsOnboarding && !skipOnboarding && !zosmaAuthenticated) || showKeyEntry;
+	const showConnectModal =
+		(needsOnboarding && !skipOnboarding && !zosmaAuthenticated) || showKeyEntry;
 
 	// Settings persistence
 	const settingsLoadedRef = useRef(false);
@@ -1033,13 +1034,13 @@ function App() {
 								? "splash"
 								: showConnectModal
 									? "connect"
-										: showSettings
-											? "settings"
-											: loadingSession
-												? "loading"
-												: sidebarView === "tasks"
-													? "tasks"
-													: "chat"
+									: showSettings
+										? "settings"
+										: loadingSession
+											? "loading"
+											: sidebarView === "tasks"
+												? "tasks"
+												: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -1068,7 +1069,7 @@ function App() {
 								fontScale={fontScale}
 								onFontScaleChange={setFontScale}
 								onZosmaSignOut={zosmaSignOut}
-										/>
+							/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />

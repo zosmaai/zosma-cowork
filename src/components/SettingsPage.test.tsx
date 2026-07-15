@@ -132,7 +132,9 @@ describe("SettingsPage", () => {
 	it("shows AI Providers nav item selected by default", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
 		// AI Providers is now the first section
-		expect(screen.getAllByRole("button", { name: "AI Providers" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "AI Providers" }).length).toBeGreaterThanOrEqual(
+			1,
+		);
 	});
 
 	it("shows AI Providers content when navigated to", () => {

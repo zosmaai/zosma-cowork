@@ -153,11 +153,18 @@ function ZosmaAuthRow() {
 			<div className="glass overflow-hidden">
 				<div className="px-3.5 py-3">
 					<div className="flex items-center gap-3">
-						<img src="/zosma-mark.png" alt="" aria-hidden="true" className="w-5 h-5 rounded shrink-0" />
+						<img
+							src="/zosma-mark.png"
+							alt=""
+							aria-hidden="true"
+							className="w-5 h-5 rounded shrink-0"
+						/>
 						<div className="flex-1 min-w-0">
 							<span className="text-[13px] text-foreground truncate block">Zosma AI</span>
 							{user && (
-								<span className="text-[11px] text-muted-foreground truncate block">{user.email}</span>
+								<span className="text-[11px] text-muted-foreground truncate block">
+									{user.email}
+								</span>
 							)}
 						</div>
 
@@ -206,7 +213,10 @@ function ZosmaAuthRow() {
 			<ConfirmDialog
 				open={showSignOutConfirm}
 				onClose={() => setShowSignOutConfirm(false)}
-				onConfirm={async () => { await signOut(); setShowSignOutConfirm(false); }}
+				onConfirm={async () => {
+					await signOut();
+					setShowSignOutConfirm(false);
+				}}
 				title="Sign out of Zosma AI?"
 				description="You can sign back in at any time using Google."
 				confirmLabel="Sign out"

@@ -29,7 +29,11 @@ jobs:
       # build-tooling-only advisory can't red-gate unrelated PRs. Every
       # allowlist entry carries a reason + removal condition. See issue #264.
       # audit-ci auto-detects pnpm-lock.yaml, no npm dependency here.
+      # NPM_CONFIG_REGISTRY: pnpm audit (called by audit-ci) needs an explicit
+      # registry URL in CI — without it the audit endpoint returns undefined.
       - run: npx audit-ci --config audit-ci.jsonc
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
 
   cargo-audit:
     name: cargo audit
