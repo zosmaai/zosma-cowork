@@ -1,0 +1,75 @@
+graph TB
+    subgraph Desktop["🖥️ Desktop App (Tauri v2)"]
+        subgraph React["React Frontend"]
+            App["App.tsx<br/>Screen Router"]
+            Chat["ChatView<br/>Messages + Streaming"]
+            Sidebar["Sidebar<br/>Sessions + Nav"]
+            Settings["SettingsPage<br/>Config + Extensions"]
+            RightPanel["RightPanel<br/>Tool Timeline + Artifacts"]
+        end
+
+        subgraph Rust["Rust Backend (lib.rs)"]
+            IPC["Tauri IPC Handlers"]
+            SidecarState["SidecarState<br/>stdin Handle"]
+            Channel["Channel&lt;Value&gt;<br/>Event Stream"]
+            Skills["Skills Manager<br/>walkdir Scan"]
+        end
+
+        subgraph Sidecar["Node.js Agent Sidecar (~4200 lines)"]
+            PiSDK["pi-mono SDK<br/>@earendil-works/pi-coding-agent"]
+            Sessions["Session Manager<br/>JSONL Load/Save/List"]
+            Providers["Provider Router<br/>Model Selection + Auth"]
+            Extensions["Extension Loader<br/>npm + Vendored"]
+            OfficeCLI["OfficeCLI<br/>DOCX/PPTX/XLSX"]
+            Google["Google Workspace<br/>Gmail + Calendar + Drive"]
+            WebAccess["Web Access<br/>Search + Fetch"]
+        end
+    end
+
+    subgraph External["🌐 External Services"]
+        LLM["LLM Providers<br/>OpenAI / Anthropic / Google / ..."]
+        APIs["REST APIs<br/>Jira / GitHub / Notion / ..."]
+        Messaging["Messaging<br/>Discord / Slack / Telegram / ..."]
+    end
+
+    subgraph Storage["💾 Storage"]
+        Sessions2["~/.zosmaai/cowork/sessions/*.jsonl"]
+        Config["~/.zosmaai/cowork/settings.json"]
+        Auth["~/.pi/agent/auth.json"]
+        Skills2["~/.zosmaai/skills/"]
+    end
+
+    App --> Chat
+    App --> Sidebar
+    App --> Settings
+    Chat --> RightPanel
+
+    App -.->|"invoke()"| IPC
+    IPC --> SidecarState
+    SidecarState -.->|"stdin JSON"| Sidecar
+    Sidecar -.->|"stdout JSON"| Channel
+    Channel -.->|"events"| Chat
+
+    Sidecar --> PiSDK
+    PiSDK --> Sessions
+    PiSDK --> Providers
+    PiSDK --> Extensions
+    Extensions --> OfficeCLI
+    Extensions --> Google
+    Extensions --> WebAccess
+
+    Providers --> LLM
+    Extensions --> APIs
+    Extensions --> Messaging
+
+    Sessions --> Sessions2
+    Sidecar --> Config
+    Sidecar --> Auth
+    Skills --> Skills2
+
+    style Desktop fill:#1a1a2e,stroke:#98F46F,color:#fff
+    style React fill:#16213e,stroke:#98F46F,color:#fff
+    style Rust fill:#0f3460,stroke:#98F46F,color:#fff
+    style Sidecar fill:#533483,stroke:#98F46F,color:#fff
+    style External fill:#1a1a2e,stroke:#e94560,color:#fff
+    style Storage fill:#1a1a2e,stroke:#ffc107,color:#fff

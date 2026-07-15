@@ -1,0 +1,47 @@
+graph LR
+    subgraph Installed["✅ Installed (16 packages)"]
+        direction TB
+        Linear["pi-linear<br/>9 tools"]
+        Messenger["pi-messenger-bridge<br/>5 platforms"]
+        GoogleWS["pi-google-workspace<br/>Drive/Docs/Sheets"]
+        Gmail["@e9n/pi-gmail<br/>Read/Send/Search"]
+        Web["pi-web-access<br/>Search/Fetch/PDFs"]
+        Routines["pi-routines<br/>Cron/Scheduling"]
+        Wiki["pi-llm-wiki<br/>Knowledge Base"]
+        Sessions["pi-sessions<br/>Session Mgmt"]
+        Compact["pi-blackhole<br/>Compaction"]
+        Lumen["lumen<br/>Diagrams/Charts"]
+    end
+
+    subgraph Vendored["🔧 Vendored (in-tree)"]
+        direction TB
+        GoogleCal["Google Calendar<br/>agent-sidecar/src/"]
+        OfficeDocs["OfficeCLI<br/>agent-sidecar/src/"]
+        Browser["Browser Harness<br/>agent-sidecar/src/"]
+        CustomProv["Custom Providers<br/>agent-sidecar/src/"]
+        Steering["Steering<br/>agent-sidecar/src/"]
+    end
+
+    subgraph Planned["🚀 Phase 2 (build next)"]
+        direction TB
+        Jira["@zosmaai/pi-jira<br/>🔴 Highest Priority"]
+        GitHub["@zosmaai/pi-github<br/>🔴 Issues + PRs"]
+        Notion["@zosmaai/pi-notion<br/>🔴 Docs + Wiki"]
+        SlackOps["@zosmaai/pi-slack-ops<br/>🟡 Deep Slack"]
+        Teams["@zosmaai/pi-teams<br/>🟡 MS Teams"]
+        Postgres["@zosmaai/pi-postgres<br/>🟢 DB Query"]
+    end
+
+    subgraph Future["🔮 Community / Future"]
+        direction TB
+        Sentry["pi-sentry"]
+        HubSpot["pi-hubspot"]
+        Figma["pi-figma"]
+        K8s["pi-k8s"]
+        AWS["pi-aws"]
+    end
+
+    style Installed fill:#1a472a,stroke:#98F46F,color:#fff
+    style Vendored fill:#1a3a5c,stroke:#4fc3f7,color:#fff
+    style Planned fill:#4a1a1a,stroke:#e94560,color:#fff
+    style Future fill:#2a2a2a,stroke:#888,color:#fff

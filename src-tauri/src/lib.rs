@@ -607,7 +607,7 @@ async fn read_stdout(
                             let _ = app.emit("task_run_progress", e.clone());
                         }
                     }
-                    for (_, p) in pp.lock().await.iter() {
+                    for p in pp.lock().await.values() {
                         let _ = p.channel.send(e.clone());
                     }
                 }

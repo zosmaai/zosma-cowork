@@ -81,17 +81,21 @@ export async function runTaskFire(opts: RunTaskFireOptions): Promise<void> {
 	try {
 		session = await opts.createSession();
 	} catch (err) {
+		const reason = err instanceof Error ? err.message : String(err);
 		store.updateRun(task.id, runId, {
 			status: "failed",
 			completedAt: now().toISOString(),
-			response: "",
+			// Actionable reason (never a silent blank) so the Tasks→Activity
+			// timeline explains why the fire didn't run. Most commonly this is a
+			// missing/unusable model on a machine that hasn't connected an AI.
+			response: `Task could not run: ${reason}. Connect an AI model to run scheduled tasks.`,
 			conversation: [],
 		});
 		opts.log?.(
 			"task fire could not create session for %s (%s): %s",
 			task.id,
 			task.name,
-			err instanceof Error ? err.message : String(err),
+			reason,
 		);
 		return;
 	}

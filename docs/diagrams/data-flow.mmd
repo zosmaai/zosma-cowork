@@ -1,0 +1,46 @@
+graph TB
+    subgraph UserLayer["👤 User Layer"]
+        Desktop["Desktop App<br/>Tauri WebView"]
+        Phone["Phone Browser<br/>PWA"]
+    end
+
+    subgraph AppLayer["🖥️ Application Layer"]
+        React["React UI"]
+        Rust["Rust Backend"]
+        Sidecar["Node.js Sidecar"]
+    end
+
+    subgraph AgentLayer["🤖 Agent Layer"]
+        PiSDK["pi-mono SDK"]
+        Extensions["Extensions<br/>16 npm + vendored"]
+        Tools["Tools<br/>file/shell/web/office"]
+    end
+
+    subgraph StorageLayer["💾 Storage"]
+        Sessions["sessions/*.jsonl<br/>Conversation history"]
+        Settings["settings.json<br/>App config"]
+        Auth["auth.json<br/>Provider API keys"]
+        Skills["skills/<br/>25+ curated skills"]
+        Extensions2["extensions/<br/>Installed packages"]
+        Instructions["INSTRUCTIONS.md<br/>Custom persona"]
+    end
+
+    Desktop --> React
+    Phone --> React
+    React -.->|"Tauri IPC"| Rust
+    Rust -.->|"stdin/stdout JSON"| Sidecar
+    Sidecar --> PiSDK
+    PiSDK --> Extensions
+    Extensions --> Tools
+
+    PiSDK --> Sessions
+    Sidecar --> Settings
+    Sidecar --> Auth
+    Sidecar --> Skills
+    Sidecar --> Extensions2
+    Sidecar --> Instructions
+
+    style UserLayer fill:#1a1a2e,stroke:#98F46F,color:#fff
+    style AppLayer fill:#16213e,stroke:#98F46F,color:#fff
+    style AgentLayer fill:#533483,stroke:#98F46F,color:#fff
+    style StorageLayer fill:#1a1a2e,stroke:#ffc107,color:#fff

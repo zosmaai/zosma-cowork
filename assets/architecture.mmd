@@ -1,29 +1,40 @@
 flowchart TB
-    subgraph Tauri["Tauri v2 Desktop Shell (Rust)"]
+    subgraph Tauri["Tauri v2 Desktop Shell"]
         direction TB
-        subgraph Frontend["React + Tailwind CSS v4"]
+        subgraph Frontend["React + Tailwind CSS"]
             direction LR
-            A["Left Sidebar<br/>(Sessions)"] --- B["Center Workspace<br/>(Chat / Welcome)"] --- C["Right Panel<br/>(Progress)"]
+            A["Sidebar<br/>Sessions"] --- B["Workspace<br/>Chat / Welcome"] --- C["Right Panel<br/>Tool Timeline"]
         end
-        IPC["Tauri IPC Commands<br/>get_models · send_prompt · abort · set_model<br/>save_auth · has_credentials · reload"]
+        IPC["Tauri IPC<br/>send_prompt · abort · set_model"]
     end
 
-    subgraph Sidecar["Agent Sidecar (Node.js)"]
-        SDK["pi-mono SDK<br/>(@earendil-works/pi)"]
-        AS["AuthStorage<br/>API keys"]
-        MR["ModelRegistry<br/>model discovery"]
-        SM["SessionManager<br/>conversation"]
-        DRL["DefaultResourceLoader<br/>extensions, skills, prompts"]
+    subgraph Sidecar["Node.js Agent Sidecar"]
+        SDK["pi-mono SDK"]
+        SR["Session Manager"]
+        MR["Model Registry"]
+        EL["Extension Loader"]
     end
 
-    LLM["LLM Providers<br/>OpenAI · Anthropic · Google · …"]
+    subgraph Extensions["Extensions (16 installed)"]
+        direction LR
+        E1["Google Workspace"]
+        E2["OfficeCLI"]
+        E3["Web Access"]
+        E4["messenger-bridge"]
+        E5["pi-routines"]
+        E6["..."]
+    end
 
-    IPC -- "stdin / stdout JSON lines" --> Sidecar
+    LLM["LLM Providers<br/>OpenAI · Anthropic · Google · ..."]
+
+    IPC -- "stdin / stdout JSON" --> Sidecar
     SDK --> LLM
+    SDK --> Extensions
+    EL --> Extensions
 
-    style Frontend fill:#f0f4ff,stroke:#4a90d9,color:#1a1a2e
+    style Tauri fill:#f0f4ff,stroke:#4a90d9,color:#1a1a2e
+    style Frontend fill:#e8f0fe,stroke:#4a90d9,color:#1a1a2e
     style IPC fill:#e8f0fe,stroke:#4a90d9,color:#1a1a2e
-    style Tauri fill:#fafafa,stroke:#888,color:#1a1a2e
     style Sidecar fill:#f6f2ff,stroke:#7c4dff,color:#1a1a2e
-    style SDK fill:#ede7f6,stroke:#7c4dff,color:#1a1a2e
-    style LLM fill:#e8f5e9,stroke:#4caf50,color:#1a1a2e
+    style Extensions fill:#e8f5e9,stroke:#4caf50,color:#1a1a2e
+    style LLM fill:#fff3e0,stroke:#ff9800,color:#1a1a2e

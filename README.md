@@ -14,6 +14,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/HQcyTD5jHA)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/zosmaai/zosma-cowork?style=social)](https://github.com/zosmaai/zosma-cowork/stargazers)
 
+📖 **Documentation:** [cowork.zosma.ai](https://cowork.zosma.ai)
 </div>
 
 <br/>
@@ -72,8 +73,40 @@ The diagram is generated from <code>assets/architecture.mmd</code>. To update:
 
 ```bash
 # Edit assets/architecture.mmd, then re-render:
-mmdc -i assets/architecture.mmd -o assets/architecture.png -b white -w 900 -H 700
+mmdc -i assets/architecture.mmd -o assets/architecture.png -t default -b white -w 900 -H 700 -s 2
 ```
+</details>
+
+
+See the full [**Product Roadmap**](ROADMAP.md) for phased plans, competitive positioning, and technical decisions.
+
+<details>
+<summary>Architecture diagrams (6 views)</summary>
+
+**System Architecture** — Full stack: React → Rust → Node sidecar → pi SDK
+
+<img src="docs/diagrams/system-architecture.png" width="100%" alt="System Architecture" />
+
+**Communication Flow** — Sequence diagram: streaming events pipeline
+
+<img src="docs/diagrams/communication-flow.png" width="100%" alt="Communication Flow" />
+
+**Extension Ecosystem** — 4 tiers: installed, vendored, planned, future
+
+<img src="docs/diagrams/extension-ecosystem.png" width="100%" alt="Extension Ecosystem" />
+
+**Competitive Positioning** — Quadrant chart vs Cursor, Hermes, Slack AI
+
+<img src="docs/diagrams/competitive-positioning.png" width="100%" alt="Competitive Positioning" />
+
+**Roadmap Timeline** — Gantt chart: 6 phases, 28 weeks
+
+<img src="docs/diagrams/roadmap-timeline.png" width="100%" alt="Roadmap Timeline" />
+
+**Data Flow** — User → App → Agent → Storage layers
+
+<img src="docs/diagrams/data-flow.png" width="100%" alt="Data Flow" />
+
 </details>
 
 ## Tech Stack

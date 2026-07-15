@@ -187,13 +187,35 @@ export function RunDetailView({ run: initialRun, taskName, onBack, listRuns }: R
 						</p>
 					</div>
 				</div>
+			) : run.response ? (
+				/* No step-by-step conversation, but there IS a response/reason to show
+				 * — e.g. a failed one-shot that couldn't start a session (#328). Never
+				 * hide it behind a misleading "completed, no steps" empty state. */
+				<div className="flex-1 px-4 pb-6">
+					<div
+						className={`rounded-lg border px-4 py-3 ${
+							run.status === "failed" ? "border-red-500/30 bg-red-500/5" : "border-border bg-card"
+						}`}
+					>
+						<p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 mb-2">
+							{run.status === "failed" ? "Why this didn't run" : "Full Response"}
+						</p>
+						<p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+							{run.response}
+						</p>
+					</div>
+				</div>
 			) : (
 				<div className="flex flex-1 items-center justify-center">
 					<div className="text-center">
 						<CalendarClock className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-						<p className="text-sm font-medium text-muted-foreground">No conversation data</p>
+						<p className="text-sm font-medium text-muted-foreground">
+							{run.status === "failed" ? "Run failed" : "No conversation data"}
+						</p>
 						<p className="mt-1 text-xs text-muted-foreground/60">
-							This run completed but no steps were recorded.
+							{run.status === "failed"
+								? "This run failed before recording any steps."
+								: "This run completed but no steps were recorded."}
 						</p>
 					</div>
 				</div>

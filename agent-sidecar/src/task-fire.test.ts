@@ -187,4 +187,21 @@ describe("runTaskFire — isolated session per run", () => {
 		);
 		expect(failed).toBeDefined();
 	});
+
+	it("records an actionable reason when the session cannot be created", async () => {
+		const opts = baseOptions(fakeSession(), {
+			createSession: async () => {
+				throw new Error("No model configured");
+			},
+		});
+
+		await runTaskFire(opts);
+
+		const failed = opts.updateRun.mock.calls.find((c) => c[2]?.status === "failed");
+		const updates = (failed?.[2] ?? {}) as Record<string, unknown>;
+		// Not an empty string — a human-readable, actionable message the Activity
+		// timeline can show instead of a silent blank.
+		expect(String(updates.response)).toMatch(/model/i);
+		expect(String(updates.response)).toMatch(/No model configured/);
+	});
 });
