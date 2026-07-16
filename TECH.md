@@ -1,4 +1,4 @@
-# Zosma Commercial CoWork — Technical Architecture
+# Zosma Cowork — Technical Architecture
 
 > **Audience:** First-time developers joining this codebase. This is the onboarding doc you read before you touch any file.
 
@@ -6,7 +6,7 @@
 
 ## 0. What This Is (In One Paragraph)
 
-Zosma Commercial CoWork is a **desktop AI coworker** — a native app (not a website) that pairs a React UI shell with a Node.js agent engine (the *sidecar*). The engine runs large-language-model (LLM) prompts, orchestrates tool calls (GitHub, Google Workspace, file system), manages authentication, and streams results back to the UI in real time. Think of it as "ChatGPT + VS Code + Notion" in one desktop window, but the AI actually has hands: it can clone repos, send emails, create calendar events, and install its own extensions.
+Zosma Cowork is a **desktop AI coworker** — a native app (not a website) that pairs a React UI shell with a Node.js agent engine (the *sidecar*). The engine runs large-language-model (LLM) prompts, orchestrates tool calls (GitHub, Google Workspace, file system), manages authentication, and streams results back to the UI in real time. Think of it as "ChatGPT + VS Code + Notion" in one desktop window, but the AI actually has hands: it can clone repos, send emails, create calendar events, and install its own extensions.
 
 **The business outcome:** A commercial user (executive, accountant, lawyer, engineer) types natural-language requests into one chat window and gets work product — documents, code, analysis, emails — without switching between 5 different SaaS tools. The AI has persistent memory (session history), multi-provider model access (OpenAI, Anthropic, Google, local Ollama), and deep tool integration into the user's existing software stack.
 

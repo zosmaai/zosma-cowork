@@ -3,7 +3,7 @@
  *
  * Custom instructions are stored as a plain Markdown file (`INSTRUCTIONS.md`)
  * under the Cowork dir (e.g. `~/.zosmaai/cowork`), as a sibling of the
- * self-knowledge `ABOUT-ZOSMA-COMMERCIAL-COWORK.md` doc. A real file (not a `settings.json`
+ * self-knowledge `ABOUT-ZOSMA-COWORK.md` doc. A real file (not a `settings.json`
  * key) is used so the content can be edited in a rich Markdown editor, kept in
  * version control, and read/grep'd like any other doc.
  *
