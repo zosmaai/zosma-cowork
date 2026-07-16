@@ -72,14 +72,6 @@ vi.mock("@/chat/ChatView", () => ({
 	ChatView: () => <div data-testid="chat" />,
 }));
 
-vi.mock("@/components/MobileBottomNav", () => ({
-	MobileBottomNav: () => <div data-testid="mobile-nav" />,
-}));
-
-vi.mock("@/components/MobileTopBar", () => ({
-	MobileTopBar: () => <div data-testid="mobile-top" />,
-}));
-
 vi.mock("@/components/SettingsPage", () => ({
 	SettingsPage: () => <div data-testid="settings" />,
 }));

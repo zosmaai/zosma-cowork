@@ -2,8 +2,6 @@ import { ChatView } from "@/chat/ChatView";
 import { log } from "./lib/log";
 import { HelpDialog } from "@/components/HelpDialog";
 import { HomeView } from "@/components/HomeView";
-import { MobileBottomNav } from "@/components/MobileBottomNav";
-import { MobileTopBar } from "@/components/MobileTopBar";
 import { SettingsPage } from "@/components/SettingsPage";
 import { Sidebar } from "@/components/Sidebar";
 import { SplashScreen } from "@/components/SplashScreen";
@@ -89,7 +87,6 @@ function App() {
 	const [showSettings, setShowSettings] = useState(false);
 	const [showModelSelector, setShowModelSelector] = useState(false);
 	const [showHelp, setShowHelp] = useState(false);
-	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	// True iff at least one subscription (OAuth) provider is signed in.
 	// Drives the "Skip" → "Continue" label flip on the Connect modal —
 	// note this is *narrower* than `hasCredentials`, which is true for any
@@ -803,7 +800,6 @@ function App() {
 							onSessionSelect={(id) => {
 								setSidebarView("chats");
 								handleSessionSelect(id);
-								setMobileMenuOpen(false);
 							}}
 							onNewSession={() => {
 								setSidebarView("chats");
@@ -825,59 +821,6 @@ function App() {
 							onChangeView={handleChangeView}
 						/>
 					</div>
-
-					{/* Mobile sidebar (slide-over) */}
-					<div
-						className={`md:hidden fixed inset-0 z-50 transition-opacity duration-200 ${
-							mobileMenuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-						}`}
-					>
-						{/* Backdrop */}
-						<div
-							className="absolute inset-0 bg-black/50"
-							role="presentation"
-							onClick={() => setMobileMenuOpen(false)}
-							onKeyDown={(e) => {
-								if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
-									setMobileMenuOpen(false);
-								}
-							}}
-						/>
-						{/* Sidebar panel */}
-						<div
-							className={`relative w-64 h-full bg-sidebar border-r border-sidebar-border transition-transform duration-200 ${
-								mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-							}`}
-						>
-							<Sidebar
-								sessions={sidebarSessions}
-								activeSessionId={activeSessionFile || undefined}
-								onSessionSelect={(id) => {
-									setSidebarView("chats");
-									handleSessionSelect(id);
-									setMobileMenuOpen(false);
-								}}
-								onNewSession={() => {
-									setSidebarView("chats");
-									handleNewSession();
-									setMobileMenuOpen(false);
-								}}
-								onOpenSession={() => {
-									setSidebarView("chats");
-									handleNewSessionPrompt();
-									setMobileMenuOpen(false);
-								}}
-								homeDir={homeDir ?? undefined}
-								onDeleteSession={handleDeleteSession}
-								onRequestRename={handleRequestRename}
-								onPinSession={handlePinSession}
-								onDeepSearch={handleDeepSearch}
-								allFolders={allFolders}
-								onToggleAllFolders={() => setAllFolders((v) => !v)}
-								onChangeView={handleChangeView}
-							/>
-						</div>
-					</div>
 				</>
 			)}
 
@@ -885,23 +828,6 @@ function App() {
 			<div className="relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
 				{/* In-app update banner (issue #271) */}
 				<UpdateBanner update={appUpdate} />
-
-				{/* Mobile top bar */}
-				{!hideChrome && (
-					<MobileTopBar
-						title="Zosma Cowork"
-						subtitle={
-							activeModelId ? (findModel(models, activeModelId)?.name ?? activeModelId) : undefined
-						}
-						open={mobileMenuOpen}
-						onToggle={() => setMobileMenuOpen((prev) => !prev)}
-						onSettings={() => {
-							setSidebarView("settings");
-							setShowSettings(true);
-							setMobileMenuOpen(false);
-						}}
-					/>
-				)}
 
 				{/* Content with view transition key */}
 				<main className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -972,9 +898,6 @@ function App() {
 						)}
 					</div>
 				</main>
-
-				{/* Mobile bottom nav */}
-				{!hideChrome && <MobileBottomNav view={sidebarView} onChangeView={handleChangeView} />}
 			</div>
 		</div>
 	);
