@@ -179,7 +179,7 @@ export async function runConsent(opts: ConsentOptions): Promise<ConsentResult> {
 				200,
 				htmlPage(
 					"Google connected",
-					"You can close this tab and return to Zosma Cowork.",
+					"You can close this tab and return to Zosma Commercial CoWork.",
 					true,
 				),
 			);
@@ -316,7 +316,7 @@ function htmlPage(title: string, message: string, ok = true): string {
 	const icon = ok
 		? `<svg class="glyph" viewBox="0 0 52 52" aria-hidden="true"><path class="tick" fill="none" d="M14 27l8 8 16-17"/></svg>`
 		: `<svg class="glyph" viewBox="0 0 52 52" aria-hidden="true"><path class="tick" fill="none" d="M18 18l16 16"/><path class="tick tick2" fill="none" d="M34 18l-16 16"/></svg>`;
-	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t} · Zosma Cowork</title><style>
+	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t} · Zosma Commercial CoWork</title><style>
 :root{--blue:#017cf3;--blue2:#3080ff;--ok:#017cf3;--ok2:#3080ff;--err:#f5455c;--err2:#ff6b7a;--ink:#e8eaf0;--mut:#9aa3b2}
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -342,6 +342,6 @@ p{margin:0;color:var(--mut);font-size:.98rem;line-height:1.5}
 </style></head><body><main>
 <div class="badge">${ok ? '<span class="pulse"></span><span class="pulse d"></span>' : ""}<span class="ring"></span>${icon}</div>
 <h1>${t}</h1><p>${m}</p>
-<div class="brand"><span class="dot"></span>Zosma Cowork</div>
+<div class="brand"><span class="dot"></span>Zosma Commercial CoWork</div>
 </main></body></html>`;
 }

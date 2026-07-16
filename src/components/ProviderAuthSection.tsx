@@ -9,6 +9,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { log } from "../lib/log";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -70,7 +71,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 				const data = await invoke<AuthStatus>("get_auth_status");
 				setAuthStatus(data);
 			} catch (retryErr) {
-				console.warn("[provider-auth] get_auth_status failed:", retryErr);
+				log.warn("[provider-auth] get_auth_status failed:", retryErr);
 			}
 		}
 	}, []);

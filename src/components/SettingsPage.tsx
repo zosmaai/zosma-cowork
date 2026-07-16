@@ -1,51 +1,27 @@
 import {
-	BarChart2,
 	ChevronLeft,
 	FileText,
 	FolderCog,
-	Globe,
 	Info,
 	KeyRound,
-	LayoutGrid,
 	MessageSquare,
 	Palette,
-	Puzzle,
-	Zap,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
-import { Apps } from "./settings/Apps";
 import { Authentication } from "./settings/Authentication";
-import { Extensions } from "./settings/Extensions";
 import { Instructions } from "./settings/Instructions";
-import { RemoteAccess } from "./settings/RemoteAccess";
-import { Skills } from "./settings/Skills";
-import { Telemetry } from "./settings/Telemetry";
 import { Workspace } from "./settings/Workspace";
 
 interface SettingsPageProps {
 	onClose: () => void;
 	onShowKeyEntry?: () => void;
-	telemetryEnabled?: boolean;
-	onTelemetryToggle?: (enabled: boolean) => void;
-	fontScale?: number;
-	onFontScaleChange?: (scale: number) => void;
 }
 
-type SectionId =
-	| "authentication"
-	| "remote-access"
-	| "apps"
-	| "extensions"
-	| "skills"
-	| "custom-instructions"
-	| "appearance"
-	| "workspace"
-	| "telemetry"
-	| "about";
+type SectionId = "authentication" | "custom-instructions" | "appearance" | "workspace" | "about";
 
 type Section = {
 	id: SectionId;
@@ -53,31 +29,17 @@ type Section = {
 	Icon: React.ComponentType<{ className?: string }>;
 };
 
-// Grouped navigation — related settings sit under a labeled heading so the
-// rail reads as a map of the app rather than a flat dump of toggles.
 const GROUPS: { label: string; items: Section[] }[] = [
 	{
 		label: "Account",
-		items: [
-			{ id: "authentication", label: "Authentication", Icon: KeyRound },
-			{ id: "remote-access", label: "Remote Access", Icon: Globe },
-		],
-	},
-	{
-		label: "Capabilities",
-		items: [
-			{ id: "apps", label: "Apps", Icon: LayoutGrid },
-			{ id: "extensions", label: "Extensions", Icon: Puzzle },
-			{ id: "skills", label: "Skills", Icon: Zap },
-			{ id: "custom-instructions", label: "Custom Instructions", Icon: FileText },
-		],
+		items: [{ id: "authentication", label: "Authentication", Icon: KeyRound }],
 	},
 	{
 		label: "Preferences",
 		items: [
+			{ id: "custom-instructions", label: "Custom Instructions", Icon: FileText },
 			{ id: "appearance", label: "Appearance", Icon: Palette },
 			{ id: "workspace", label: "Workspace", Icon: FolderCog },
-			{ id: "telemetry", label: "Telemetry", Icon: BarChart2 },
 		],
 	},
 	{
@@ -90,14 +52,7 @@ const SECTIONS: Section[] = GROUPS.flatMap((g) => g.items);
 
 const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 
-export function SettingsPage({
-	onClose,
-	onShowKeyEntry,
-	telemetryEnabled,
-	onTelemetryToggle,
-	fontScale,
-	onFontScaleChange,
-}: SettingsPageProps) {
+export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 	const [showFeedback, setShowFeedback] = useState(false);
 	const [activeSection, setActiveSection] = useState<SectionId>("authentication");
 	const [prevIndex, setPrevIndex] = useState(0);
@@ -275,8 +230,7 @@ export function SettingsPage({
 					</div>
 				</motion.aside>
 
-				{/* ── Content — rounded floating glass panel; sections slide in
-				     like a game-menu/dashboard (desktop + mobile) ── */}
+				{/* ── Content panel ── */}
 				<main className="flex-1 min-w-0 panel-raised overflow-hidden flex flex-col">
 					<div className="flex-1 overflow-y-auto flex flex-col min-h-0">
 						<motion.div
@@ -287,14 +241,7 @@ export function SettingsPage({
 							transition={{ duration: 0.26, ease: easeOutExpo }}
 						>
 							<div className="px-6 md:px-8 py-6 md:py-7 flex-1 flex flex-col min-h-0">
-								<SectionContent
-									activeSection={activeSection}
-									onShowKeyEntry={onShowKeyEntry}
-									telemetryEnabled={telemetryEnabled}
-									onTelemetryToggle={onTelemetryToggle}
-									fontScale={fontScale}
-									onFontScaleChange={onFontScaleChange}
-								/>
+								<SectionContent activeSection={activeSection} onShowKeyEntry={onShowKeyEntry} />
 							</div>
 						</motion.div>
 					</div>
@@ -310,33 +257,16 @@ export function SettingsPage({
 function SectionContent({
 	activeSection,
 	onShowKeyEntry,
-	telemetryEnabled,
-	onTelemetryToggle,
-	fontScale,
-	onFontScaleChange,
 }: {
 	activeSection: SectionId;
 	onShowKeyEntry?: () => void;
-	telemetryEnabled?: boolean;
-	onTelemetryToggle?: (enabled: boolean) => void;
-	fontScale?: number;
-	onFontScaleChange?: (scale: number) => void;
 }) {
 	return (
 		<>
 			{activeSection === "authentication" && <Authentication onShowKeyEntry={onShowKeyEntry} />}
-			{activeSection === "remote-access" && <RemoteAccess />}
-			{activeSection === "apps" && <Apps />}
-			{activeSection === "extensions" && <Extensions />}
-			{activeSection === "skills" && <Skills />}
 			{activeSection === "custom-instructions" && <Instructions />}
-			{activeSection === "appearance" && (
-				<Appearance fontScale={fontScale} onFontScaleChange={onFontScaleChange} />
-			)}
+			{activeSection === "appearance" && <Appearance />}
 			{activeSection === "workspace" && <Workspace />}
-			{activeSection === "telemetry" && (
-				<Telemetry enabled={telemetryEnabled} onToggle={onTelemetryToggle} />
-			)}
 			{activeSection === "about" && <About />}
 		</>
 	);

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ListChecks, MessageSquare, Settings } from "lucide-react";
+import { MessageSquare, Settings } from "lucide-react";
 
 interface MobileBottomNavProps {
 	view: string;
@@ -14,12 +14,6 @@ export function MobileBottomNav({ view, onChangeView }: MobileBottomNavProps) {
 				label="Cowork"
 				active={view === "chats"}
 				onClick={() => onChangeView("chats")}
-			/>
-			<TabButton
-				icon={ListChecks}
-				label="Tasks"
-				active={view === "tasks"}
-				onClick={() => onChangeView("tasks")}
 			/>
 			<TabButton
 				icon={Settings}

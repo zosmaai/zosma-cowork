@@ -22,7 +22,7 @@ import {
 	registerApiProvider,
 	type SimpleStreamOptions,
 	type StreamOptions,
-} from "@earendil-works/pi-ai";
+} from "@earendil-works/pi-ai/compat";
 import { CODE_ASSIST_ENDPOINTS, PROVIDER_ID, REQUEST_HEADERS } from "./constants.js";
 
 /** Private carriers set on each model by modifyModels (see index.ts). */

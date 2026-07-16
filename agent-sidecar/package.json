@@ -1,5 +1,5 @@
 {
-  "name": "zosma-cowork-agent",
+  "name": "zosma-commercial-cowork-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,18 +13,15 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0",
-    "chokidar": "^4.0.0",
+    "@earendil-works/pi-agent-core": "^0.80.7",
+    "@earendil-works/pi-ai": "^0.80.7",
+    "@earendil-works/pi-coding-agent": "^0.80.7",
+    "@earendil-works/pi-tui": "^0.80.7",
     "jiti": "^2.7.0",
-    "typebox": "^1.1.24",
-    "ws": "^8.21.0"
+    "typebox": "^1.1.24"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.18.1",
     "esbuild": "^0.28.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

@@ -1,3 +1,0 @@
-#!/bin/bash
-echo "Node.js variant 'node-arm64' not available for this build." >&2
-exit 1

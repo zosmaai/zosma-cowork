@@ -1,5 +1,5 @@
 /**
- * Zosma Cowork — Simple dark/light theme toggle
+ * Zosma Commercial CoWork — Simple dark/light theme toggle
  *
  * Uses a `data-theme` attribute on <html> to override prefers-color-scheme.
  * App.css handles both the media query and the data-theme selector.

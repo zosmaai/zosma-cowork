@@ -36,7 +36,7 @@ the same secret the Antigravity desktop app ships.
 ### Testers — building from this fork branch
 
 Provide the secret in **one** of these ways before building, then build normally
-(`npm install` / `npx tauri build`):
+(`pnpm install` / `npx tauri build`):
 
 ```bash
 # Option A — gitignored file (persists across builds)

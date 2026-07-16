@@ -79,7 +79,7 @@ describe("inline token-color style ratchet", () => {
 		}
 		expect(
 			stale,
-			`Baseline is stale — run \`npm run lint:styles -- --update\`:\n${stale.join("\n")}`,
+			`Baseline is stale — run \`pnpm run lint:styles -- --update\`:\n${stale.join("\n")}`,
 		).toEqual([]);
 	});
 });

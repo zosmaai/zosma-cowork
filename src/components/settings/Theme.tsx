@@ -1,40 +1,31 @@
 import {
-	FONT_SCALE_LABELS,
-	FONT_SCALE_PRESETS,
-	type FontScale,
-	getFontScale,
-	setFontScale,
-} from "@/lib/font-scale";
+	CHAT_WIDTH_LABELS,
+	CHAT_WIDTH_PRESETS,
+	type ChatWidth,
+	applyChatWidth,
+	getChatWidth,
+	setChatWidth,
+} from "@/lib/chat-width";
 import { getThemeMode, toggleTheme } from "@/lib/themes";
-import { Moon, Sun } from "lucide-react";
+import { AlignCenter, Equal, Moon, MoveHorizontal, Sun } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 
-interface ThemeProps {
-	fontScale?: number;
-	onFontScaleChange?: (scale: number) => void;
-}
-
-export function Theme({ fontScale: controlledScale, onFontScaleChange }: ThemeProps) {
+export function Theme() {
 	const [themeMode, setThemeMode] = useState<"dark" | "light">(getThemeMode());
-	const [localFontScale, setLocalFontScale] = useState<FontScale>(
-		() => (controlledScale ?? getFontScale()) as FontScale,
-	);
+	const [chatWidth, setChatWidthState] = useState<ChatWidth>(() => getChatWidth());
 	const reduced = useReducedMotion();
 	const isDark = themeMode === "dark";
-
-	// Keep local state in sync if controlled from outside
-	const effectiveScale = (controlledScale ?? localFontScale) as FontScale;
 
 	function handleToggle() {
 		const next = toggleTheme();
 		setThemeMode(next);
 	}
 
-	function handleFontScale(scale: FontScale) {
-		setFontScale(scale);
-		setLocalFontScale(scale);
-		onFontScaleChange?.(scale);
+	function handleChatWidth(width: ChatWidth) {
+		setChatWidth(width);
+		applyChatWidth(width);
+		setChatWidthState(width);
 	}
 
 	return (
@@ -42,7 +33,6 @@ export function Theme({ fontScale: controlledScale, onFontScaleChange }: ThemePr
 			<h2 className="text-sm font-semibold text-foreground mb-1">Appearance</h2>
 			<p className="text-xs text-muted-foreground mb-5">Choose how Zosma looks on this device.</p>
 
-			{/* ── Dark/Light toggle ── */}
 			<motion.button
 				type="button"
 				onClick={handleToggle}
@@ -86,56 +76,45 @@ export function Theme({ fontScale: controlledScale, onFontScaleChange }: ThemePr
 				</div>
 			</motion.button>
 
-			{/* ── Font size / Zoom ── */}
+			{/* ── Chat width ── */}
 			<div className="mt-6">
-				<h3 className="text-sm font-semibold text-foreground mb-1">Font Size</h3>
+				<h3 className="text-sm font-semibold text-foreground mb-1">Chat Width</h3>
 				<p className="text-xs text-muted-foreground mb-4">
-					Adjust the overall UI scale for your screen.
+					Control how wide the message column is.
 				</p>
-
 				<div className="flex items-center gap-2">
-					{FONT_SCALE_PRESETS.map((scale) => {
-						const isActive = effectiveScale === scale;
+					{CHAT_WIDTH_PRESETS.map((preset) => {
+						const isActive = chatWidth === preset;
+						const Icon =
+							preset === "small" ? AlignCenter : preset === "medium" ? Equal : MoveHorizontal;
 						return (
 							<motion.button
-								key={scale}
+								key={preset}
 								type="button"
-								onClick={() => handleFontScale(scale)}
+								onClick={() => handleChatWidth(preset)}
 								className={`glass flex-1 flex flex-col items-center gap-1.5 px-3 py-2.5 transition-colors ${
 									isActive ? "border-primary/50 bg-primary/10" : ""
 								}`}
 								whileTap={reduced ? {} : { scale: 0.97 }}
 								transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
 							>
-								<span
-									className="font-semibold leading-none"
+								<Icon
+									className="w-4 h-4"
 									style={{
-										fontSize: scale === 0.85 ? 13 : scale === 1 ? 16 : scale === 1.15 ? 19 : 22,
 										color: isActive ? "hsl(var(--primary))" : "hsl(var(--foreground))",
 									}}
-								>
-									A
-								</span>
+								/>
 								<span
 									className="text-[11px] font-medium"
 									style={{
 										color: isActive ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
 									}}
 								>
-									{FONT_SCALE_LABELS[scale]}
+									{CHAT_WIDTH_LABELS[preset]}
 								</span>
 							</motion.button>
 						);
 					})}
-				</div>
-
-				{/* Quick preview of the selected size */}
-				<div className="glass mt-3 px-3 py-2">
-					<p className="text-xs text-muted-foreground">
-						{effectiveScale === 1
-							? "Default size — 1×"
-							: `${Math.round(effectiveScale * 100)}% — ${effectiveScale > 1 ? "Larger" : "Smaller"} than default`}
-					</p>
 				</div>
 			</div>
 		</section>

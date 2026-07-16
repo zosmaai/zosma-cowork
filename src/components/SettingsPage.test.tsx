@@ -2,35 +2,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 
-// Mock child components that make Tauri IPC calls to avoid unhandled rejections
-vi.mock("./ExtensionPanel", () => ({
-	ExtensionPanel: function MockExt() {
-		return null;
-	},
-}));
-
-vi.mock("./SkillsPanel", () => ({
-	SkillsPanel: function MockSkills() {
-		return null;
-	},
-}));
-
-// GoogleIntegration (rendered inside the Apps section) makes Tauri IPC calls.
-vi.mock("./settings/GoogleIntegration", () => ({
-	GoogleIntegration: function MockGoogle() {
-		return "GOOGLE_INTEGRATION_MOCK";
-	},
-}));
-
 vi.mock("./settings/Authentication", () => ({
 	Authentication: function MockAuth() {
 		return "AUTH_SECTION_MOCK";
-	},
-}));
-
-vi.mock("./CustomInstructions", () => ({
-	CustomInstructions: function MockInstructions() {
-		return "INSTRUCTIONS_MOCK";
 	},
 }));
 
@@ -54,7 +28,6 @@ vi.mock("@/contexts/UpdateProvider", () => ({
 	}),
 }));
 
-// Polyfill window.matchMedia for jsdom (needed by getSavedTheme)
 beforeAll(() => {
 	if (typeof window.matchMedia !== "function") {
 		Object.defineProperty(window, "matchMedia", {
@@ -73,9 +46,6 @@ beforeAll(() => {
 	}
 });
 
-// In jsdom, CSS media queries aren't evaluated, so both desktop (hidden md:flex)
-// and mobile (md:hidden) layouts render simultaneously. For nav button clicks,
-// we target the first match which is the desktop sidebar nav button (DOM order).
 function clickNavButton(name: string | RegExp) {
 	const buttons = screen.getAllByRole("button", { name });
 	if (buttons.length > 0) {
@@ -98,73 +68,35 @@ describe("SettingsPage", () => {
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders all navigation section items", () => {
+	it("renders only commercial-cowork navigation items", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		// Desktop sidebar nav buttons - they'll have duplicates from mobile bar,
-		// but at least one instance of each must exist
 		expect(screen.getAllByRole("button", { name: "Authentication" }).length).toBeGreaterThanOrEqual(
 			1,
 		);
-		expect(screen.getAllByRole("button", { name: "Extensions" }).length).toBeGreaterThanOrEqual(1);
-		expect(screen.getAllByRole("button", { name: "Skills" }).length).toBeGreaterThanOrEqual(1);
 		expect(
 			screen.getAllByRole("button", { name: /Custom Instructions/ }).length,
 		).toBeGreaterThanOrEqual(1);
-		expect(screen.getAllByRole("button", { name: "Apps" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "Appearance" }).length).toBeGreaterThanOrEqual(1);
-		expect(screen.getAllByRole("button", { name: "Telemetry" }).length).toBeGreaterThanOrEqual(1);
+		expect(screen.getAllByRole("button", { name: "Workspace" }).length).toBeGreaterThanOrEqual(1);
 		expect(screen.getAllByRole("button", { name: "About" }).length).toBeGreaterThanOrEqual(1);
-	});
 
-	it("replaces the standalone Integrations / Theme / Background nav entries", () => {
-		render(<SettingsPage onClose={vi.fn()} />);
-		expect(screen.queryAllByRole("button", { name: "Integrations" }).length).toBe(0);
-		expect(screen.queryAllByRole("button", { name: "Theme" }).length).toBe(0);
-		expect(screen.queryAllByRole("button", { name: "Background" }).length).toBe(0);
-	});
-
-	it("navigates to the Apps section on click", () => {
-		render(<SettingsPage onClose={vi.fn()} />);
-		clickNavButton("Apps");
-		expect(screen.getByRole("heading", { name: "Apps" })).toBeDefined();
+		// Removed sections must not appear
+		expect(screen.queryAllByRole("button", { name: "Extensions" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Skills" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Apps" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Remote Access" }).length).toBe(0);
+		expect(screen.queryAllByRole("button", { name: "Telemetry" }).length).toBe(0);
 	});
 
 	it("shows Authentication content by default", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
-		// Default section is Authentication — its content should render (3 provider rows)
 		expect(screen.getAllByText("AUTH_SECTION_MOCK").length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("navigates to Extensions section on click", () => {
-		render(<SettingsPage onClose={vi.fn()} />);
-		clickNavButton("Extensions");
-		expect(screen.getByRole("heading", { name: "Extensions" })).toBeDefined();
-	});
-
-	it("navigates to the merged Appearance section on click", () => {
+	it("navigates to the Appearance section on click", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
 		clickNavButton("Appearance");
-		// Appearance now folds the old Theme + Background pages into one.
 		expect(screen.getByRole("heading", { name: "Appearance" })).toBeDefined();
-		expect(screen.getByRole("heading", { name: "Background" })).toBeDefined();
-	});
-
-	it("navigates to Custom Instructions section on click", () => {
-		render(<SettingsPage onClose={vi.fn()} />);
-		clickNavButton(/Custom Instructions/);
-		expect(screen.getAllByText("INSTRUCTIONS_MOCK").length).toBeGreaterThanOrEqual(1);
-	});
-
-	it("navigates to Skills section on click", () => {
-		render(<SettingsPage onClose={vi.fn()} />);
-		clickNavButton("Skills");
-		expect(screen.getByRole("heading", { name: "Skills" })).toBeDefined();
-	});
-
-	it("renders Telemetry content when telemetry props provided", () => {
-		render(<SettingsPage onClose={vi.fn()} telemetryEnabled={false} onTelemetryToggle={vi.fn()} />);
-		clickNavButton("Telemetry");
-		expect(screen.getByRole("heading", { name: "Telemetry" })).toBeDefined();
 	});
 
 	it("renders About section on click", () => {

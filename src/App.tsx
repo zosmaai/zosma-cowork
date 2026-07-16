@@ -1,18 +1,12 @@
 import { ChatView } from "@/chat/ChatView";
-import { ChatWidthToggle } from "@/components/ChatWidthToggle";
-import { ExtensionUiHost } from "@/components/ExtensionUiHost";
+import { log } from "./lib/log";
 import { HelpDialog } from "@/components/HelpDialog";
 import { HomeView } from "@/components/HomeView";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileTopBar } from "@/components/MobileTopBar";
-import { RemoteConnectionBar } from "@/components/RemoteConnectionBar";
-import { RunHistory } from "@/components/RunHistory";
 import { SettingsPage } from "@/components/SettingsPage";
-import { ShareExport } from "@/components/ShareExport";
 import { Sidebar } from "@/components/Sidebar";
 import { SplashScreen } from "@/components/SplashScreen";
-import { TaskDetailPage } from "@/components/TaskDetailPage";
-import { TelemetryConsentDialog } from "@/components/TelemetryConsentDialog";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RenameDialog } from "@/components/ui/rename-dialog";
@@ -20,8 +14,6 @@ import { useUpdate } from "@/contexts/UpdateProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { usePiStream } from "@/hooks/usePiStream";
 import { useProviders } from "@/hooks/useProviders";
-import { useRoutinesExtension } from "@/hooks/useRoutinesExtension";
-import { useTasks } from "@/hooks/useTasks";
 import { useTelemetry } from "@/hooks/useTelemetry";
 import {
 	BUILTIN_COMMANDS,
@@ -37,8 +29,6 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fontScaleClass, getFontScale } from "./lib/font-scale";
-import { cn } from "./lib/utils";
 
 interface SessionEntry {
 	file: string;
@@ -67,16 +57,8 @@ function App() {
 		steerStream,
 		followUpStream,
 		clearQueue,
-		toolPhase,
 		dispatch,
-		// #268 — status-line telemetry + reasoning control
-		sessionStats,
-		thinking,
-		refreshStats,
-		cycleThinking,
 	} = usePiStream();
-	const telemetry = useTelemetry();
-	const [showTelemetryConsent, setShowTelemetryConsent] = useState<boolean | null>(null);
 
 	// Custom instructions are no longer prepended to messages here. They live in
 	// INSTRUCTIONS.md and the sidecar injects them into the system prompt as
@@ -86,6 +68,7 @@ function App() {
 	// The desktop app is a serious tool, not a locked-down kiosk.
 	// (Context menu prevention removed intentionally.)
 	const { models } = useProviders();
+	useTelemetry(); // initialize telemetry consent from settings
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
 	// Whether the agent sidecar has finished booting. Until it has,
 	// `has_credentials` always resolves to false (see src-tauri lib.rs), so we
@@ -99,35 +82,10 @@ function App() {
 	// modal even without stored credentials.
 	const [skipOnboarding, setSkipOnboarding] = useState(false);
 	const [sidebarView, setSidebarView] = useState("chats");
-	// Tasks tab (#289, #300): the selected task drives the main-pane detail view.
-	// pi-routines is vendored + bundled into the sidecar as an inline factory, so
-	// the hook just reports readiness — nothing is installed at runtime.
-	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-	const tasksApi = useTasks();
-	const routines = useRoutinesExtension(sidebarView === "tasks" || sidebarView === "history");
-	const selectedTask = tasksApi.tasks.find((t) => t.id === selectedTaskId) ?? null;
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
-		if (view !== "tasks") setSelectedTaskId(null);
 	}, []);
-	// Shared Tasks-tab props for both the desktop + mobile Sidebar instances.
-	const tasksSidebarProps = {
-		tasks: tasksApi.tasks,
-		tasksLoading: tasksApi.loading,
-		tasksError: tasksApi.error,
-		completedTasks: tasksApi.completedTasks,
-		completedTasksLoading: tasksApi.completedLoading,
-		selectedTaskId,
-		onTaskSelect: (id: string) => {
-			setSidebarView("tasks");
-			setShowSettings(false);
-			setSelectedTaskId(id);
-			setMobileMenuOpen(false);
-		},
-		routinesStatus: routines.status,
-		onRetryRoutines: routines.retry,
-	};
 	const [showSettings, setShowSettings] = useState(false);
 	const [showModelSelector, setShowModelSelector] = useState(false);
 	const [showHelp, setShowHelp] = useState(false);
@@ -140,6 +98,8 @@ function App() {
 
 	// Session management
 	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
+	// Show only the active folder's sessions (pi-style) by default; toggle to all.
+	const [allFolders, setAllFolders] = useState(false);
 	const [activeSessionFile, setActiveSessionFile] = useState<string | null>(null);
 	// Draft prompt pushed into the composer (e.g. when a template is clicked).
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
@@ -181,55 +141,8 @@ function App() {
 		};
 	}, []);
 
-	// ── First-run telemetry consent (#169 follow-up) ──
-	// POLL `get_settings` until it succeeds, then decide. The sidecar may still
-	// be booting (get_settings throws "no sidecar"/"timeout"), and concurrent
-	// callers can transiently collide. The previous single-shot version gave up
-	// on the first failure (catch → false), so a fresh install silently skipped
-	// the prompt and dropped straight to the Welcome screen. We only set a
-	// definitive state on a SUCCESSFUL read, and only give up after ~30s.
-	useEffect(() => {
-		let cancelled = false;
-		const startedAt = Date.now();
-		async function decide() {
-			while (!cancelled) {
-				try {
-					const settings = await invoke<{ telemetry?: { enabled?: boolean } }>("get_settings");
-					if (cancelled) return;
-					// Show the popup only when no decision has been stored yet
-					// (new user, or upgrade from a pre-telemetry version).
-					if (settings?.telemetry === undefined) {
-						setShowTelemetryConsent(true);
-					} else {
-						setShowTelemetryConsent(false);
-						if (settings.telemetry.enabled) {
-							trackEvent("app_launch");
-						}
-					}
-					return; // authoritative answer — stop polling
-				} catch {
-					if (cancelled) return;
-					if (Date.now() - startedAt > 30_000) {
-						// Couldn't read settings after 30s — don't block forever.
-						setShowTelemetryConsent(false);
-						return;
-					}
-					await new Promise((r) => setTimeout(r, 400));
-				}
-			}
-		}
-		void decide();
-		return () => {
-			cancelled = true;
-		};
-	}, []);
-
 	const needsOnboarding = authLoading === false && !hasCredentials;
-	// True until the first-run telemetry decision is resolved: `null` while we're
-	// still reading settings, `true` while the popup is awaiting the user's
-	// choice. We keep the neutral splash behind the consent modal so telemetry is
-	// genuinely the FIRST thing a new user sees — not the onboarding screen.
-	const telemetryUndecided = showTelemetryConsent !== false;
+	const telemetryUndecided = false;
 	// While the sidecar is still booting we can't determine credentials, so
 	// show a loading splash rather than the onboarding/Welcome screen. Keeping
 	// `authLoading` in the condition avoids a one-frame onboarding flash during
@@ -255,9 +168,9 @@ function App() {
 				let data: { defaultModel?: string; defaultProvider?: string } = {};
 				try {
 					data = (await invoke("get_settings")) as typeof data;
-					console.log("[settings] loaded:", data);
+					log.debug("[settings] loaded:", data);
 				} catch (err) {
-					console.warn("[settings] load failed:", err);
+					log.warn("[settings] load failed:", err);
 				}
 
 				// 1. Honour the user's explicitly-saved model and push it to the
@@ -269,7 +182,7 @@ function App() {
 						models.find((m) => m.id === data.defaultModel && m.provider === data.defaultProvider) ??
 						models.find((m) => m.id === data.defaultModel);
 					if (match) {
-						console.log("[settings] restoring model:", match.provider, match.id);
+						log.debug("[settings] restoring model:", match.provider, match.id);
 						setActiveModelId(modelKey(match.provider, match.id));
 						invoke("set_active_model", {
 							provider: match.provider,
@@ -289,12 +202,12 @@ function App() {
 					} | null;
 					const key = engine?.id ? modelKey(engine.provider, engine.id) : undefined;
 					if (key && findModel(models, key)) {
-						console.log("[settings] mirroring engine model:", key);
+						log.debug("[settings] mirroring engine model:", key);
 						setActiveModelId(key);
 						return;
 					}
 				} catch (err) {
-					console.warn("[settings] get_active_model failed:", err);
+					log.warn("[settings] get_active_model failed:", err);
 				}
 
 				// 3. Last resort: pick the first model AND push it so the UI and
@@ -402,13 +315,20 @@ function App() {
 
 	async function loadSessionList() {
 		try {
-			const result = await invoke("list_sessions");
+			const result = await invoke("list_sessions", { allFolders });
 			const data = result as { sessions?: SessionEntry[] };
 			setSessionEntries(data.sessions || []);
 		} catch (err) {
-			console.error("Failed to load sessions:", err);
+			log.error("Failed to load sessions:", err);
 		}
 	}
+
+	// Re-list when the active folder switches (new_session / load_session pick a
+	// different cwd) or the all-folders toggle flips.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: loadSessionList is a stable component-scope reconcile helper
+	useEffect(() => {
+		loadSessionList().catch(() => {});
+	}, [workspaceCwd, allFolders]);
 
 	// ── When stream completes, merge into loaded messages and save to disk ──
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Only trigger when stream finishes, not on every dep change
@@ -433,18 +353,9 @@ function App() {
 			// Clear stream messages to prevent duplication on next render
 			dispatch({ type: "RESET" });
 
-			// Save to disk
-			invoke("save_session", {
-				sid,
-				title,
-				messages: merged,
-				model: merged.find((m) => m.model)?.model || null,
-				provider: merged.find((m) => m.provider)?.provider || null,
-			})
-				// Reconcile the sidebar with disk truth (so the cwd stamped into the
-				// header drives folder grouping and nothing is "not listed").
-				.then(() => loadSessionList())
-				.catch((err) => console.error("Failed to save session:", err));
+			// pi auto-persists during the agent loop — no manual save. Just
+			// reconcile the sidebar with disk truth (title/preview/count).
+			loadSessionList().catch((err) => log.error("Failed to refresh sessions:", err));
 
 			// Optimistic sidebar entry (folder = active workspace). A user-renamed
 			// (locked) title must not be clobbered by the auto-derived one, and the
@@ -482,7 +393,15 @@ function App() {
 			let sessionFile = activeSessionFile;
 			const isNewSession = !sessionFile;
 			if (!sessionFile) {
-				sessionFile = `session-${Date.now()}.jsonl`;
+				// pi owns persistence: spin up a real session file and adopt its
+				// path as our identity (no more client-invented ids).
+				try {
+					const res = await invoke<{ file?: string; cwd?: string }>("new_session", {});
+					if (res && typeof res.cwd === "string") setWorkspaceCwd(res.cwd);
+					sessionFile = res?.file ?? `session-${Date.now()}.jsonl`;
+				} catch {
+					sessionFile = `session-${Date.now()}.jsonl`;
+				}
 				setActiveSessionFile(sessionFile);
 			}
 
@@ -544,7 +463,7 @@ function App() {
 	const handleModelSelect = useCallback(async (provider: string, modelId: string) => {
 		setActiveModelId(modelKey(provider, modelId));
 		try {
-			console.log("[settings] saving model:", provider, modelId);
+			log.debug("[settings] saving model:", provider, modelId);
 			await invoke("save_settings", {
 				settings: {
 					defaultModel: modelId,
@@ -557,7 +476,7 @@ function App() {
 				model: modelId,
 			});
 		} catch (err) {
-			console.warn("[settings] save failed:", err);
+			log.warn("[settings] save failed:", err);
 		}
 	}, []);
 
@@ -589,23 +508,27 @@ function App() {
 	const handleNewSession = useCallback(
 		async (cwd?: string) => {
 			let resolvedCwd: string | undefined;
+			let file: string | undefined;
 			try {
-				const res = await invoke<{ cwd?: string }>("new_session", cwd ? { cwd } : {});
+				const res = await invoke<{ cwd?: string; file?: string }>(
+					"new_session",
+					cwd ? { cwd } : {},
+				);
 				if (res && typeof res.cwd === "string") {
 					resolvedCwd = res.cwd;
 					setWorkspaceCwd(res.cwd);
 				}
+				if (res && typeof res.file === "string") file = res.file;
 			} catch {
 				// ignore
 			}
 			dispatch({ type: "RESET" });
 			setLoadedSessionMessages(null);
-			setActiveSessionFile(`session-${Date.now()}.jsonl`);
-			// #268 — fresh session starts with empty totals; resync the footer.
-			void refreshStats();
+			// pi owns the session file; adopt its path as our identity.
+			setActiveSessionFile(file ?? `session-${Date.now()}.jsonl`);
 			return resolvedCwd;
 		},
-		[dispatch, refreshStats],
+		[dispatch],
 	);
 
 	// "New session" ALWAYS asks for a folder first (native picker), then starts
@@ -673,7 +596,6 @@ function App() {
 	}, []);
 
 	// Font scale / zoom preference
-	const [fontScale, setFontScale] = useState<number>(() => getFontScale());
 
 	const [pendingDelete, setPendingDelete] = useState<{ file: string; title: string } | null>(null);
 	const [pendingRename, setPendingRename] = useState<{ file: string; title: string } | null>(null);
@@ -725,7 +647,7 @@ function App() {
 			await invoke("rename_session", { sessionFile: file, title: clean });
 			trackEvent("session_renamed");
 		} catch (err) {
-			console.error("Failed to rename session:", err);
+			log.error("Failed to rename session:", err);
 			loadSessionList().catch(() => {});
 		}
 	}, []);
@@ -740,7 +662,7 @@ function App() {
 			// Reconcile so pinned-first ordering matches disk truth.
 			loadSessionList().catch(() => {});
 		} catch (err) {
-			console.error("Failed to pin session:", err);
+			log.error("Failed to pin session:", err);
 			loadSessionList().catch(() => {});
 		}
 	}, []);
@@ -748,14 +670,14 @@ function App() {
 	// ── Deep content search across all session bodies ──
 	const handleDeepSearch = useCallback(async (query: string) => {
 		try {
-			const result = await invoke("search_sessions", { query });
+			const result = await invoke("search_sessions", { query, allFolders });
 			const data = result as { matches?: { file: string; snippet: string; matchCount: number }[] };
 			return data.matches ?? [];
 		} catch (err) {
-			console.error("Deep search failed:", err);
+			log.error("Deep search failed:", err);
 			return [];
 		}
-	}, []);
+	}, [allFolders]);
 
 	const handleSessionSelect = useCallback(
 		async (file: string) => {
@@ -793,23 +715,20 @@ function App() {
 						// Saved model isn't available (e.g. different provider config on
 						// this device). Leave the default model active; the user can
 						// pick a new one from the dropdown.
-						console.warn(
+						log.warn(
 							"[cowork] Saved model %s/%s not found in available models",
 							data.provider,
 							data.model,
 						);
 					}
 				}
-				// #268 — the sidecar rebinds to the loaded session; pull its
-				// token/cost/context totals so the footer reflects history.
-				void refreshStats();
 			} catch (err) {
-				console.error("Failed to load session:", err);
+				log.error("Failed to load session:", err);
 			} finally {
 				setLoadingSession(false);
 			}
 		},
-		[activeSessionFile, dispatch, refreshStats, models],
+		[activeSessionFile, dispatch, models],
 	);
 
 	// ── Build display messages ──
@@ -843,11 +762,7 @@ function App() {
 		// divided by the scale) so it always paints as exactly one viewport —
 		// otherwise Large/Extra-Large overflows <body>, and focus-scroll clips the
 		// fixed sidebar top-chrome (the New-chat button) off the top. The per-preset
-		// zoom + height utilities live in `fontScaleClass` (see lib/font-scale.ts).
-		<div className={cn("flex md:gap-2.5 md:p-2.5", fontScaleClass(fontScale))}>
-			{/* Extension UI dialogs (pi-ask-user etc. via ctx.ui) */}
-			<ExtensionUiHost />
-
+		<div className="flex md:gap-2.5 md:p-2.5 [zoom:1] h-screen">
 			{/* Delete chat confirmation */}
 			<ConfirmDialog
 				open={pendingDelete !== null}
@@ -877,28 +792,12 @@ function App() {
 
 			<HelpDialog open={showHelp} commands={BUILTIN_COMMANDS} onClose={() => setShowHelp(false)} />
 
-			{/* Telemetry consent dialog (overlays everything on first launch) */}
-			{showTelemetryConsent && (
-				<TelemetryConsentDialog
-					onEnable={() => {
-						telemetry.enable();
-						trackEvent("app_launch");
-						setShowTelemetryConsent(false);
-					}}
-					onDismiss={() => {
-						telemetry.disable();
-						setShowTelemetryConsent(false);
-					}}
-				/>
-			)}
-
 			{/* Sidebar — desktop: visible, mobile: slide-over */}
 			{!hideChrome && (
 				<>
 					{/* Desktop sidebar — floating glass panel */}
 					<div className="hidden md:block panel-sidebar overflow-hidden shrink-0">
 						<Sidebar
-							view={sidebarView}
 							sessions={sidebarSessions}
 							activeSessionId={activeSessionFile || undefined}
 							onSessionSelect={(id) => {
@@ -908,7 +807,7 @@ function App() {
 							}}
 							onNewSession={() => {
 								setSidebarView("chats");
-								// "New" starts a session in the configured ZosmaCowork folder — no folder prompt.
+								// "New" starts a session in the configured Zosma Commercial CoWork folder — no folder prompt.
 								handleNewSession();
 							}}
 							onOpenSession={() => {
@@ -921,8 +820,9 @@ function App() {
 							onRequestRename={handleRequestRename}
 							onPinSession={handlePinSession}
 							onDeepSearch={handleDeepSearch}
+							allFolders={allFolders}
+							onToggleAllFolders={() => setAllFolders((v) => !v)}
 							onChangeView={handleChangeView}
-							{...tasksSidebarProps}
 						/>
 					</div>
 
@@ -950,7 +850,6 @@ function App() {
 							}`}
 						>
 							<Sidebar
-								view={sidebarView}
 								sessions={sidebarSessions}
 								activeSessionId={activeSessionFile || undefined}
 								onSessionSelect={(id) => {
@@ -973,8 +872,9 @@ function App() {
 								onRequestRename={handleRequestRename}
 								onPinSession={handlePinSession}
 								onDeepSearch={handleDeepSearch}
+								allFolders={allFolders}
+								onToggleAllFolders={() => setAllFolders((v) => !v)}
 								onChangeView={handleChangeView}
-								{...tasksSidebarProps}
 							/>
 						</div>
 					</div>
@@ -986,13 +886,10 @@ function App() {
 				{/* In-app update banner (issue #271) */}
 				<UpdateBanner update={appUpdate} />
 
-				{/* Remote connection status (browser mode only) */}
-				<RemoteConnectionBar />
-
 				{/* Mobile top bar */}
 				{!hideChrome && (
 					<MobileTopBar
-						title="Zosma Cowork"
+						title="Zosma Commercial CoWork"
 						subtitle={
 							activeModelId ? (findModel(models, activeModelId)?.name ?? activeModelId) : undefined
 						}
@@ -1004,14 +901,6 @@ function App() {
 							setMobileMenuOpen(false);
 						}}
 					/>
-				)}
-
-				{/* Floating action overlay — no layout cost */}
-				{!hideChrome && (
-					<div className="hidden md:flex items-center gap-2 absolute top-2 right-3 z-10">
-						<ChatWidthToggle />
-						<ShareExport messages={displayMessages} />
-					</div>
 				)}
 
 				{/* Content with view transition key */}
@@ -1026,9 +915,7 @@ function App() {
 										? "settings"
 										: loadingSession
 											? "loading"
-											: sidebarView === "tasks"
-												? "tasks"
-												: "chat"
+											: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -1048,48 +935,17 @@ function App() {
 									setSidebarView("chats");
 								}}
 								onShowKeyEntry={() => setShowKeyEntry(true)}
-								telemetryEnabled={telemetry.isEnabled}
-								onTelemetryToggle={(enabled) => {
-									if (enabled) telemetry.enable();
-									else telemetry.disable();
-								}}
-								fontScale={fontScale}
-								onFontScaleChange={setFontScale}
 							/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
 								<div className="text-sm text-muted-foreground">Loading session...</div>
 							</div>
-						) : sidebarView === "tasks" && selectedTask ? (
-							<TaskDetailPage
-								task={selectedTask}
-								error={tasksApi.error}
-								onRunNow={tasksApi.runNow}
-								onSetEnabled={tasksApi.setEnabled}
-								onDelete={tasksApi.del}
-								onClose={() => {
-									setSelectedTaskId(null);
-									setSidebarView("chats");
-								}}
-								listRuns={tasksApi.listRuns}
-							/>
-						) : sidebarView === "tasks" ? (
-							<RunHistory
-								tasks={tasksApi.tasks}
-								completedTasks={tasksApi.completedTasks}
-								completedLoading={tasksApi.completedLoading}
-								listRuns={tasksApi.listRuns}
-								onJumpToTask={(id) => {
-									setSelectedTaskId(id);
-								}}
-							/>
 						) : (
 							<ChatView
 								messages={displayMessages}
 								streamingMessage={streamState.streamingMessage}
 								isRunning={streamState.isRunning}
-								status={streamState.status}
 								error={streamState.error}
 								onSend={handleSend}
 								onAbort={() => abortStream()}
@@ -1099,10 +955,6 @@ function App() {
 								/* Issue #201, PR 3 — queue visibility + editing. */
 								queue={streamState.queue}
 								onEditQueue={handleEditQueue}
-								/* #268 — always-on status line telemetry + reasoning. */
-								sessionStats={sessionStats}
-								thinking={thinking}
-								onCycleThinking={cycleThinking}
 								sessionKey={activeSessionFile ?? "new"}
 								onRetry={() => {
 									const lastUser = [...displayMessages].reverse().find((m) => m.role === "user");
@@ -1113,7 +965,6 @@ function App() {
 								onModelSelect={handleModelSelect}
 								modelSelectorOpen={showModelSelector}
 								onModelSelectorOpenChange={setShowModelSelector}
-								toolPhase={toolPhase}
 								draft={composerDraft}
 								commands={BUILTIN_COMMANDS}
 								onRunCommand={handleRunCommand}

@@ -216,12 +216,14 @@ export function HomeView({
 				{/* Logo mark */}
 				<img
 					src="/zosma-mark.png"
-					alt="Zosma Cowork"
+					alt="Zosma Commercial CoWork"
 					className="w-16 h-16 rounded-2xl shadow-lg mb-5"
 					draggable={false}
 				/>
 
-				<h1 className="text-xl font-bold text-center mb-1 text-foreground">Zosma Cowork</h1>
+				<h1 className="text-xl font-bold text-center mb-1 text-foreground">
+					Zosma Commercial CoWork
+				</h1>
 				<p className="text-sm text-center mb-8 leading-relaxed text-muted-foreground">
 					Connect your AI accounts and start working — your credentials stay on your machine.
 				</p>

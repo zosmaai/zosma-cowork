@@ -58,10 +58,10 @@ describe("glass / elevated surfaces", () => {
 });
 
 describe("preserved features", () => {
-	it("keeps the font-size (zoom) control on the root container", () => {
-		// The zoom scale is applied via per-preset utility classes (not an inline
-		// style) resolved through fontScaleClass().
-		expect(appTsx).toContain("fontScaleClass(fontScale)");
+	it("applies default zoom class on the root container", () => {
+		// Font scale is fixed at the default (1×) — no user-facing picker.
+		// The zoom class is hardcoded directly on the root div.
+		expect(appTsx).toContain("[zoom:1] h-screen");
 		expect(fontScaleTs).toContain("[zoom:1]");
 	});
 

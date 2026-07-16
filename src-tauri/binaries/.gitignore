@@ -1,5 +1,7 @@
 node
 node.exe
+node-arm64
+node-x64
 npm/
 gh/
 git/

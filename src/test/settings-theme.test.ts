@@ -65,13 +65,7 @@ describe("settings sub-pages use elevated glass cards", () => {
 		["Theme", "src/components/settings/Theme.tsx"],
 		["About", "src/components/settings/About.tsx"],
 		["Authentication", "src/components/settings/Authentication.tsx"],
-		["Background", "src/components/settings/Background.tsx"],
-		["GoogleIntegration", "src/components/settings/GoogleIntegration.tsx"],
-		["Telemetry", "src/components/settings/Telemetry.tsx"],
-		["Extensions (ExtensionPanel)", "src/components/ExtensionPanel.tsx"],
 		["Custom Instructions", "src/components/CustomInstructions.tsx"],
-		["Remote Access", "src/components/RemoteAccessPanel.tsx"],
-		["Skills (SkillTile)", "src/components/store/SkillTile.tsx"],
 	];
 
 	for (const [label, path] of pages) {
@@ -86,9 +80,6 @@ describe("settings cards drop opaque/flat fills", () => {
 		const files = [
 			"src/components/settings/About.tsx",
 			"src/components/settings/Authentication.tsx",
-			"src/components/settings/GoogleIntegration.tsx",
-			"src/components/settings/Telemetry.tsx",
-			"src/components/RemoteAccessPanel.tsx",
 		];
 		for (const f of files) {
 			expect(read(f)).not.toContain("bg-card");

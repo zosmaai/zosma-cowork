@@ -1,5 +1,5 @@
 /**
- * settings-store — persistence for Zosma Cowork user settings.
+ * settings-store — persistence for Zosma Commercial CoWork user settings.
  *
  * Settings live in a single `settings.json` under the Zosma agent dir. The
  * frontend saves *partial* updates (e.g. just `{ defaultModel }` or just

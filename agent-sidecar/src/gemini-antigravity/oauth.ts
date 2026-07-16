@@ -123,7 +123,7 @@ export async function runGeminiConsent(opts: {
 				finish(400, htmlPage("Sign-in failed", "No authorization code returned."));
 				reject(new Error("No authorization code returned"));
 			} else {
-				finish(200, htmlPage("Signed in", "You can close this tab and return to Zosma Cowork."));
+				finish(200, htmlPage("Signed in", "You can close this tab and return to Zosma Commercial CoWork."));
 				resolve(returnedCode);
 			}
 		});

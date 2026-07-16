@@ -9,6 +9,8 @@
  * This module is the sidecar source of truth for pre-probe validation.
  */
 
+import { logDebug } from "../protocol.js";
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tier 1 — Per-provider key format regexes
 // ═══════════════════════════════════════════════════════════════════════════
@@ -264,8 +266,7 @@ export async function liveProbe(
 		clearTimeout(timeoutId);
 
 		// Debug: log probe result so we can see what's happening
-		// eslint-disable-next-line no-console
-		console.error(`[probe] ${provider} → ${endpoint.method ?? "GET"} ${resolvedUrl} → ${response.status}`);
+		logDebug(`[probe] ${provider} → ${endpoint.method ?? "GET"} ${resolvedUrl} → ${response.status}`);
 
 		// Try to extract error message from body (for reporting)
 		let body: string | undefined;

@@ -1,5 +1,5 @@
 /**
- * Zosma Cowork — Chat content width control
+ * Zosma Commercial CoWork — Chat content width control
  *
  * Lets users pick how wide the readable message column is. The content
  * column is centered; the message background bands still span full width.

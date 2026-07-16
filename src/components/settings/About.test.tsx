@@ -37,9 +37,4 @@ describe("About page — get help & connect", () => {
 		render(<About />);
 		expect(hrefs()).toContain(BRAND_LINKS.gallery);
 	});
-
-	it("still surfaces the source repository", () => {
-		render(<About />);
-		expect(hrefs()).toContain(BRAND_LINKS.repo);
-	});
 });

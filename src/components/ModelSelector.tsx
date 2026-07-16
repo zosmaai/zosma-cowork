@@ -35,10 +35,13 @@ export function ModelSelector({
 	// Use controlled value when provided, otherwise fall back to internal state.
 	const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
 
-	const setOpen = useCallback((value: boolean) => {
-		setInternalOpen(value);
-		onOpenChange?.(value);
-	}, [onOpenChange]);
+	const setOpen = useCallback(
+		(value: boolean) => {
+			setInternalOpen(value);
+			onOpenChange?.(value);
+		},
+		[onOpenChange],
+	);
 	const [query, setQuery] = useState("");
 	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 	// Max height of the whole dropdown box, clamped to the space actually

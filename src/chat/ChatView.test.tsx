@@ -3,72 +3,7 @@ import { render, screen, waitForElementToBeRemoved } from "@testing-library/reac
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ThinkingState } from "@/lib/sessionStats";
 import { ChatView } from "./ChatView";
-
-describe("ChatView empty state", () => {
-	afterEach(() => {
-		cleanupMocks();
-	});
-
-	const defaultProps = {
-		messages: [],
-		streamingMessage: null,
-		isRunning: false,
-		status: "idle" as const,
-		error: null,
-		onSend: vi.fn(),
-		onAbort: vi.fn(),
-		toolPhase: null,
-	};
-
-	const thinking: ThinkingState = {
-		level: "high",
-		available: ["off", "minimal", "low", "medium", "high", "xhigh"],
-		supported: true,
-	};
-
-	it("empty state: centered greeting + input, no statusbar, no suggested actions", () => {
-		render(<ChatView {...defaultProps} thinking={thinking} />);
-		// Greeting renders immediately above the input: time-of-day prefix + tail.
-		expect(screen.getByTestId("greeting")).toBeInTheDocument();
-		expect(screen.getByTestId("greeting").textContent).toContain("What are you working on?");
-		// Ultra-clean empty screen: no statusbar (decision C).
-		expect(screen.queryByRole("button", { name: /reasoning effort/i })).not.toBeInTheDocument();
-		// SuggestedActions block is gone for good.
-		expect(screen.queryByText("Write a document")).not.toBeInTheDocument();
-	});
-
-	it("active state: statusbar renders at top, greeting is gone", () => {
-		render(
-			<ChatView
-				{...defaultProps}
-				thinking={thinking}
-				messages={[{ id: "1", role: "user", content: "Hello", timestamp: Date.now() }]}
-			/>,
-		);
-		expect(screen.getByRole("button", { name: /reasoning effort/i })).toBeInTheDocument();
-		expect(screen.queryByTestId("greeting")).not.toBeInTheDocument();
-	});
-
-	it("streaming counts as active: no greeting", () => {
-		render(
-			<ChatView
-				{...defaultProps}
-				thinking={thinking}
-				isRunning={true}
-				status="thinking"
-				streamingMessage={{
-					id: "stream-1",
-					role: "assistant",
-					content: "",
-					timestamp: Date.now(),
-				}}
-			/>,
-		);
-		expect(screen.queryByTestId("greeting")).not.toBeInTheDocument();
-	});
-});
 
 describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	afterEach(() => cleanupMocks());
@@ -77,11 +12,9 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 		messages: [],
 		streamingMessage: null,
 		isRunning: false,
-		status: "idle" as const,
 		error: null,
 		onSend: vi.fn(),
 		onAbort: vi.fn(),
-		toolPhase: null,
 	};
 
 	it("renders queued steer and follow-up items as inline bubbles in the chat area", () => {
@@ -89,7 +22,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				messages={[{ id: "u1", role: "user", content: "Tell me a big story", timestamp: 1 }]}
 				streamingMessage={{
 					id: "a1",
@@ -111,7 +43,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				messages={[{ id: "u1", role: "user", content: "original prompt", timestamp: 1 }]}
 				streamingMessage={{
 					id: "a1",
@@ -135,7 +66,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",
@@ -158,7 +88,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",
@@ -182,7 +111,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",
@@ -204,7 +132,6 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 			<ChatView
 				{...defaultProps}
 				isRunning={true}
-				status="responding"
 				streamingMessage={{
 					id: "a1",
 					role: "assistant",
@@ -226,11 +153,9 @@ describe("ChatView in-thread find (#267)", () => {
 	const findProps = {
 		streamingMessage: null,
 		isRunning: false,
-		status: "idle" as const,
 		error: null,
 		onSend: vi.fn(),
 		onAbort: vi.fn(),
-		toolPhase: null,
 		messages: [
 			{ id: "m1", role: "user" as const, content: "How do I configure vite?", timestamp: 1 },
 			{

@@ -1,6 +1,6 @@
 import { useUpdate } from "@/contexts/UpdateProvider";
 import { BRAND_LINKS } from "@/lib/brand-links";
-import { Bug, ExternalLink, Globe, Images, MessageCircle, Star } from "lucide-react";
+import { Bug, ExternalLink, Globe, Images, MessageCircle } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { UpdateSettingsRow } from "./UpdateSettingsRow";
@@ -22,7 +22,7 @@ export function About() {
 		<section>
 			<h2 className="text-sm font-semibold text-foreground mb-1">About</h2>
 			<p className="text-xs text-muted-foreground mb-5">
-				Zosma Cowork — built openly, runs locally.
+				Zosma Commercial CoWork — your AI coworker, runs locally.
 			</p>
 
 			{/* ── App identity ── */}
@@ -30,12 +30,14 @@ export function About() {
 				<div className="px-4 py-4 flex items-center gap-3">
 					<img
 						src="/zosma-mark.png"
-						alt="Zosma Cowork"
+						alt="Zosma Commercial CoWork"
 						className="w-10 h-10 rounded-xl shrink-0 object-cover"
 						draggable={false}
 					/>
 					<div>
-						<p className="text-[13px] font-semibold text-foreground leading-tight">Zosma Cowork</p>
+						<p className="text-[13px] font-semibold text-foreground leading-tight">
+							Zosma Commercial CoWork
+						</p>
 						<p className="text-[11px] text-muted-foreground mt-0.5">Desktop AI coworker</p>
 					</div>
 					{appVersion && (
@@ -64,19 +66,7 @@ export function About() {
 							<ExternalLink className="w-3 h-3 opacity-60" />
 						</a>
 					</MetaRow>
-					<MetaRow label="License">
-						<span className="text-foreground/70">MIT</span>
-					</MetaRow>
 					<UpdateSettingsRow update={appUpdate} />
-					<MetaRow label="Source">
-						<a
-							href={BRAND_LINKS.repo}
-							className="inline-flex items-center gap-1 hover:text-foreground transition-colors text-primary"
-						>
-							github.com/zosmaai/zosma-cowork
-							<ExternalLink className="w-3 h-3 opacity-60" />
-						</a>
-					</MetaRow>
 				</div>
 			</div>
 
@@ -117,22 +107,9 @@ export function About() {
 				/>
 			</div>
 
-			{/* ── Support the project ── */}
-			<a href={BRAND_LINKS.repo} className="glass mt-2.5 px-4 py-3 flex items-center gap-3 group">
-				<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 shrink-0">
-					<Star className="w-4 h-4 text-primary" />
-				</div>
-				<div className="min-w-0">
-					<p className="text-[13px] font-medium text-foreground leading-tight">Star us on GitHub</p>
-					<p className="text-[11px] text-muted-foreground mt-0.5">
-						It genuinely helps an open project grow.
-					</p>
-				</div>
-				<ExternalLink className="w-3.5 h-3.5 ml-auto text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
-			</a>
-
 			<p className="mt-6 text-[11px] text-muted-foreground">
-				Made with care by the Zosma team and contributors. Released under the MIT license.
+				Made with care by the Zosma team. © {new Date().getFullYear()} Zosma AI. All rights
+				reserved.
 			</p>
 		</section>
 	);

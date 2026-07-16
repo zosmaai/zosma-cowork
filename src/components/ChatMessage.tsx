@@ -164,10 +164,15 @@ export function ChatMessageItem({
 								minute: "2-digit",
 							})}
 						</span>
-						{/* Queued steer/follow-up badges were removed in the #201 PR3
-					    follow-up: queued messages no longer live in state.messages,
-					    so this code path is unreachable. ChatView renders queued
-					    items inline (pi-style) from streamState.queue instead. */}
+						{/* Delivered steer/follow-up user messages (injected mid-run by
+					    the SDK) carry a kind so the transcript shows what routed the
+					    turn. Live queued items still render inline via ChatView. */}
+						{(message.kind === "queued-steer" ||
+							message.kind === "queued-follow-up") && (
+							<span className="text-[10px] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
+								{message.kind === "queued-steer" ? "Steering" : "Follow-up"}
+							</span>
+						)}
 						{message.model && (
 							<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
 								{modelLabel(message, models)}

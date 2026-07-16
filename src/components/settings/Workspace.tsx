@@ -4,10 +4,10 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 
 /**
- * Workspace — choose the default ZosmaCowork home folder.
+ * Workspace — choose the default Zosma Commercial CoWork home folder.
  *
  * "New" sessions are created inside this folder; it's the directory the agent
- * reads and writes files in. The default is `~/Documents/ZosmaCowork`
+ * reads and writes files in. The default is `~/Documents/ZosmaCommercialCoWork`
  * (resolved cross-platform in the sidecar via the OS home dir — never $USER).
  * The chosen path is persisted as the `coworkHomeDir` setting and read fresh
  * on every new session, so a change here takes effect on the next "New".
@@ -70,7 +70,7 @@ export function Workspace() {
 			const picked = await open({
 				directory: true,
 				multiple: false,
-				title: "Choose your ZosmaCowork folder",
+				title: "Choose your Zosma Commercial CoWork folder",
 				...(effective ? { defaultPath: effective } : {}),
 			});
 			if (typeof picked === "string") await persist(picked);
@@ -92,7 +92,9 @@ export function Workspace() {
 						<FolderCog className="w-4 h-4 text-primary" />
 					</div>
 					<div className="text-left min-w-0">
-						<p className="text-[13px] font-medium text-foreground">ZosmaCowork folder</p>
+						<p className="text-[13px] font-medium text-foreground">
+							Zosma Commercial CoWork folder
+						</p>
 						<p className="text-[11px] text-muted-foreground truncate" title={effective}>
 							{effective || "Loading…"}
 							{!configured.trim() && fallback ? "  ·  default" : ""}

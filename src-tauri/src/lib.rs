@@ -1,4 +1,4 @@
-//! Zosma Cowork — Tauri backend
+//! Zosma Commercial CoWork — Tauri backend
 //!
 //! A thin relay between the React frontend and the Node.js agent sidecar.
 
@@ -103,14 +103,14 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
     }
 
     // Check common system paths for distro-packaged installations.
-    // Linux: /usr/lib/zosma-cowork/agent-sidecar/index.cjs
+    // Linux: /usr/lib/zosma-commercial-cowork/agent-sidecar/index.cjs
     // Windows: %PROGRAMFILES%\ZosmaAI\ZosmaCowork\agent-sidecar\index.cjs
     #[cfg(target_os = "windows")]
     {
         let program_files =
             std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".into());
         let win_path = PathBuf::from(format!(
-            "{}\\ZosmaAI\\ZosmaCowork\\agent-sidecar\\index.cjs",
+            "{}\\ZosmaAI\\ZosmaCommercialCoWork\\agent-sidecar\\index.cjs",
             program_files
         ));
         if win_path.exists() {
@@ -120,7 +120,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
         let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
         if !local_app_data.is_empty() {
             let local_path = PathBuf::from(format!(
-                "{}\\ZosmaAI\\ZosmaCowork\\agent-sidecar\\index.cjs",
+                "{}\\ZosmaAI\\ZosmaCommercialCoWork\\agent-sidecar\\index.cjs",
                 local_app_data
             ));
             if local_path.exists() {
@@ -131,7 +131,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
 
     #[cfg(target_os = "linux")]
     {
-        let lib_path = PathBuf::from("/usr/lib/zosma-cowork/agent-sidecar/index.cjs");
+        let lib_path = PathBuf::from("/usr/lib/zosma-commercial-cowork/agent-sidecar/index.cjs");
         if lib_path.exists() {
             return lib_path;
         }
@@ -141,7 +141,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
     // manual unpack, or any non-standard layout).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            let rel_path = exe_dir.join("../lib/zosma-cowork/agent-sidecar/index.cjs");
+            let rel_path = exe_dir.join("../lib/zosma-commercial-cowork/agent-sidecar/index.cjs");
             if rel_path.exists() {
                 return rel_path;
             }
@@ -308,6 +308,21 @@ fn find_node(app: &tauri::AppHandle) -> PathBuf {
     }
 }
 
+/// Split a sidecar stderr line `[sidecar:LEVEL] message` into (level, message).
+/// Returns ("info", line) when the prefix is missing or malformed.
+fn parse_sidecar_level(line: &str) -> (&str, &str) {
+    if let Some(rest) = line.strip_prefix("[sidecar:") {
+        if let Some(end) = rest.find("] ") {
+            let level = &rest[..end];
+            let msg = &rest[end + 2..];
+            if matches!(level, "error" | "warn" | "info" | "debug") {
+                return (level, msg);
+            }
+        }
+    }
+    ("info", line)
+}
+
 async fn spawn_sidecar(
     app: tauri::AppHandle,
     zm: &str,
@@ -373,12 +388,11 @@ async fn spawn_sidecar(
         run_cmd = node_path.to_string_lossy().to_string();
         // `--use-system-ca` (Node 22.15+/24) makes Node consult the OS trust
         // store for OAuth token exchange behind corporate MITM proxies. We pass
-        // it as a real Node CLI ARG (not via NODE_OPTIONS) on purpose: pi shells
-        // out to `npm` for extension installs, and a child Node inherits the
-        // parent's NODE_OPTIONS. Older child Nodes reject `--use-system-ca` in
-        // NODE_OPTIONS and exit with code 9, which silently broke every
-        // extension install. A CLI arg is consumed by THIS Node only and never
-        // leaks to child processes. See the NODE_OPTIONS block below.
+        // it as a real Node CLI ARG (not via NODE_OPTIONS) on purpose: child
+        // Node processes inherit the parent's NODE_OPTIONS. Older child Nodes
+        // reject unknown flags in NODE_OPTIONS and exit with code 9. A CLI arg
+        // is consumed by THIS Node only and never leaks to child processes.
+        // See the NODE_OPTIONS block below.
         run_args = vec!["--use-system-ca".to_string(), p_str];
         log::info!("Sidecar: {} {} {}", run_cmd, run_args[0], run_args[1]);
     }
@@ -390,6 +404,17 @@ async fn spawn_sidecar(
     let mut c = Command::new(&run_cmd);
     for a in &run_args {
         c.arg(a);
+    }
+    // Set the sidecar log verbosity unless the caller already exported it.
+    // Release builds default to `warn` (errors + warnings only) so production
+    // stays quiet; dev builds default to `debug` for full tracing.
+    if std::env::var("SIDECAR_LOG_LEVEL").is_err() {
+        let default_level = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "warn"
+        };
+        c.env("SIDECAR_LOG_LEVEL", default_level);
     }
     // macOS GUI apps launched via Finder don't inherit a terminal's env
     // vars, and our bundled Node 24's stock CA bundle doesn't include
@@ -420,39 +445,6 @@ async fn spawn_sidecar(
             format!("{existing_node_opts} --use-system-ca")
         };
         c.env("NODE_OPTIONS", node_options);
-    }
-    // Export the bundled npm entrypoint so the sidecar can install extensions
-    // with NO system Node/npm (pi runs `<thisNode> --use-system-ca <npm-cli.js>
-    // install ...`). Production/bundled only; dev falls back to system `npm`.
-    if !is_dev {
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            let binaries_dir = resource_dir.join("binaries");
-            let npm_cli = binaries_dir.join("npm").join("bin").join("npm-cli.js");
-            if npm_cli.exists() {
-                let npm_cli = strip_unc_prefix(npm_cli);
-                log::info!("Bundled npm: {:?}", npm_cli);
-                c.env(
-                    "ZOSMA_BUNDLED_NPM_CLI",
-                    npm_cli.to_string_lossy().to_string(),
-                );
-                // Prepend the bundled Node dir to PATH so npm lifecycle scripts
-                // (e.g. protobufjs postinstall → `node scripts/postinstall`) can
-                // resolve `node` on a machine with no system Node/npm. Without
-                // this, install aborts with `sh: node: not found` (exit 127).
-                let node_dir = strip_unc_prefix(binaries_dir);
-                let sep = if cfg!(windows) { ";" } else { ":" };
-                let cur = std::env::var("PATH").unwrap_or_default();
-                c.env(
-                    "PATH",
-                    format!("{}{}{}", node_dir.to_string_lossy(), sep, cur),
-                );
-            } else {
-                log::warn!(
-                    "Bundled npm not found at {:?} — extension install will rely on system npm",
-                    npm_cli
-                );
-            }
-        }
     }
     // Dev mode: parse the repo-root .env and inject each var directly onto
     // the child process. This is the only safe approach — Node.js explicitly
@@ -517,9 +509,18 @@ async fn spawn_sidecar(
             use tokio::io::AsyncBufReadExt as _;
             let mut lines = tokio::io::BufReader::new(err).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                log::warn!("sidecar[err]: {line}");
+                // Sidecar prefixes lines `[sidecar:LEVEL] ...` — map to the
+                // matching Rust log severity so the file log keeps real levels
+                // (previously every sidecar line was logged as a warning).
+                let (level, msg) = parse_sidecar_level(&line);
+                match level {
+                    "error" => log::error!("sidecar: {msg}"),
+                    "warn" => log::warn!("sidecar: {msg}"),
+                    "debug" => log::debug!("sidecar: {msg}"),
+                    _ => log::info!("sidecar: {msg}"),
+                }
             }
-            log::warn!("sidecar[err]: stderr EOF");
+            log::warn!("sidecar: stderr EOF");
         });
     }
     let msg = serde_json::json!({"type":"init","zosmaDir":zm});
@@ -587,26 +588,8 @@ async fn read_stdout(
                         if t == "queue_update" {
                             let _ = app.emit("queue_update", e.clone());
                         }
-                        // Tasks-bridge push: the sidecar emits this when the
-                        // active cwd's .pi/scheduled_tasks.json changes so the
-                        // Tasks list can refetch live (no prompt active).
-                        if t == "tasks_changed" {
-                            let _ = app.emit("tasks_changed", e.clone());
-                        }
-                        // Task-run-completed push (#300): the sidecar emits this
-                        // when a scheduled task finishes executing so the
-                        // TaskDetailPage can live-update the runs section.
-                        if t == "task_run_completed" {
-                            let _ = app.emit("task_run_completed", e.clone());
-                        }
-                        // Task-run-progress push (#300): the sidecar emits this
-                        // periodically while a scheduled task is still running so
-                        // the run detail view can stream live steps.
-                        if t == "task_run_progress" {
-                            let _ = app.emit("task_run_progress", e.clone());
-                        }
                     }
-                    for p in pp.lock().await.values() {
+                    for (_, p) in pp.lock().await.iter() {
                         let _ = p.channel.send(e.clone());
                     }
                 }
@@ -720,62 +703,6 @@ async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
     scmd_r(
         &s,
         &serde_json::json!({"type":"get_active_model","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// #268 — Token/cache usage, cost, and live context-window usage for the
-/// active session. Mirrors the sidecar's `get_session_stats` (which wraps the
-/// SDK's `AgentSession.getSessionStats()`). The UI polls this when a turn
-/// completes and on session load to drive the always-on status line.
-#[tauri::command]
-async fn get_session_stats(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gss-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_session_stats","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// #268 — Current reasoning ("thinking") level plus the levels the active model
-/// supports. Returned shape: `{ thinkingLevel, availableThinkingLevels,
-/// supportsThinking }`.
-#[tauri::command]
-async fn get_thinking_level(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gtl-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_thinking_level","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// #268 — Set the reasoning level (`off | minimal | low | medium | high |
-/// xhigh`). The SDK clamps to what the model supports, so the result echoes the
-/// EFFECTIVE level the engine adopted.
-#[tauri::command]
-async fn set_thinking_level(level: String, s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("stl-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"set_thinking_level","id":id,"level":level}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// #268 — Advance the reasoning level to the next supported step (wraps around).
-/// Powers the clickable thinking-level pill in the status line.
-#[tauri::command]
-async fn cycle_thinking_level(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("ctl-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"cycle_thinking_level","id":id}),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -1237,7 +1164,7 @@ async fn google_install_app(s: State<'_, AppState>, prefs: Option<Value>) -> Res
     if let Some(p) = prefs {
         payload["prefs"] = p;
     }
-    // npm install over the network — generous timeout.
+    // package install over the network — generous timeout.
     scmd_r(&s, &payload, std::time::Duration::from_secs(300)).await
 }
 
@@ -1379,10 +1306,11 @@ async fn save_session(
 
 #[tauri::command]
 async fn load_session(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("ld-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"load_session","id":"ld","sessionFile": session_file}),
-        std::time::Duration::from_secs(10),
+        &serde_json::json!({"type":"load_session","id":id,"sessionFile": session_file}),
+        std::time::Duration::from_secs(60),
     )
     .await
 }
@@ -1455,13 +1383,14 @@ async fn new_session(cwd: Option<String>, s: State<'_, AppState>) -> Result<Valu
     // picker). Forwarded to the sidecar, which rebinds the agent's file/bash
     // tools and project-local resource discovery to it. Omitted => the sidecar
     // keeps its current workspace (defaults to the user's home dir).
-    let mut payload = serde_json::json!({"type":"new_session","id":"ns"});
+    let id = format!("ns-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"new_session","id":id});
     if let Some(c) = cwd {
         if !c.trim().is_empty() {
             payload["cwd"] = serde_json::Value::String(c);
         }
     }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
+    scmd_r(&s, &payload, std::time::Duration::from_secs(60)).await
 }
 
 /// Report the sidecar's active workspace folder (and the default), so the UI
@@ -1543,187 +1472,6 @@ async fn list_extensions(s: State<'_, AppState>) -> Result<Value, String> {
     )
     .await
     .map(|r| r.get("extensions").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-// ── Tasks bridge (pi-routines scheduled tasks) ────────────────────
-// Thin shims over the sidecar's tasks_* commands, which read/write the
-// active cwd's .pi/scheduled_tasks.json directly (no LLM round-trip).
-// `cwd` is optional: when omitted the sidecar uses its active workspaceCwd.
-
-#[tauri::command]
-async fn tasks_list(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"tasks_list","id":"tl"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| r.get("tasks").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-#[tauri::command]
-async fn tasks_delete(task_id: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"tasks_delete","id":"td","taskId": task_id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn tasks_set_enabled(
-    task_id: String,
-    enabled: bool,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"tasks_set_enabled","id":"tse","taskId": task_id, "enabled": enabled}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn tasks_run_now(task_id: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"tasks_run_now","id":"trn","taskId": task_id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn tasks_list_runs(
-    task_id: String,
-    limit: Option<u32>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type": "tasks_list_runs",
-            "id": "tlr",
-            "taskId": task_id,
-            "limit": limit.unwrap_or(50)
-        }),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| r.get("runs").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-#[tauri::command]
-async fn tasks_get_completed(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"tasks_get_completed","id":"tgc"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| r.get("completed").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-#[tauri::command]
-async fn install_extension(
-    source: String,
-    ref_name: Option<String>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let mut payload = serde_json::json!({"type":"install_extension","id":"ie","source":source});
-    if let Some(r) = ref_name {
-        payload["ref"] = serde_json::json!(r);
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(180))
-        .await
-        .map(|r| r.get("extension").cloned().unwrap_or(Value::Null))
-}
-
-#[tauri::command]
-async fn uninstall_extension(
-    extension_id: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"uninstall_extension","id":"ue","extensionId": extension_id}),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn set_extension_enabled(
-    extension_id: String,
-    enabled: bool,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-		&s,
-		&serde_json::json!({"type":"set_extension_enabled","id":"se","extensionId": extension_id, "enabled": enabled}),
-		std::time::Duration::from_secs(10),
-	)
-	.await
-}
-
-#[tauri::command]
-async fn set_extension_config(
-    extension_id: String,
-    config: Value,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-		&s,
-		&serde_json::json!({"type":"set_extension_config","id":"sc","extensionId": extension_id, "config": config}),
-		std::time::Duration::from_secs(10),
-	)
-	.await
-}
-
-/// Read a whitelisted extension's own config file (e.g. pi-messenger-bridge's
-/// ~/.pi/msg-bridge.json) so the UI can offer a bespoke setup screen.
-#[tauri::command]
-async fn get_extension_config_file(
-    extension_id: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("gecf-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_extension_config_file","id":id,"extensionId": extension_id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Merge a patch into a whitelisted extension's own config file (written with
-/// 0600 perms by the sidecar).
-#[tauri::command]
-async fn save_extension_config_file(
-    extension_id: String,
-    patch: Value,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("secf-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"save_extension_config_file","id":id,"extensionId": extension_id, "patch": patch}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn search_discover(query: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"search_discover","id":"sd","query": query}),
-        std::time::Duration::from_secs(15),
-    )
-    .await
-    .map(|r| r.get("packages").cloned().unwrap_or(Value::Array(vec![])))
 }
 
 // ── Skills commands ──────────────────────────────────────────────
@@ -1829,65 +1577,6 @@ async fn read_skill_md(path: String, _s: State<'_, AppState>) -> Result<Value, S
         "content": content,
         "path": skill_md.to_string_lossy().to_string(),
     }))
-}
-
-// ── Background wallpaper (#191) ──────────────────────────────────────
-//
-// The webview can't read arbitrary files the user picks (fs scope is limited
-// to ~/.zosmaai/cowork/**, and there's no asset protocol), so the picked image
-// is copied into the wallpapers dir by Rust and read back as bytes at apply
-// time. Keeping both file ops in Rust avoids any Tauri config/capability change.
-
-const WALLPAPER_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
-
-fn wallpapers_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|e| format!("Cannot find home directory: {e}"))?;
-    let dir = PathBuf::from(home)
-        .join(".zosmaai")
-        .join("cowork")
-        .join("wallpapers");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create wallpapers dir: {e}"))?;
-    Ok(dir)
-}
-
-/// Copy a user-picked image into the wallpapers dir. Returns the stored filename.
-/// A single active slot is kept (`wallpaper.<ext>`), overwriting any previous one
-/// of the same extension; stale slots with other extensions are removed.
-#[tauri::command]
-fn import_wallpaper(src_path: String) -> Result<String, String> {
-    let src = PathBuf::from(&src_path);
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .filter(|e| WALLPAPER_EXTS.contains(&e.as_str()))
-        .ok_or_else(|| "Unsupported image type (use PNG, JPG, WEBP or GIF).".to_string())?;
-
-    let dir = wallpapers_dir()?;
-    // Drop any previous wallpaper slot so we don't accumulate files.
-    for other in WALLPAPER_EXTS {
-        let p = dir.join(format!("wallpaper.{other}"));
-        if p.exists() {
-            let _ = fs::remove_file(&p);
-        }
-    }
-
-    let filename = format!("wallpaper.{ext}");
-    let dest = dir.join(&filename);
-    fs::copy(&src, &dest).map_err(|e| format!("Failed to copy image: {e}"))?;
-    Ok(filename)
-}
-
-/// Read a stored wallpaper image's bytes by filename (no path traversal allowed).
-#[tauri::command]
-fn read_wallpaper(filename: String) -> Result<Vec<u8>, String> {
-    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
-        return Err("Invalid wallpaper filename.".to_string());
-    }
-    let path = wallpapers_dir()?.join(&filename);
-    fs::read(&path).map_err(|e| format!("Failed to read wallpaper: {e}"))
 }
 
 /// Extract a YAML frontmatter field from SKILL.md content
@@ -2289,47 +1978,6 @@ async fn remove_skill(name: String, _s: State<'_, AppState>) -> Result<Value, St
     Err(format!("Skill '{}' not found in {:?}", name, skills_dir))
 }
 
-// ── Remote Access (Phase 6.0) ──────────────────────────────────
-
-#[tauri::command]
-async fn start_remote_server(
-    port: Option<u16>,
-    host: Option<String>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type": "start_remote",
-            "id": "sr",
-            "port": port.unwrap_or(8765),
-            "host": host.unwrap_or_else(|| "127.0.0.1".to_string()),
-        }),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn stop_remote_server(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type": "stop_remote", "id": "sr"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn get_remote_status(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type": "get_remote_status", "id": "grs"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
 #[tauri::command]
 async fn write_user_file(path: String, content: String) -> Result<(), String> {
     tokio::fs::write(&path, &content)
@@ -2415,6 +2063,21 @@ fn uuid_v4() -> String {
     )
 }
 
+/// App log level from the ZOSMA_LOG_LEVEL env var (error/warn/info/debug/trace).
+/// Defaults to Debug in dev builds and Info in release, matching the sidecar's
+/// spawn defaults so the whole stack goes quiet in production by default.
+fn resolve_log_level() -> log::LevelFilter {
+    match std::env::var("ZOSMA_LOG_LEVEL").ok().as_deref() {
+        Some("error") => log::LevelFilter::Error,
+        Some("warn") => log::LevelFilter::Warn,
+        Some("info") => log::LevelFilter::Info,
+        Some("debug") => log::LevelFilter::Debug,
+        Some("trace") => log::LevelFilter::Trace,
+        _ if cfg!(debug_assertions) => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Info,
+    }
+}
+
 pub fn run() {
     let aptabase_key = option_env!("APTABASE_KEY").unwrap_or("");
     let builder = tauri::Builder::default()
@@ -2429,7 +2092,7 @@ pub fn run() {
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
                 ))
-                .level(log::LevelFilter::Info)
+                .level(resolve_log_level())
                 .max_file_size(5_000_000)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
                 .build(),
@@ -2459,6 +2122,8 @@ pub fn run() {
                 if let Err(e) = analytics::setup(app, key) {
                     log::warn!("Analytics setup failed: {}", e);
                 }
+                // Success is logged inside analytics::setup so the key presence
+                // is unambiguous in the log.
             } else {
                 log::info!("Analytics: no key, disabled");
             }
@@ -2548,10 +2213,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_models,
             get_active_model,
-            get_session_stats,
-            get_thinking_level,
-            set_thinking_level,
-            cycle_thinking_level,
             send_prompt,
             abort_prompt,
             steer_prompt,
@@ -2598,33 +2259,16 @@ pub fn run() {
             get_instructions,
             save_instructions,
             list_extensions,
-            tasks_list,
-            tasks_delete,
-            tasks_set_enabled,
-            tasks_run_now,
-            tasks_list_runs,
-            tasks_get_completed,
-            install_extension,
-            uninstall_extension,
-            set_extension_enabled,
-            set_extension_config,
-            get_extension_config_file,
-            save_extension_config_file,
-            search_discover,
             search_skills,
             list_skills,
             read_skill_md,
             install_skill,
             remove_skill,
-            import_wallpaper,
-            read_wallpaper,
-            start_remote_server,
-            stop_remote_server,
-            get_remote_status,
             write_user_file,
             open_url,
             crate::analytics::track_analytics_event,
             crate::analytics::set_analytics_enabled,
+            crate::analytics::flush_analytics,
             set_telemetry_enabled,
             get_install_context,
         ])

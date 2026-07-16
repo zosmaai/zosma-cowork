@@ -435,3 +435,48 @@ describe("streamReducer — mid-stream error finalization", () => {
 		expect(s.messages.filter((m) => m.role === "assistant")).toHaveLength(0);
 	});
 });
+
+describe("streamReducer — delivered steer/follow-up become bubbles", () => {
+	it("skips the prompt echo, then renders delivered messages with kind between assistant bubbles", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "do a thing" },
+			// prompt echo from the SDK — must be skipped (no dup user bubble)
+			{ type: "USER_MESSAGE_STARTED", content: "do a thing" },
+			// assistant part 1
+			{ type: "TURN_RESET" },
+			{ type: "TEXT_DELTA", delta: "working on it" },
+			// user queued a steer, SDK delivers it
+			{ type: "QUEUE_OPTIMISTIC", kind: "steer", text: "use TS instead" },
+			{ type: "QUEUE_UPDATE", steering: [], followUp: [] },
+			{ type: "USER_MESSAGE_STARTED", content: "use TS instead" },
+			// assistant part 2
+			{ type: "TEXT_DELTA", delta: "switched to TS" },
+			{ type: "STREAM_COMPLETE" },
+		]);
+		// prompt(user) + assistant-part-1 + steer(user) + assistant-part-2 = 4
+		expect(state.messages.map((m) => m.role)).toEqual([
+			"user",
+			"assistant",
+			"user",
+			"assistant",
+		]);
+		expect(state.messages[0].content).toBe("do a thing");
+		expect(state.messages[1].content).toBe("working on it");
+		expect(state.messages[2].content).toBe("use TS instead");
+		expect(state.messages[2].kind).toBe("queued-steer");
+		expect(state.messages[3].content).toBe("switched to TS");
+	});
+
+	it("labels a delivered follow-up as queued-follow-up", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "start" },
+			{ type: "USER_MESSAGE_STARTED", content: "start" },
+			{ type: "TEXT_DELTA", delta: "done part 1" },
+			{ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text: "also do B" },
+			{ type: "QUEUE_UPDATE", steering: [], followUp: [] },
+			{ type: "USER_MESSAGE_STARTED", content: "also do B" },
+		]);
+		const delivered = state.messages.find((m) => m.content === "also do B");
+		expect(delivered?.kind).toBe("queued-follow-up");
+	});
+});

@@ -3,6 +3,7 @@ import {
 	Folder,
 	FolderOpen,
 	FolderPlus,
+	Folders,
 	MessagesSquare,
 	Pencil,
 	Pin,
@@ -52,7 +53,7 @@ function displayPath(folder: string | undefined, homeDir: string | undefined): s
 interface ConversationSearchProps {
 	sessions: Session[];
 	onSelect: (id: string) => void;
-	/** Start a fresh session in the default ZosmaCowork folder (no prompt). */
+	/** Start a fresh session in the default Zosma Commercial CoWork folder (no prompt). */
 	onNewSession: () => void;
 	/** Pick a folder for the agent to work in, then start a session there. */
 	onOpenSession: () => void;
@@ -66,6 +67,9 @@ interface ConversationSearchProps {
 	 * matches real conversation text — not just the title placeholder.
 	 */
 	onDeepSearch?: (query: string) => Promise<DeepSearchMatch[]>;
+	/** Show sessions from every folder instead of just the active workspace. */
+	allFolders?: boolean;
+	onToggleAllFolders?: () => void;
 	activeSessionId?: string;
 	/** The user's home dir, used to collapse session paths to `~`. */
 	homeDir?: string;
@@ -103,6 +107,8 @@ export function ConversationSearch({
 	onRequestRename,
 	onPinSession,
 	onDeepSearch,
+	allFolders,
+	onToggleAllFolders,
 	activeSessionId,
 	homeDir,
 }: ConversationSearchProps) {
@@ -232,21 +238,34 @@ export function ConversationSearch({
 		<div className="flex flex-col h-full min-h-0">
 			{/* ── Header ── */}
 			<div className="flex items-center justify-between px-4 pt-3 pb-2">
-				<span
-					className="text-[10px] font-semibold uppercase tracking-widest"
-					style={{ color: "hsl(var(--muted-foreground) / 0.5)" }}
-				>
+				<span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
 					Sessions
 				</span>
 				<div className="flex items-center gap-1.5">
+					{onToggleAllFolders && (
+						<motion.button
+							type="button"
+							onClick={onToggleAllFolders}
+							aria-label={allFolders ? "Show only this folder" : "Show all folders"}
+							aria-pressed={allFolders}
+							title={allFolders ? "Showing all folders — click for this folder only" : "Showing this folder only — click to show all folders"}
+							className={`flex items-center px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+								allFolders ? "text-primary bg-primary/12" : "text-muted-foreground bg-transparent"
+							}`}
+							whileHover={reduced ? {} : { scale: 1.04 }}
+							whileTap={reduced ? {} : { scale: 0.96 }}
+							transition={{ duration: 0.15, ease: easeOutExpo }}
+						>
+							<Folders className="w-3.5 h-3.5" />
+						</motion.button>
+					)}
 					<motion.button
 						type="button"
 						onClick={onNewSession}
 						aria-label="New session"
-						title="New session in your ZosmaCowork folder"
-						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium"
-						style={{ color: "hsl(var(--primary))", background: "hsl(var(--primary) / 0.08)" }}
-						whileHover={reduced ? {} : { scale: 1.04, background: "hsl(var(--primary) / 0.15)" }}
+						title="New session in your Zosma Commercial CoWork folder"
+						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-primary bg-primary/8 hover:bg-primary/15"
+						whileHover={reduced ? {} : { scale: 1.04 }}
 						whileTap={reduced ? {} : { scale: 0.96 }}
 						transition={{ duration: 0.15, ease: easeOutExpo }}
 					>
@@ -272,26 +291,15 @@ export function ConversationSearch({
 			{/* ── Search ── */}
 			<div className="px-3 pb-2">
 				<motion.div
-					className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 border"
-					animate={
-						reduced
-							? {}
-							: {
-									borderColor: focused ? "hsl(var(--primary) / 0.5)" : "hsl(var(--border))",
-									background: focused ? "hsl(var(--primary) / 0.04)" : "hsl(var(--muted) / 0.5)",
-								}
-					}
+					className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border transition-colors duration-200 ${
+						focused ? "border-primary/50 bg-primary/4" : "border-border bg-muted/50"
+					}`}
 					transition={{ duration: 0.18, ease: easeOutExpo }}
-					style={{
-						borderColor: "hsl(var(--border))",
-						background: "hsl(var(--muted) / 0.5)",
-					}}
 				>
 					<Search
-						className="w-3 h-3 shrink-0"
-						style={{
-							color: focused ? "hsl(var(--primary) / 0.7)" : "hsl(var(--muted-foreground) / 0.4)",
-						}}
+						className={`w-3 h-3 shrink-0 ${
+							focused ? "text-primary/70" : "text-muted-foreground/40"
+						}`}
 					/>
 					<input
 						ref={inputRef}
@@ -328,11 +336,7 @@ export function ConversationSearch({
 									setQuery("");
 									inputRef.current?.focus();
 								}}
-								className="shrink-0 rounded text-[10px] px-1 py-px"
-								style={{
-									color: "hsl(var(--muted-foreground) / 0.5)",
-									background: "hsl(var(--muted))",
-								}}
+								className="shrink-0 rounded text-[10px] px-1 py-px text-muted-foreground/50 bg-muted"
 								initial={{ opacity: 0, scale: 0.7 }}
 								animate={{ opacity: 1, scale: 1 }}
 								exit={{ opacity: 0, scale: 0.7 }}
@@ -362,12 +366,9 @@ export function ConversationSearch({
 								animate={reduced ? {} : { scale: [1, 1.06, 1] }}
 								transition={{ duration: 2.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
 							>
-								<MessagesSquare
-									className="w-7 h-7"
-									style={{ color: "hsl(var(--muted-foreground) / 0.2)" }}
-								/>
+								<MessagesSquare className="w-7 h-7 text-muted-foreground/20" />
 							</motion.div>
-							<p className="text-[11px]" style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}>
+							<p className="text-[11px] text-muted-foreground/40">
 								{query.trim() ? "No results" : "No sessions yet"}
 							</p>
 						</motion.div>
@@ -377,19 +378,13 @@ export function ConversationSearch({
 				{/* Pinned group — only when at least one pinned session is visible */}
 				{pinned.length > 0 && (
 					<>
-						<div
-							className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-[9px] font-semibold uppercase tracking-widest"
-							style={{ color: "hsl(var(--muted-foreground) / 0.45)" }}
-						>
+						<div className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/45">
 							<Pin className="w-2.5 h-2.5" fill="currentColor" />
 							Pinned
 						</div>
 						{pinned.map((session, i) => renderRow(session, i))}
 						{unpinned.length > 0 && (
-							<div
-								className="px-2 pt-2.5 pb-1 text-[9px] font-semibold uppercase tracking-widest"
-								style={{ color: "hsl(var(--muted-foreground) / 0.45)" }}
-							>
+							<div className="px-2 pt-2.5 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/45">
 								Recent
 							</div>
 						)}
@@ -463,7 +458,6 @@ function SessionRow({
 			// into the inline rename field. Position-only keeps reorder smooth while
 			// the rename swap happens instantly with no jank.
 			layout="position"
-			className="relative rounded-lg transition-colors"
 			initial={reduced ? false : { opacity: 0, x: -8 }}
 			animate={{ opacity: 1, x: 0 }}
 			transition={{
@@ -479,13 +473,9 @@ function SessionRow({
 			}}
 			// Single background lives on the container so the content row and the
 			// action row read as ONE surface (no double-tint seam on hover).
-			style={{
-				background: isActive
-					? "hsl(var(--sidebar-accent))"
-					: hovered
-						? "hsl(var(--accent) / 0.5)"
-						: undefined,
-			}}
+			className={`relative rounded-lg transition-colors ${
+				isActive ? "bg-sidebar-accent" : hovered ? "bg-accent/50" : ""
+			}`}
 		>
 			{/* Active accent bar */}
 			<AnimatePresence>
@@ -515,29 +505,16 @@ function SessionRow({
 					transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
 				>
 					{/* Title */}
-					<span
-						className={`flex items-center gap-1 text-[12px] truncate leading-snug ${
-							isActive ? "font-semibold" : "font-medium"
-						}`}
-						style={{
-							color: isActive ? "hsl(var(--foreground))" : "hsl(var(--foreground) / 0.8)",
-						}}
+					<span className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
 					>
 						{session.pinned && (
-							<Pin
-								className="w-2.5 h-2.5 shrink-0"
-								fill="currentColor"
-								style={{ color: "hsl(var(--primary) / 0.7)" }}
-							/>
+							<Pin className="w-2.5 h-2.5 shrink-0 text-primary/70" fill="currentColor" />
 						)}
 						<span className="truncate">{session.title}</span>
 					</span>
 
 					{/* Folder path — where this session was opened (VSCode-style) */}
-					<span
-						className="flex items-center gap-1 mt-0.5 text-[10px] truncate"
-						style={{ color: "hsl(var(--muted-foreground) / 0.5)" }}
-						title={session.folder || path}
+					<span className="flex items-center gap-1 mt-0.5 text-[10px] truncate text-muted-foreground/50" title={session.folder || path}
 					>
 						<Folder className="w-2.5 h-2.5 shrink-0" />
 						<span className="truncate">{path}</span>
@@ -545,16 +522,10 @@ function SessionRow({
 
 					{/* Last message / search snippet + timestamp */}
 					<span className="flex items-center gap-1.5 mt-0.5">
-						<span
-							className="text-[11px] truncate flex-1"
-							style={{ color: "hsl(var(--muted-foreground) / 0.55)" }}
-						>
+						<span className="text-[11px] truncate flex-1 text-muted-foreground/55">
 							{snippet || session.lastMessage}
 						</span>
-						<span
-							className="text-[10px] shrink-0 tabular-nums"
-							style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}
-						>
+						<span className="text-[10px] shrink-0 tabular-nums text-muted-foreground/35">
 							{formatTime(session.timestamp)}
 						</span>
 					</span>

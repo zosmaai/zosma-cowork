@@ -17,6 +17,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { log } from "./protocol.js";
 import { join } from "node:path";
 import { platform } from "node:os";
 import { execSync } from "node:child_process";
@@ -157,20 +158,20 @@ export function activateBundledBinaries(): { git: ToolInfo; gh: ToolInfo } {
 	const ghInfo = probeTool("gh");
 	const gitInfo = probeTool("git");
 
-	console.log(`[bundled-binaries] gh: ${ghInfo.status}${ghInfo.version ? ` (${ghInfo.version})` : ""}`);
-	console.log(`[bundled-binaries] git: ${gitInfo.status}${gitInfo.version ? ` (${gitInfo.version})` : ""}`);
+	log(`[bundled-binaries] gh: ${ghInfo.status}${ghInfo.version ? ` (${ghInfo.version})` : ""}`);
+	log(`[bundled-binaries] git: ${gitInfo.status}${gitInfo.version ? ` (${gitInfo.version})` : ""}`);
 
 	// Enrich PATH
 	const currentPath = process.env.PATH || "";
 	const newPath = buildBundledPath(currentPath);
 	if (newPath !== currentPath) {
 		process.env.PATH = newPath;
-		console.log(`[bundled-binaries] PATH enriched with bundled binary directories`);
+		log(`[bundled-binaries] PATH enriched with bundled binary directories`);
 	}
 
 	// On Windows, also check if Git-for-Windows installer should be offered
 	if (gitInfo.status === "missing") {
-		console.log(`[bundled-binaries] ⚠️  git not found — user will be prompted to install`);
+		log(`[bundled-binaries] ⚠️  git not found — user will be prompted to install`);
 	}
 
 	return { git: gitInfo, gh: ghInfo };

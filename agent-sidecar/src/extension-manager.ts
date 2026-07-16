@@ -1,5 +1,5 @@
 /**
- * Zosma Cowork — Extension Manager (pi-native)
+ * Zosma Commercial CoWork — Extension Manager (pi-native)
  *
  * Cowork is a thin GUI helper over the pi coding agent. pi is the single
  * source of truth for what is installed: extensions live in pi's settings
@@ -175,7 +175,7 @@ export function bundledNpmPrefix(
  * (which would go stale on the next app update and break the standalone pi
  * CLI). A user-configured `npmCommand` always wins.
  */
-function applyBundledNpm(settingsManager: SettingsManager): void {
+export function applyBundledNpm(settingsManager: SettingsManager): void {
 	const bundled = bundledNpmCommand();
 	if (!bundled) return;
 	// Pin the bundled npm's global prefix to a user-writable dir so `install -g`

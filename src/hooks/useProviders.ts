@@ -1,4 +1,5 @@
 import type { ModelInfo } from "@/types";
+import { log } from "../lib/log";
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,7 +14,7 @@ export function useProviders() {
 			const result: ModelInfo[] = await invoke("get_models");
 			setModels(Array.isArray(result) ? result : []);
 		} catch (err) {
-			console.error("Failed to load models:", err);
+			log.error("Failed to load models:", err);
 			setModels([]);
 		} finally {
 			setLoading(false);

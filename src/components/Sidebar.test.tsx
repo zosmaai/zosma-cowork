@@ -5,7 +5,7 @@ import { Sidebar } from "./Sidebar";
 const noop = () => {};
 
 // jsdom has no IntersectionObserver; ConversationSearch's infinite-scroll
-// sentinel constructs one. Stub it so the chats panel renders.
+// sentinel constructs one. Stub it so the sessions panel renders.
 beforeAll(() => {
 	class IO {
 		observe() {}
@@ -24,30 +24,19 @@ const baseProps = {
 	onNewSession: noop,
 	onOpenSession: noop,
 	onDeleteSession: noop,
+	onChangeView: noop,
 };
 
-describe("Sidebar IA (Cowork / Tasks)", () => {
-	it("renders the Cowork and Tasks tabs, not Templates/Chats", () => {
-		render(<Sidebar view="chats" onChangeView={noop} {...baseProps} />);
-
-		expect(screen.getByText("Cowork")).toBeInTheDocument();
-		expect(screen.getByText("Tasks")).toBeInTheDocument();
-		expect(screen.queryByText("Templates")).not.toBeInTheDocument();
-		expect(screen.queryByText("Chats")).not.toBeInTheDocument();
+describe("Sidebar", () => {
+	it("renders the session list", () => {
+		render(<Sidebar {...baseProps} />);
+		expect(screen.getByText("Hello")).toBeInTheDocument();
 	});
 
-	it("selecting the Tasks tab calls onChangeView('tasks')", () => {
+	it("clicking Settings calls onChangeView('settings')", () => {
 		const onChangeView = vi.fn();
-		render(<Sidebar view="chats" onChangeView={onChangeView} {...baseProps} />);
-
-		fireEvent.click(screen.getByText("Tasks"));
-
-		expect(onChangeView).toHaveBeenCalledWith("tasks");
-	});
-
-	it("renders the Tasks placeholder panel when view is 'tasks'", () => {
-		render(<Sidebar view="tasks" onChangeView={noop} {...baseProps} />);
-
-		expect(screen.getByText("No tasks yet")).toBeInTheDocument();
+		render(<Sidebar {...baseProps} onChangeView={onChangeView} />);
+		fireEvent.click(screen.getByText("Settings"));
+		expect(onChangeView).toHaveBeenCalledWith("settings");
 	});
 });

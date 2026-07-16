@@ -1,15 +1,15 @@
 /**
- * Canonical Zosma Cowork outbound links.
+ * Canonical Zosma Commercial CoWork outbound links.
  *
  * Centralized so the About page, feedback flows and anywhere else that
- * points users at the project share one source of truth. All of these are
+ * points users at the product share one source of truth. All of these are
  * external URLs and open in the system browser via the global
  * external-link handler (see `external-links.ts`).
  */
 export const BRAND_LINKS = {
 	/** Marketing site / landing page. */
 	website: "https://zosma.ai",
-	/** Public source repository. */
+	/** Product repository (issue tracking). */
 	repo: "https://github.com/zosmaai/zosma-cowork",
 	/** All issues (search before filing). */
 	issues: "https://github.com/zosmaai/zosma-cowork/issues",
@@ -19,9 +19,9 @@ export const BRAND_LINKS = {
 	releases: "https://github.com/zosmaai/zosma-cowork/releases/latest",
 	/** Community chat. */
 	discord: "https://discord.com/invite/HQcyTD5jHA",
-	/** Showcase gallery of what Cowork can build. */
+	/** Showcase gallery. */
 	gallery: "https://www.zosma.ai/zosma-cowork/gallery",
-	/** The pi engine Cowork is built on. */
+	/** The pi engine Zosma Commercial CoWork is built on. */
 	pi: "https://github.com/earendil-works/pi-coding-agent",
 } as const;
 

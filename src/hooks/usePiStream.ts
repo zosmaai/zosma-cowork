@@ -1,10 +1,5 @@
-import {
-	type SessionStats,
-	THINKING_LEVELS,
-	type ThinkingLevel,
-	type ThinkingState,
-} from "@/lib/sessionStats";
 import type { ChatMessage, ToolCallInfo } from "@/types";
+import { log } from "../lib/log";
 import type {
 	PiErrorEvent,
 	PiEvent,
@@ -13,37 +8,9 @@ import type {
 	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
-import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useReducer, useState } from "react";
-
-/** Default reasoning slice before the sidecar reports the real level (#268). */
-const INITIAL_THINKING: ThinkingState = {
-	level: "medium",
-	available: [...THINKING_LEVELS],
-	supported: true,
-	// Not yet confirmed by the engine — the status-line pill stays hidden until
-	// the sidecar reports the model's real reasoning capability, so we never
-	// flash a misleading "Medium" for a model that can't reason.
-	known: false,
-};
-
-/** Build a confirmed ThinkingState from a sidecar reasoning response. */
-function toThinkingState(res: {
-	thinkingLevel?: ThinkingLevel;
-	availableThinkingLevels?: ThinkingLevel[];
-	supportsThinking?: boolean;
-}): ThinkingState {
-	return {
-		level: res.thinkingLevel as ThinkingLevel,
-		available:
-			res.availableThinkingLevels && res.availableThinkingLevels.length > 0
-				? res.availableThinkingLevels
-				: [...THINKING_LEVELS],
-		supported: res.supportsThinking ?? true,
-		known: true,
-	};
-}
 
 /**
  * Snapshot of the agent session's pending message queue (#201 PR 3).
@@ -87,6 +54,19 @@ export interface StreamState {
 	 * to do safely on a flat string.
 	 */
 	streamSegments: string[];
+	/**
+	 * Kind of every text ever queued, keyed by its text. Accumulated from
+	 * queue snapshots so a message delivered mid-turn (removed from the
+	 * queue just before its `message_start`) can still be labelled
+	 * steer vs follow-up. Never cleared within a session — small.
+	 */
+	queuedKinds: Record<string, "steer" | "follow_up">;
+	/**
+	 * The stream's first user `message_start` is the SDK echoing the prompt
+	 * we already rendered optimistically in START_STREAM — skip it once.
+	 * Later user `message_start`s are delivered steer/follow-up messages.
+	 */
+	promptEchoConsumed: boolean;
 }
 
 /** Granular tool execution phase for richer status display */
@@ -143,7 +123,15 @@ export type StreamAction =
 	 * correct value. This fixes the word-duplication bug (#307) where
 	 * replayed text_delta events cause every word to appear doubled.
 	 */
-	| { type: "TEXT_END"; content: string };
+	| { type: "TEXT_END"; content: string }
+	/**
+	 * A user message the SDK injected mid-run (delivered steer/follow-up).
+	 * Arrives as a `message_start` with role "user" AFTER the prompt echo.
+	 * Finalizes the current assistant bubble, inserts the user message with
+	 * its steer/follow-up kind, then opens a fresh assistant bubble so the
+	 * transcript reads: assistant-part-1 → [Steering …] → assistant-part-2.
+	 */
+	| { type: "USER_MESSAGE_STARTED"; content: string };
 
 export const INITIAL_STATE: StreamState = {
 	messages: [],
@@ -153,6 +141,8 @@ export const INITIAL_STATE: StreamState = {
 	error: null,
 	queue: { steering: [], followUp: [] },
 	streamSegments: [],
+	queuedKinds: {},
+	promptEchoConsumed: false,
 };
 
 /** Join non-empty sub-turn segments into the bubble's rendered content. */
@@ -457,17 +447,67 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			return { ...state, isRunning: false, status: "idle" };
 		}
 
+		case "USER_MESSAGE_STARTED": {
+			// First user message_start = the prompt echo we already rendered.
+			if (!state.promptEchoConsumed) {
+				return { ...state, promptEchoConsumed: true };
+			}
+			const kind =
+				state.queuedKinds[action.content] === "follow_up"
+					? "queued-follow-up"
+					: "queued-steer";
+			// Finalize the assistant work so far into its own bubble so the
+			// delivered user message lands AFTER it, not before.
+			const prev = state.streamingMessage;
+			const prevIsEmpty =
+				!prev ||
+				(!prev.content && !prev.thinking && (!prev.toolCalls || prev.toolCalls.length === 0));
+			const finalized: ChatMessage[] =
+				prev && !prevIsEmpty ? [{ ...prev, isStreaming: false }] : [];
+			return {
+				...state,
+				messages: [
+					...state.messages,
+					...finalized,
+					{
+						id: crypto.randomUUID(),
+						role: "user",
+						content: action.content,
+						timestamp: Date.now(),
+						kind,
+					},
+				],
+				// Fresh bubble for the assistant's response to the injected message.
+				streamingMessage: {
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: "",
+					thinking: "",
+					isStreaming: true,
+					toolCalls: [],
+					timestamp: Date.now(),
+				},
+				streamSegments: [],
+				status: "thinking",
+			};
+		}
+
 		case "RESET":
 			return INITIAL_STATE;
 
-		case "QUEUE_UPDATE":
+		case "QUEUE_UPDATE": {
+			const queuedKinds = { ...state.queuedKinds };
+			for (const t of action.steering) queuedKinds[t] = "steer";
+			for (const t of action.followUp) queuedKinds[t] = "follow_up";
 			return {
 				...state,
+				queuedKinds,
 				queue: {
 					steering: [...action.steering],
 					followUp: [...action.followUp],
 				},
 			};
+		}
 
 		case "QUEUE_OPTIMISTIC": {
 			// Issue #201 PR3 follow-up: optimistic queue bubbles live ONLY in
@@ -479,6 +519,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			// bubble — no orphan-duplicate bug (#201 follow-up screenshot).
 			return {
 				...state,
+				queuedKinds: { ...state.queuedKinds, [action.text]: action.kind },
 				queue:
 					action.kind === "steer"
 						? {
@@ -513,259 +554,191 @@ function extractToolCallInfo(tc: {
 export function usePiStream() {
 	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
 	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
-	// #268 — always-on status-line telemetry. `sessionStats` is the
-	// authoritative snapshot from the sidecar (token/cache/cost + live context
-	// usage); `thinking` mirrors the engine's current reasoning level + the
-	// model-supported ladder. Both live as plain state (not in the reducer)
-	// since they're fetched async and don't participate in streaming reducer
-	// transitions.
-	const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
-	const [thinking, setThinking] = useState<ThinkingState>(INITIAL_THINKING);
 
-	/**
-	 * Pull the authoritative session stats from the sidecar. Called after each
-	 * turn completes and on session load/reset. No-ops gracefully off-Tauri
-	 * (remote/browser mode) where the command isn't available.
-	 */
-	const refreshStats = useCallback(async () => {
-		if (!isTauri()) return;
-		try {
-			const stats = (await invoke("get_session_stats")) as SessionStats;
-			setSessionStats(stats);
-			if (stats.thinkingLevel) {
-				setThinking(toThinkingState(stats));
-			}
-		} catch (err) {
-			console.warn("[cowork] get_session_stats failed:", err);
-		}
-	}, []);
+	const startStream = useCallback(async (text: string) => {
+		dispatch({ type: "START_STREAM", prompt: text });
 
-	/** Apply a specific thinking level; reconciles to the engine's effective
-	 * (clamped) level returned by the sidecar. */
-	const applyThinkingLevel = useCallback(async (level: ThinkingLevel) => {
-		if (!isTauri()) {
-			setThinking((prev) => ({ ...prev, level }));
-			return;
-		}
-		// Optimistic — snap the pill immediately, reconcile on the result.
-		setThinking((prev) => ({ ...prev, level }));
-		try {
-			const res = (await invoke("set_thinking_level", { level })) as {
-				thinkingLevel?: ThinkingLevel;
-				availableThinkingLevels?: ThinkingLevel[];
-				supportsThinking?: boolean;
-			};
-			if (res?.thinkingLevel) {
-				setThinking(toThinkingState(res));
-			}
-		} catch (err) {
-			console.warn("[cowork] set_thinking_level failed:", err);
-		}
-	}, []);
+		const channel = new Channel<PiEvent>();
 
-	/** Advance reasoning to the next supported level (clickable pill). */
-	const cycleThinking = useCallback(async () => {
-		if (!isTauri()) return;
-		try {
-			const res = (await invoke("cycle_thinking_level")) as {
-				thinkingLevel?: ThinkingLevel;
-				availableThinkingLevels?: ThinkingLevel[];
-				supportsThinking?: boolean;
-			};
-			if (res?.thinkingLevel) {
-				setThinking(toThinkingState(res));
-			}
-		} catch (err) {
-			console.warn("[cowork] cycle_thinking_level failed:", err);
-		}
-	}, []);
-
-	const startStream = useCallback(
-		async (text: string) => {
-			dispatch({ type: "START_STREAM", prompt: text });
-
-			const channel = new Channel<PiEvent>();
-
-			channel.onmessage = (event: PiEvent) => {
-				try {
-					switch (event.type) {
-						case "message_update": {
-							const msgEvent = event as PiMessageUpdateEvent;
-							const ame = msgEvent.assistantMessageEvent;
-
-							if (msgEvent.message?.model || msgEvent.message?.provider) {
-								dispatch({
-									type: "MODEL_INFO",
-									model: msgEvent.message.model || "",
-									provider: msgEvent.message.provider || "",
-								});
-							}
-
-							switch (ame.type) {
-								case "thinking_delta":
-									dispatch({ type: "THINKING_DELTA", delta: ame.delta });
-									break;
-								case "text_delta":
-									dispatch({ type: "TEXT_DELTA", delta: ame.delta });
-									break;
-								/**
-								 * text_end — pi emits this when a streaming content block
-								 * completes. The `content` field has the authoritative final
-								 * text, correcting any delta accumulation errors (#307).
-								 */
-								case "text_end":
-									if (ame.content) {
-										dispatch({ type: "TEXT_END", content: ame.content });
-									}
-									break;
-								case "toolcall_end": {
-									const tc = ame.toolCall;
-									dispatch({
-										type: "TOOL_CALL_START",
-										toolCall: extractToolCallInfo(tc),
-									});
-									break;
-								}
-								case "error":
-									// Forward the actual error reason or message, not
-									// a generic placeholder. Provider 400/500 errors
-									// carry the API response in `reason` or `message`,
-									// not just "aborted".
-									dispatch({
-										type: "STREAM_ERROR",
-										error:
-											(ame as unknown as { message?: string }).message || ame.reason || "API error",
-									});
-									break;
-							}
-							break;
-						}
-
-						case "message_start": {
-							if (event.message?.role === "assistant") {
-								dispatch({ type: "TURN_RESET" });
-							}
-							break;
-						}
-
-						case "tool_execution_start": {
-							const te = event as PiToolExecutionStartEvent;
-							setToolPhase({
-								type: "calling",
-								toolName: te.toolName,
-								args: te.args as Record<string, unknown>,
-							});
-							break;
-						}
-
-						case "tool_execution_update": {
-							const te = event as PiToolExecutionUpdateEvent;
-							const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
-							dispatch({
-								type: "TOOL_CALL_UPDATE",
-								id: te.toolCallId,
-								result: partialText,
-								status: "running",
-							});
-							dispatch({
-								type: "TOOL_PARTIAL_OUTPUT",
-								id: te.toolCallId,
-								partialOutput: partialText,
-							});
-							setToolPhase({
-								type: "executing",
-								toolName: te.toolName,
-								partialOutput: partialText,
-							});
-							break;
-						}
-
-						case "tool_execution_end": {
-							const te = event as PiToolExecutionEndEvent;
-							dispatch({
-								type: "TOOL_CALL_UPDATE",
-								id: te.toolCallId,
-								result: (te.result?.content || []).map((c) => c.text).join(""),
-								status: te.isError ? "error" : "completed",
-								isError: te.isError,
-								details: te.result?.details as Record<string, unknown> | undefined,
-							});
-							setToolPhase(
-								te.isError
-									? { type: "error", toolName: te.toolName, message: "Tool failed" }
-									: { type: "done", toolName: te.toolName },
-							);
-							break;
-						}
-
-						case "message_end": {
-							dispatch({ type: "MESSAGE_END" });
-							// #268 — each assistant message carries finalized usage; refresh
-							// so token/cost/context update per sub-message within a run, not
-							// only at the very end (agent_end). Feels closer to realtime.
-							void refreshStats();
-							break;
-						}
-
-						case "agent_end":
-						case "done":
-							dispatch({ type: "STREAM_COMPLETE" });
-							// #268 — a turn just finished: pull fresh token/cost/context
-							// totals so the status line updates as turns complete.
-							void refreshStats();
-							break;
-
-						case "error": {
-							const errEvent = event as PiErrorEvent;
-							// Prefer pi's structured payload (v0.3.0+) over the bare
-							// message: surface the provider and a retry hint so the
-							// ErrorBanner is actionable instead of a generic string.
-							const base = errEvent.message || errEvent.details || "Unknown error";
-							const where = errEvent.provider
-								? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
-								: "";
-							const hint = errEvent.retryable ? " — retrying may help" : "";
-							dispatch({
-								type: "STREAM_ERROR",
-								error: `${base}${where}${hint}`,
-							});
-							break;
-						}
-
-						// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
-						// on every steer/follow-up enqueue, dequeue, and clear.
-						// The Rust layer also emits this globally (see
-						// `listen("queue_update")` below) so the queue stays in
-						// sync even when no prompt channel is active.
-						case "queue_update": {
-							const qe = event as unknown as {
-								steering?: string[];
-								followUp?: string[];
-							};
-							dispatch({
-								type: "QUEUE_UPDATE",
-								steering: qe.steering ?? [],
-								followUp: qe.followUp ?? [],
-							});
-							break;
-						}
-					}
-				} catch (err) {
-					console.error("[cowork] Error processing event:", err, event);
-				}
-			};
-
+		channel.onmessage = (event: PiEvent) => {
 			try {
-				await invoke("send_prompt", { text, ch: channel });
+				switch (event.type) {
+					case "message_update": {
+						const msgEvent = event as PiMessageUpdateEvent;
+						const ame = msgEvent.assistantMessageEvent;
+
+						if (msgEvent.message?.model || msgEvent.message?.provider) {
+							dispatch({
+								type: "MODEL_INFO",
+								model: msgEvent.message.model || "",
+								provider: msgEvent.message.provider || "",
+							});
+						}
+
+						switch (ame.type) {
+							case "thinking_delta":
+								dispatch({ type: "THINKING_DELTA", delta: ame.delta });
+								break;
+							case "text_delta":
+								dispatch({ type: "TEXT_DELTA", delta: ame.delta });
+								break;
+							/**
+							 * text_end — pi emits this when a streaming content block
+							 * completes. The `content` field has the authoritative final
+							 * text, correcting any delta accumulation errors (#307).
+							 */
+							case "text_end":
+								if (ame.content) {
+									dispatch({ type: "TEXT_END", content: ame.content });
+								}
+								break;
+							case "toolcall_end": {
+								const tc = ame.toolCall;
+								dispatch({
+									type: "TOOL_CALL_START",
+									toolCall: extractToolCallInfo(tc),
+								});
+								break;
+							}
+							case "error":
+								// Forward the actual error reason or message, not
+								// a generic placeholder. Provider 400/500 errors
+								// carry the API response in `reason` or `message`,
+								// not just "aborted".
+								dispatch({
+									type: "STREAM_ERROR",
+									error:
+										(ame as unknown as { message?: string }).message || ame.reason || "API error",
+								});
+								break;
+						}
+						break;
+					}
+
+					case "message_start": {
+						if (event.message?.role === "assistant") {
+							dispatch({ type: "TURN_RESET" });
+						} else if (event.message?.role === "user") {
+							// SDK-injected user message: the prompt echo (skipped once)
+							// or a delivered steer/follow-up. Extract its text.
+							const content = (event.message.content || [])
+								.filter((c) => c.type === "text")
+								.map((c) => (c as { text: string }).text)
+								.join("");
+							dispatch({ type: "USER_MESSAGE_STARTED", content });
+						}
+						break;
+					}
+
+					case "tool_execution_start": {
+						const te = event as PiToolExecutionStartEvent;
+						setToolPhase({
+							type: "calling",
+							toolName: te.toolName,
+							args: te.args as Record<string, unknown>,
+						});
+						break;
+					}
+
+					case "tool_execution_update": {
+						const te = event as PiToolExecutionUpdateEvent;
+						const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
+						dispatch({
+							type: "TOOL_CALL_UPDATE",
+							id: te.toolCallId,
+							result: partialText,
+							status: "running",
+						});
+						dispatch({
+							type: "TOOL_PARTIAL_OUTPUT",
+							id: te.toolCallId,
+							partialOutput: partialText,
+						});
+						setToolPhase({
+							type: "executing",
+							toolName: te.toolName,
+							partialOutput: partialText,
+						});
+						break;
+					}
+
+					case "tool_execution_end": {
+						const te = event as PiToolExecutionEndEvent;
+						dispatch({
+							type: "TOOL_CALL_UPDATE",
+							id: te.toolCallId,
+							result: (te.result?.content || []).map((c) => c.text).join(""),
+							status: te.isError ? "error" : "completed",
+							isError: te.isError,
+							details: te.result?.details as Record<string, unknown> | undefined,
+						});
+						setToolPhase(
+							te.isError
+								? { type: "error", toolName: te.toolName, message: "Tool failed" }
+								: { type: "done", toolName: te.toolName },
+						);
+						break;
+					}
+
+					case "message_end": {
+						dispatch({ type: "MESSAGE_END" });
+						break;
+					}
+
+					case "agent_end":
+					case "done":
+						dispatch({ type: "STREAM_COMPLETE" });
+						break;
+
+					case "error": {
+						const errEvent = event as PiErrorEvent;
+						// Prefer pi's structured payload (v0.3.0+) over the bare
+						// message: surface the provider and a retry hint so the
+						// ErrorBanner is actionable instead of a generic string.
+						const base = errEvent.message || errEvent.details || "Unknown error";
+						const where = errEvent.provider
+							? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
+							: "";
+						const hint = errEvent.retryable ? " — retrying may help" : "";
+						dispatch({
+							type: "STREAM_ERROR",
+							error: `${base}${where}${hint}`,
+						});
+						break;
+					}
+
+					// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
+					// on every steer/follow-up enqueue, dequeue, and clear.
+					// The Rust layer also emits this globally (see
+					// `listen("queue_update")` below) so the queue stays in
+					// sync even when no prompt channel is active.
+					case "queue_update": {
+						const qe = event as unknown as {
+							steering?: string[];
+							followUp?: string[];
+						};
+						dispatch({
+							type: "QUEUE_UPDATE",
+							steering: qe.steering ?? [],
+							followUp: qe.followUp ?? [],
+						});
+						break;
+					}
+				}
 			} catch (err) {
-				dispatch({
-					type: "STREAM_ERROR",
-					error: err instanceof Error ? err.message : String(err),
-				});
+				log.error("[cowork] Error processing event:", err, event);
 			}
-		},
-		[refreshStats],
-	);
+		};
+
+		try {
+			await invoke("send_prompt", { text, ch: channel });
+		} catch (err) {
+			dispatch({
+				type: "STREAM_ERROR",
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}, []);
 
 	const abortStream = useCallback(async () => {
 		dispatch({ type: "ABORT_STREAM" });
@@ -793,7 +766,7 @@ export function usePiStream() {
 		try {
 			await invoke("steer_prompt", { text });
 		} catch (err) {
-			console.warn("[cowork] steer_prompt rejected:", err);
+			log.warn("[cowork] steer_prompt rejected:", err);
 		}
 	}, []);
 
@@ -807,7 +780,7 @@ export function usePiStream() {
 		try {
 			await invoke("follow_up_prompt", { text });
 		} catch (err) {
-			console.warn("[cowork] follow_up_prompt rejected:", err);
+			log.warn("[cowork] follow_up_prompt rejected:", err);
 		}
 	}, []);
 
@@ -830,7 +803,7 @@ export function usePiStream() {
 				followUp: raw.followUp ?? [],
 			};
 		} catch (err) {
-			console.warn("[cowork] clear_queue rejected:", err);
+			log.warn("[cowork] clear_queue rejected:", err);
 			return { steering: [], followUp: [] };
 		}
 	}, []);
@@ -842,40 +815,6 @@ export function usePiStream() {
 	 * follow-up dequeues right after STREAM_COMPLETE.
 	 */
 	// #268 — seed the reasoning level on mount and whenever the sidecar
-	// (re)becomes ready. The `ready` payload carries `thinkingLevel`; we also
-	// fetch the full thinking state + stats so the status line is populated from
-	// the first paint of a restored/continued session.
-	useEffect(() => {
-		if (!isTauri()) return;
-		let mounted = true;
-		let unlistenReady: (() => void) | undefined;
-		const seed = async () => {
-			try {
-				const res = (await invoke("get_thinking_level")) as {
-					thinkingLevel?: ThinkingLevel;
-					availableThinkingLevels?: ThinkingLevel[];
-					supportsThinking?: boolean;
-				};
-				if (mounted && res?.thinkingLevel) {
-					setThinking(toThinkingState(res));
-				}
-			} catch {
-				// sidecar not ready yet — the `ready` listener below retries.
-			}
-			void refreshStats();
-		};
-		void seed();
-		listen("ready", () => {
-			void seed();
-		}).then((fn) => {
-			if (mounted) unlistenReady = fn;
-			else fn();
-		});
-		return () => {
-			mounted = false;
-			unlistenReady?.();
-		};
-	}, [refreshStats]);
 
 	useEffect(() => {
 		let unlisten: (() => void) | undefined;
@@ -903,11 +842,5 @@ export function usePiStream() {
 		clearQueue,
 		dispatch,
 		toolPhase,
-		// #268 — status-line telemetry + reasoning control
-		sessionStats,
-		thinking,
-		refreshStats,
-		setThinkingLevel: applyThinkingLevel,
-		cycleThinking,
 	};
 }

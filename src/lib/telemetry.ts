@@ -1,5 +1,5 @@
 /**
- * Zosma Cowork — Telemetry service
+ * Zosma Commercial CoWork — Telemetry service
  *
  * Anonymous usage analytics via our in-house analytics IPC
  * (replaces the buggy tauri-plugin-aptabase) and Sentry crash reporting.
@@ -38,6 +38,7 @@ export function resetTelemetry(): void {
 
 export async function initTelemetry(isEnabled: boolean): Promise<void> {
 	enabled = isEnabled;
+	console.log("[telemetry] init:", isEnabled);
 
 	if (isEnabled) {
 		await initSentry();
@@ -51,13 +52,19 @@ export function setTelemetryEnabled(isEnabled: boolean): void {
 }
 
 export function trackEvent(name: string, props?: Record<string, string | number>): void {
-	if (!enabled) return;
+	if (!enabled) {
+		console.debug("[telemetry] skipped (disabled):", name);
+		return;
+	}
 
+	console.log("[telemetry] track:", name, props);
 	// Fire-and-forget via our in-house analytics IPC.
 	void invoke("track_analytics_event", {
 		name,
 		props: props ?? null,
-	}).catch(() => {});
+	}).catch((err) => {
+		console.warn("[telemetry] track failed:", err);
+	});
 }
 
 /**
