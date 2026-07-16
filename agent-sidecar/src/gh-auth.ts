@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — GitHub Auth Helpers
+ * Zosma Cowork — GitHub Auth Helpers
  *
  * Wraps the `gh` CLI for auth status, login (device flow), logout, and
  * organization/repo queries. Results are short-lived cached so the UI can

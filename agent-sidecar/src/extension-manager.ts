@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Extension Manager (pi-native)
+ * Zosma Cowork — Extension Manager (pi-native)
  *
  * Cowork is a thin GUI helper over the pi coding agent. pi is the single
  * source of truth for what is installed: extensions live in pi's settings

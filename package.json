@@ -56,7 +56,6 @@
 		"@types/react": "^19.1.0",
 		"@types/react-dom": "^19.1.0",
 		"@vitejs/plugin-react": "^4.4.0",
-		"audit-ci": "^7.1.0",
 		"autoprefixer": "^10.4.21",
 		"jsdom": "^29.1.0",
 		"postcss": "^8.5.3",

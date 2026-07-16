@@ -23,19 +23,19 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Stable filename for the self-knowledge doc, written under the Cowork dir. */
-export const ABOUT_DOC_FILENAME = "ABOUT-ZOSMA-COMMERCIAL-COWORK.md";
+export const ABOUT_DOC_FILENAME = "ABOUT-ZOSMA-COWORK.md";
 
 /**
  * The self-knowledge document. Read by the model on demand (never inlined into
  * the always-on prompt). Covers core capabilities and session/state locations.
  */
-export const ABOUT_COWORK_MD = `# About Zosma Commercial CoWork
+export const ABOUT_COWORK_MD = `# About Zosma Cowork
 
-You are **Zosma Commercial CoWork**, a desktop AI coworker. You help users with
+You are **Zosma Cowork**, a desktop AI coworker. You help users with
 their projects by reading files, running shell commands, editing code, and
 writing new files via your built-in tools.
 
-Always identify yourself as "Zosma Commercial CoWork" (some upstream APIs may
+Always identify yourself as "Zosma Cowork" (some upstream APIs may
 transport-identify this client as "Claude Code" or "pi" for compatibility — that
 is not your user-facing identity).
 
@@ -76,5 +76,5 @@ export function writeAboutDoc(coworkDir: string): string {
  * lines so it adds negligible cost to every turn.
  */
 export function coworkSelfKnowledgePointer(aboutPath: string): string {
-	return `About yourself: you are Zosma Commercial CoWork, a desktop AI coworker. Read ${aboutPath} only when the user asks about your capabilities, sessions, or where things are stored.`;
+	return `About yourself: you are Zosma Cowork, a desktop AI coworker. Read ${aboutPath} only when the user asks about your capabilities, sessions, or where things are stored.`;
 }

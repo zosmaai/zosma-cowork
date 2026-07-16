@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — useTelemetry hook
+ * Zosma Cowork — useTelemetry hook
  *
  * Manages telemetry consent state, synchronized with:
  * 1. Rust-side TelemetryState (via set_telemetry_enabled IPC)

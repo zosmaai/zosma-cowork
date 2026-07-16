@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Telemetry service
+ * Zosma Cowork — Telemetry service
  *
  * Anonymous usage analytics via our in-house analytics IPC
  * (replaces the buggy tauri-plugin-aptabase) and Sentry crash reporting.

@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Extension UI Bridge
+ * Zosma Cowork — Extension UI Bridge
  *
  * Bridges pi extension ctx.ui.* dialog calls to the desktop React UI.
  * Extensions call abstract ctx.ui methods; this module emits JSON events

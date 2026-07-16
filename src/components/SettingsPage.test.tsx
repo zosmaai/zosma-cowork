@@ -68,7 +68,7 @@ describe("SettingsPage", () => {
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders only commercial-cowork navigation items", () => {
+	it("renders only cowork navigation items", () => {
 		render(<SettingsPage onClose={vi.fn()} />);
 		expect(screen.getAllByRole("button", { name: "Authentication" }).length).toBeGreaterThanOrEqual(
 			1,

@@ -1,7 +1,7 @@
 /**
  * CustomProviderRow — "Custom Local LLM" UI (issue #207).
  *
- * Lets the user point Zosma Commercial CoWork at any OpenAI-Chat-Completions-compatible
+ * Lets the user point Zosma Cowork at any OpenAI-Chat-Completions-compatible
  * server (Ollama, LM Studio, vLLM, llama.cpp `--server`, text-generation-webui,
  * a private gateway, …) by entering a base URL and an optional API key.
  *

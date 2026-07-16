@@ -53,7 +53,7 @@ function displayPath(folder: string | undefined, homeDir: string | undefined): s
 interface ConversationSearchProps {
 	sessions: Session[];
 	onSelect: (id: string) => void;
-	/** Start a fresh session in the default Zosma Commercial CoWork folder (no prompt). */
+	/** Start a fresh session in the default Zosma Cowork folder (no prompt). */
 	onNewSession: () => void;
 	/** Pick a folder for the agent to work in, then start a session there. */
 	onOpenSession: () => void;
@@ -263,7 +263,7 @@ export function ConversationSearch({
 						type="button"
 						onClick={onNewSession}
 						aria-label="New session"
-						title="New session in your Zosma Commercial CoWork folder"
+						title="New session in your Zosma Cowork folder"
 						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-primary bg-primary/8 hover:bg-primary/15"
 						whileHover={reduced ? {} : { scale: 1.04 }}
 						whileTap={reduced ? {} : { scale: 0.96 }}

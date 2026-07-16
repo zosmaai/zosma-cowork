@@ -33,7 +33,7 @@ describe("about-cowork", () => {
 	});
 
 	describe("writeAboutDoc", () => {
-		it("writes ABOUT-ZOSMA-COMMERCIAL-COWORK.md and returns its absolute path", () => {
+		it("writes ABOUT-ZOSMA-COWORK.md and returns its absolute path", () => {
 			const p = writeAboutDoc(dir);
 			expect(p).toBe(join(dir, ABOUT_DOC_FILENAME));
 			expect(existsSync(p)).toBe(true);
@@ -57,7 +57,7 @@ describe("about-cowork", () => {
 
 	describe("ABOUT_COWORK_MD content", () => {
 		it("keeps the Zosma identity", () => {
-			expect(ABOUT_COWORK_MD).toMatch(/Zosma Commercial CoWork/);
+			expect(ABOUT_COWORK_MD).toMatch(/Zosma Cowork/);
 		});
 
 		it("documents where sessions live (pi-native store)", () => {
@@ -66,7 +66,7 @@ describe("about-cowork", () => {
 	});
 
 	describe("coworkSelfKnowledgePointer", () => {
-		const aboutPath = "/home/u/.zosmaai/cowork/ABOUT-ZOSMA-COMMERCIAL-COWORK.md";
+		const aboutPath = "/home/u/.zosmaai/cowork/ABOUT-ZOSMA-COWORK.md";
 
 		it("names the absolute doc path", () => {
 			expect(coworkSelfKnowledgePointer(aboutPath)).toContain(aboutPath);

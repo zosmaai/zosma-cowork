@@ -54,7 +54,7 @@ echo "==> Grant the gen2 build/runtime SA the roles it needs"
   --member="serviceAccount:${COMPUTE_SA}" --role=roles/cloudbuild.builds.builder --condition=None >/dev/null
 
 echo "==> Build + stage an isolated deploy dir"
-( cd "$here/functions" && npm ci && npm run build )
+( cd "$here/functions" && pnpm install --frozen-lockfile && pnpm run build )
 stage="$(mktemp -d)"
 cp -r "$here/functions/lib" "$stage/lib"
 node -e "const fs=require('fs');const p=require('$here/functions/package.json');delete p.scripts.build;delete p.scripts['build:watch'];delete p.devDependencies;fs.writeFileSync('$stage/package.json',JSON.stringify(p,null,2))"

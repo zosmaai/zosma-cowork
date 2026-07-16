@@ -22,7 +22,7 @@ export function About() {
 		<section>
 			<h2 className="text-sm font-semibold text-foreground mb-1">About</h2>
 			<p className="text-xs text-muted-foreground mb-5">
-				Zosma Commercial CoWork — your AI coworker, runs locally.
+				Zosma Cowork — your AI coworker, runs locally.
 			</p>
 
 			{/* ── App identity ── */}
@@ -30,13 +30,13 @@ export function About() {
 				<div className="px-4 py-4 flex items-center gap-3">
 					<img
 						src="/zosma-mark.png"
-						alt="Zosma Commercial CoWork"
+						alt="Zosma Cowork"
 						className="w-10 h-10 rounded-xl shrink-0 object-cover"
 						draggable={false}
 					/>
 					<div>
 						<p className="text-[13px] font-semibold text-foreground leading-tight">
-							Zosma Commercial CoWork
+							Zosma Cowork
 						</p>
 						<p className="text-[11px] text-muted-foreground mt-0.5">Desktop AI coworker</p>
 					</div>

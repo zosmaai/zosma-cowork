@@ -1,4 +1,4 @@
-//! Zosma Commercial CoWork — Tauri backend
+//! Zosma Cowork — Tauri backend
 //!
 //! A thin relay between the React frontend and the Node.js agent sidecar.
 
@@ -103,14 +103,14 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
     }
 
     // Check common system paths for distro-packaged installations.
-    // Linux: /usr/lib/zosma-commercial-cowork/agent-sidecar/index.cjs
+    // Linux: /usr/lib/zosma-cowork/agent-sidecar/index.cjs
     // Windows: %PROGRAMFILES%\ZosmaAI\ZosmaCowork\agent-sidecar\index.cjs
     #[cfg(target_os = "windows")]
     {
         let program_files =
             std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".into());
         let win_path = PathBuf::from(format!(
-            "{}\\ZosmaAI\\ZosmaCommercialCoWork\\agent-sidecar\\index.cjs",
+            "{}\\ZosmaAI\\ZosmaCoWork\\agent-sidecar\\index.cjs",
             program_files
         ));
         if win_path.exists() {
@@ -120,7 +120,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
         let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
         if !local_app_data.is_empty() {
             let local_path = PathBuf::from(format!(
-                "{}\\ZosmaAI\\ZosmaCommercialCoWork\\agent-sidecar\\index.cjs",
+                "{}\\ZosmaAI\\ZosmaCoWork\\agent-sidecar\\index.cjs",
                 local_app_data
             ));
             if local_path.exists() {
@@ -131,7 +131,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
 
     #[cfg(target_os = "linux")]
     {
-        let lib_path = PathBuf::from("/usr/lib/zosma-commercial-cowork/agent-sidecar/index.cjs");
+        let lib_path = PathBuf::from("/usr/lib/zosma-cowork/agent-sidecar/index.cjs");
         if lib_path.exists() {
             return lib_path;
         }
@@ -141,7 +141,7 @@ fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
     // manual unpack, or any non-standard layout).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            let rel_path = exe_dir.join("../lib/zosma-commercial-cowork/agent-sidecar/index.cjs");
+            let rel_path = exe_dir.join("../lib/zosma-cowork/agent-sidecar/index.cjs");
             if rel_path.exists() {
                 return rel_path;
             }

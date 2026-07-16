@@ -807,7 +807,7 @@ function App() {
 							}}
 							onNewSession={() => {
 								setSidebarView("chats");
-								// "New" starts a session in the configured Zosma Commercial CoWork folder — no folder prompt.
+								// "New" starts a session in the configured Zosma Cowork folder — no folder prompt.
 								handleNewSession();
 							}}
 							onOpenSession={() => {
@@ -889,7 +889,7 @@ function App() {
 				{/* Mobile top bar */}
 				{!hideChrome && (
 					<MobileTopBar
-						title="Zosma Commercial CoWork"
+						title="Zosma Cowork"
 						subtitle={
 							activeModelId ? (findModel(models, activeModelId)?.name ?? activeModelId) : undefined
 						}

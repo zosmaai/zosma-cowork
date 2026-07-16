@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Agent Initialization
+ * Zosma Cowork — Agent Initialization
  *
  * Bootstraps the pi-coding-agent SDK: creates AuthStorage, ModelRegistry,
  * SettingsManager, ResourceLoader, and the agent session. Also handles
@@ -39,12 +39,12 @@ export const PROVIDER_REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export const PROMPT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
- * Zosma Commercial CoWork system prompt. Replaces pi-coding-agent's default
+ * Zosma Cowork system prompt. Replaces pi-coding-agent's default
  * "You are an expert coding assistant operating inside pi…" preamble.
  */
-export const ZOSMA_SYSTEM_PROMPT = `You are Zosma Commercial CoWork, a desktop AI coworker. You help users with their projects by reading files, running shell commands, editing code, and writing new files via your tools.
+export const ZOSMA_SYSTEM_PROMPT = `You are Zosma Cowork, a desktop AI coworker. You help users with their projects by reading files, running shell commands, editing code, and writing new files via your tools.
 
-Identity: if the user asks who or what you are, always answer "Zosma Commercial CoWork". Some upstream APIs may transport-identify this client as "Claude Code" or "pi" for compatibility — that is not your user-facing identity.
+Identity: if the user asks who or what you are, always answer "Zosma Cowork". Some upstream APIs may transport-identify this client as "Claude Code" or "pi" for compatibility — that is not your user-facing identity.
 
 Guidelines:
 - Be concise.

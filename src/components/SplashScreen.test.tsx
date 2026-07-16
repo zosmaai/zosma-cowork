@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { SplashScreen } from "./SplashScreen";
 
 describe("SplashScreen", () => {
-	it("renders the Zosma Commercial CoWork branding and logo mark", () => {
+	it("renders the Zosma Cowork branding and logo mark", () => {
 		render(<SplashScreen />);
-		expect(screen.getByText("Zosma Commercial CoWork")).toBeDefined();
-		const logo = screen.getByAltText("Zosma Commercial CoWork") as HTMLImageElement;
+		expect(screen.getByText("Zosma Cowork")).toBeDefined();
+		const logo = screen.getByAltText("Zosma Cowork") as HTMLImageElement;
 		expect(logo).toBeDefined();
 		expect(logo.getAttribute("src")).toContain("zosma-mark.png");
 	});

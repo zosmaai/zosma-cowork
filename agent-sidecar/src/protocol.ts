@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Sidecar Protocol Helpers
+ * Zosma Cowork — Sidecar Protocol Helpers
  *
  * send/log for the JSON-line stdin/stdout protocol. Broadcasts to EventBus
  * subscribers before writing to stdout so remote clients (WebSocket) receive

@@ -1,5 +1,5 @@
 /**
- * Canonical Zosma Commercial CoWork outbound links.
+ * Canonical Zosma Cowork outbound links.
  *
  * Centralized so the About page, feedback flows and anywhere else that
  * points users at the product share one source of truth. All of these are
@@ -21,7 +21,7 @@ export const BRAND_LINKS = {
 	discord: "https://discord.com/invite/HQcyTD5jHA",
 	/** Showcase gallery. */
 	gallery: "https://www.zosma.ai/zosma-cowork/gallery",
-	/** The pi engine Zosma Commercial CoWork is built on. */
+	/** The pi engine Zosma Cowork is built on. */
 	pi: "https://github.com/earendil-works/pi-coding-agent",
 } as const;
 

@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Wallpaper / background control
+ * Zosma Cowork — Wallpaper / background control
  *
  * Aurora is the only backdrop. This module exists to clear any stale
  * wallpaper config written by an older app version so the aurora is

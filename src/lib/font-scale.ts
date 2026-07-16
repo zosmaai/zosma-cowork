@@ -1,5 +1,5 @@
 /**
- * Zosma Commercial CoWork — Font size / zoom control
+ * Zosma Cowork — Font size / zoom control
  *
  * Uses CSS `zoom` on the root app container to scale the entire UI
  * proportionally. Stored in localStorage so it persists across sessions.

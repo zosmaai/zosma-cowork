@@ -1,4 +1,4 @@
-//! Minimal anonymous analytics module for Zosma Commercial CoWork.
+//! Minimal anonymous analytics module for Zosma Cowork.
 //!
 //! Sends events to Aptabase's ingest API directly via reqwest.
 //! Follows the client-side SDK spec: https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK

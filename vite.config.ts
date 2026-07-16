@@ -1,51 +1,11 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vitest/config";
 
-// Multi-page entries: desktop + mobile
-type InputMap = Record<string, string>;
-
-function resolveHtmlPage(name: string): string {
-	return path.resolve(__dirname, `${name}.html`);
-}
-
 export default defineConfig({
-	plugins: [
-		react(),
-		tailwindcss(),
-		VitePWA({
-			registerType: "autoUpdate",
-			includeAssets: ["icon.svg"],
-			manifest: {
-				name: "Zosma Cowork",
-				short_name: "Zosma",
-				description: "Desktop AI coworker — accessible from your phone",
-				theme_color: "#1a1a2e",
-				background_color: "#0f0f1a",
-				display: "standalone",
-				scope: "/",
-				start_url: "/",
-				icons: [
-					{
-						src: "icon.svg",
-						sizes: "any",
-						type: "image/svg+xml",
-						purpose: "any maskable",
-					},
-				],
-			},
-		}),
-	],
-	build: {
-		rollupOptions: {
-			input: {
-				main: resolveHtmlPage("index"),
-				mobile: resolveHtmlPage("mobile"),
-			} as InputMap,
-		},
-	},
+	plugins: [react(), tailwindcss()],
+
 	test: {
 		environment: "jsdom",
 		globals: true,
