@@ -79,7 +79,7 @@ function App() {
 	// User explicitly chose "configure in Settings" — bypass the Connect
 	// modal even without stored credentials.
 	const [skipOnboarding, setSkipOnboarding] = useState(false);
-	const [sidebarView, setSidebarView] = useState("chats");
+	const [, setSidebarView] = useState("chats");
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");

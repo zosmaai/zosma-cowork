@@ -184,7 +184,6 @@ impl Analytics {
             }
         });
     }
-
 }
 
 /// Tauri IPC command — track an anonymous event.
