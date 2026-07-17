@@ -4,6 +4,18 @@ export interface PiStatus {
 	path: string | null;
 }
 
+/** A file attached to a chat message — uploaded via paperclip or referenced via @mention. */
+export interface FileAttachment {
+	/** Absolute path to the file on disk */
+	path: string;
+	/** Base filename (for display) */
+	name: string;
+	/** File size in bytes (for display, 0 if unknown) */
+	size: number;
+	/** MIME type hint (for preview rendering) */
+	mimeType: string;
+}
+
 export interface ChatMessage {
 	id: string;
 	role: "user" | "assistant" | "system";
@@ -14,6 +26,8 @@ export interface ChatMessage {
 	isStreaming?: boolean;
 	model?: string;
 	provider?: string;
+	/** Files attached to this message */
+	attachments?: FileAttachment[];
 	/**
 	 * Subclass tag for issue #201 PR 3 queued bubbles. Plain user prompts
 	 * carry no `kind`. Steer/follow-up messages queued mid-turn are

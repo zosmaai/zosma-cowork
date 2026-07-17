@@ -19,6 +19,7 @@ use tokio::sync::{oneshot, Mutex};
 // Skill management imports
 use std::fs;
 use std::io;
+use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Default)]
@@ -1985,6 +1986,33 @@ async fn write_user_file(path: String, content: String) -> Result<(), String> {
         .map_err(|e| format!("write_file: {e}"))
 }
 
+#[derive(serde::Serialize)]
+pub struct FileInfo {
+    pub name: String,
+    pub size: u64,
+    pub mime_type: String,
+}
+
+#[tauri::command]
+async fn get_file_info(path: String) -> Result<FileInfo, String> {
+    let p = Path::new(&path);
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("get_file_info: {e}"))?;
+    let mime_type = mime_guess::from_path(&path)
+        .first_or(mime_guess::mime::APPLICATION_OCTET_STREAM)
+        .to_string();
+    Ok(FileInfo {
+        name,
+        size: metadata.len(),
+        mime_type,
+    })
+}
+
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     // Per-platform browser opener. Previous implementation shelled out to
@@ -2266,6 +2294,7 @@ pub fn run() {
             remove_skill,
             write_user_file,
             open_url,
+            get_file_info,
             crate::analytics::track_analytics_event,
             crate::analytics::set_analytics_enabled,
             crate::analytics::flush_analytics,
