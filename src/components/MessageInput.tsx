@@ -1,6 +1,6 @@
 import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { trackEvent } from "@/lib/telemetry";
-import type { ModelInfo } from "@/types";
+import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
 import {
@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { CommandPalette, useFilteredCommands } from "./CommandPalette";
+import { FilePreviewChip } from "./FilePreviewChip";
 import { ModelSelector } from "./ModelSelector";
 
 /** Split a raw composer value starting with `/` into command query + args. */
@@ -112,7 +113,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 	) => {
 		const [text, setText] = useState("");
 		const [commandIndex, setCommandIndex] = useState(0);
-		const [attachedFiles, setAttachedFiles] = useState<{ path: string; name: string }[]>([]);
+		const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 		const [isListening, setIsListening] = useState(false);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -196,11 +197,32 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				});
 				if (!result) return;
 				const paths = Array.isArray(result) ? result : [result];
-				const files = paths.map((p) => ({
-					path: p,
-					name: p.split("/").pop() ?? p.split("\\").pop() ?? p,
-				}));
-				setAttachedFiles(files);
+				const { invoke } = await import("@tauri-apps/api/core");
+				const files: FileAttachment[] = [];
+				for (const p of paths) {
+					try {
+						const info = await invoke<{
+							name: string;
+							size: number;
+							mime_type: string;
+						}>("get_file_info", { path: p });
+						files.push({
+							path: p,
+							name: info.name,
+							size: info.size,
+							mimeType: info.mime_type,
+						});
+					} catch {
+						files.push({
+							path: p,
+							name: p.split("/").pop() ?? p.split("\\").pop() ?? p,
+							size: 0,
+							mimeType: "application/octet-stream",
+						});
+					}
+				}
+				// Stack: append to existing files instead of replacing
+				setAttachedFiles((prev) => [...prev, ...files]);
 				trackEvent("file_picked", { count: files.length });
 			} catch {
 				// Dialog plugin not available (e.g., browser/test env)
@@ -447,23 +469,14 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					{attachedFiles.length > 0 && (
 						<div className="flex flex-wrap gap-1.5 px-4 pb-1.5">
 							{attachedFiles.map((file) => (
-								<span
+								<FilePreviewChip
 									key={file.path}
-									className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs max-w-40 bg-muted text-foreground"
-									title={file.path}
-								>
-									<span className="truncate">
-										{file.name.length > 30 ? `${file.name.slice(0, 27)}…` : file.name}
-									</span>
-									<button
-										type="button"
-										onClick={() => removeFile(file.path)}
-										className="shrink-0 rounded p-0.5 hover:opacity-70"
-										aria-label={`Remove ${file.name}`}
-									>
-										<X size={12} />
-									</button>
-								</span>
+									path={file.path}
+									name={file.name}
+									size={file.size}
+									mimeType={file.mimeType}
+									onRemove={removeFile}
+								/>
 							))}
 						</div>
 					)}

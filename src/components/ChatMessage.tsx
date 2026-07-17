@@ -1,12 +1,13 @@
 import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { trackEvent } from "@/lib/telemetry";
-import type { ChatMessage as ChatMessageType, ModelInfo } from "@/types";
+import type { ChatMessage as ChatMessageType, FileAttachment, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { Clipboard, Download, FolderOpen, User } from "lucide-react";
 import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ActivityBlock, ActivityRecap } from "./ActivityBlock";
+import { AttachmentCard } from "./AttachmentCard";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { markdownComponents } from "./MarkdownComponents";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -43,6 +44,21 @@ function extractFilePath(content: string): string | null {
 	return match?.[1]?.trim() ?? null;
 }
 
+function parseInlineAttachments(content: string): FileAttachment[] {
+	const regex = /\[File:\s+([^\]]+)\]\s+(\S+)\s+(\d+)\s+(\S+)/g;
+	const attachments: FileAttachment[] = [];
+	let match;
+	while ((match = regex.exec(content)) !== null) {
+		attachments.push({
+			path: match[1],
+			name: match[2],
+			size: Number.parseInt(match[3], 10),
+			mimeType: match[4],
+		});
+	}
+	return attachments;
+}
+
 export function ChatMessageItem({
 	message,
 	detailsExpanded,
@@ -56,6 +72,12 @@ export function ChatMessageItem({
 	const isSystem = message.role === "system";
 
 	const filePath = !isUser && message.content ? extractFilePath(message.content) : null;
+	const inlineAttachments =
+		message.attachments?.length
+			? message.attachments
+			: isUser && message.content
+				? parseInlineAttachments(message.content)
+				: [];
 
 	const copyToClipboard = useCallback(async (text: string) => {
 		try {
@@ -234,6 +256,21 @@ export function ChatMessageItem({
 							{message.isStreaming && (
 								<span className="inline-block w-2 h-4 ml-0.5 align-middle animate-pulse bg-primary" />
 							)}
+						</div>
+					)}
+
+					{/* Attached files */}
+					{inlineAttachments.length > 0 && (
+						<div className="flex flex-col gap-1.5 mt-2">
+							{inlineAttachments.map((att) => (
+								<AttachmentCard
+									key={att.path}
+									path={att.path}
+									name={att.name}
+									size={att.size}
+									mimeType={att.mimeType}
+								/>
+							))}
 						</div>
 					)}
 

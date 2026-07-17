@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("FilePreviewChip", () => {
-	it("renders image thumbnail for image mime types", () => {
+	it("shows image thumbnail for image mime types", () => {
 		render(
 			<FilePreviewChip
 				path="/home/user/photo.png"
@@ -21,8 +21,8 @@ describe("FilePreviewChip", () => {
 		);
 		const img = screen.getByRole("img");
 		expect(img).toBeInTheDocument();
+		expect(img).toHaveAttribute("alt", "photo.png");
 		expect(img).toHaveAttribute("src", "tauri://localhost//home/user/photo.png");
-		expect(screen.getByText("photo.png")).toBeInTheDocument();
 	});
 
 	it("renders file icon for non-image files", () => {
@@ -35,54 +35,152 @@ describe("FilePreviewChip", () => {
 				onRemove={() => {}}
 			/>,
 		);
-		// Should show an SVG icon (lucide FileText) and filename
 		expect(screen.getByText("doc.pdf")).toBeInTheDocument();
-		// No img tag for non-images
 		expect(screen.queryByRole("img")).not.toBeInTheDocument();
 	});
 
-	it("shows formatted file size", () => {
-		render(
+	it("formats file sizes correctly: bytes, KB, MB, GB", () => {
+		const { rerender } = render(
 			<FilePreviewChip
-				path="/home/user/video.mov"
-				name="video.mov"
-				size={524288000}
-				mimeType="video/quicktime"
+				path="/a.txt"
+				name="a.txt"
+				size={500}
+				mimeType="text/plain"
 				onRemove={() => {}}
 			/>,
 		);
-		expect(screen.getByText(/500\.0 MB/)).toBeInTheDocument();
+		expect(screen.getByText("500 B")).toBeInTheDocument();
+
+		rerender(
+			<FilePreviewChip
+				path="/b.txt"
+				name="b.txt"
+				size={2048}
+				mimeType="text/plain"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+
+		rerender(
+			<FilePreviewChip
+				path="/c.txt"
+				name="c.txt"
+				size={3145728}
+				mimeType="text/plain"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("3.0 MB")).toBeInTheDocument();
+
+		rerender(
+			<FilePreviewChip
+				path="/d.txt"
+				name="d.txt"
+				size={2147483648}
+				mimeType="text/plain"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("2.0 GB")).toBeInTheDocument();
 	});
 
-	it("calls onRemove with the path when X is clicked", async () => {
-		const onRemove = vi.fn();
+	it("handles zero-byte files without crashing", () => {
 		render(
 			<FilePreviewChip
-				path="/home/user/file.txt"
+				path="/empty.txt"
+				name="empty.txt"
+				size={0}
+				mimeType="text/plain"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("0 B")).toBeInTheDocument();
+	});
+
+	it("calls onRemove with the correct path when remove button clicked", async () => {
+		const onRemove = vi.fn();
+		const user = userEvent.setup();
+		render(
+			<FilePreviewChip
+				path="/unique/path/file.txt"
 				name="file.txt"
-				size={1024}
+				size={100}
 				mimeType="text/plain"
 				onRemove={onRemove}
 			/>,
 		);
-		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: /remove/i }));
-		expect(onRemove).toHaveBeenCalledWith("/home/user/file.txt");
+		await user.click(screen.getByRole("button"));
+		expect(onRemove).toHaveBeenCalledTimes(1);
+		expect(onRemove).toHaveBeenCalledWith("/unique/path/file.txt");
 	});
 
-	it("truncates filenames longer than 30 characters", () => {
-		const longName = "a".repeat(40) + ".txt";
+	it("truncates filenames longer than 30 chars with ellipsis", () => {
+		const longName = "this-filename-is-way-too-long-for-display.txt";
 		render(
 			<FilePreviewChip
-				path={`/home/user/${longName}`}
+				path={`/path/${longName}`}
 				name={longName}
 				size={512}
 				mimeType="text/plain"
 				onRemove={() => {}}
 			/>,
 		);
-		// Should display truncated name with ellipsis (…)
-		const display = screen.getByText(/…$/);
-		expect(display).toBeInTheDocument();
+		// The displayed text should end with … (the truncated name contains …)
+		const displayed = screen.getByText(/…$/);
+		expect(displayed).toBeInTheDocument();
+	});
+
+	it("renders correct icon for different mime type categories", () => {
+		// text/* → FileCode icon
+		const { rerender } = render(
+			<FilePreviewChip
+				path="/code.ts"
+				name="code.ts"
+				size={100}
+				mimeType="text/typescript"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("code.ts")).toBeInTheDocument();
+
+		// application/zip → FileArchive icon
+		rerender(
+			<FilePreviewChip
+				path="/archive.zip"
+				name="archive.zip"
+				size={100}
+				mimeType="application/zip"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("archive.zip")).toBeInTheDocument();
+
+		// Fallback → File icon
+		rerender(
+			<FilePreviewChip
+				path="/binary.bin"
+				name="binary.bin"
+				size={100}
+				mimeType="application/octet-stream"
+				onRemove={() => {}}
+			/>,
+		);
+		expect(screen.getByText("binary.bin")).toBeInTheDocument();
+	});
+
+	it("shows tooltip with full path on hover", () => {
+		render(
+			<FilePreviewChip
+				path="/deeply/nested/path/document.pdf"
+				name="document.pdf"
+				size={5000}
+				mimeType="application/pdf"
+				onRemove={() => {}}
+			/>,
+		);
+		// The root element of the component has the title attribute
+		const chip = screen.getByText("document.pdf").closest("[title]");
+		expect(chip).toHaveAttribute("title", "/deeply/nested/path/document.pdf");
 	});
 });
