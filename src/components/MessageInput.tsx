@@ -1,4 +1,5 @@
 import { usePasteDetection } from "@/hooks/usePasteDetection";
+import { useFileMention } from "@/hooks/useFileMention";
 import { trackEvent } from "@/lib/telemetry";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
@@ -13,6 +14,7 @@ import {
 	useState,
 } from "react";
 import { CommandPalette, useFilteredCommands } from "./CommandPalette";
+import { FileMentionPopup } from "./FileMentionPopup";
 import { FilePreviewChip } from "./FilePreviewChip";
 import { ModelSelector } from "./ModelSelector";
 
@@ -24,6 +26,18 @@ export function parseSlashInput(value: string): { query: string; args: string } 
 	const spaceIdx = firstLine.indexOf(" ");
 	if (spaceIdx === -1) return { query: firstLine, args: "" };
 	return { query: firstLine.slice(0, spaceIdx), args: firstLine.slice(spaceIdx + 1) };
+}
+
+function calcMentionAnchor(
+	shell: HTMLElement | null,
+	_textarea: HTMLTextAreaElement | null,
+): { top: number; left: number } | null {
+	if (!shell) return null;
+	const rect = shell.getBoundingClientRect();
+	return {
+		top: rect.top - 8,
+		left: rect.left + 16,
+	};
 }
 
 interface MessageInputProps {
@@ -115,6 +129,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const [commandIndex, setCommandIndex] = useState(0);
 		const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 		const [isListening, setIsListening] = useState(false);
+		const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+		const mention = useFileMention();
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
 		const shellRef = useRef<HTMLDivElement>(null);
@@ -123,6 +139,12 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		useImperativeHandle(ref, () => ({
 			focus: () => textareaRef.current?.focus(),
 		}));
+
+		// Reset mention selection when results change
+		// biome-ignore lint/correctness/useExhaustiveDependencies: reset on results change
+		useEffect(() => {
+			setMentionSelectedIndex(0);
+		}, [mention.results.length]);
 
 		// Load an external draft (prompt template) into the composer for editing.
 		// biome-ignore lint/correctness/useExhaustiveDependencies: only react to a new draft nonce
@@ -308,6 +330,52 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const queueCount = (queue?.steering.length ?? 0) + (queue?.followUp.length ?? 0);
 
 		function handleKeyDown(e: React.KeyboardEvent) {
+			// Mention popup is active: handle navigation and selection
+			if (mention.state === "active" && mention.results.length > 0) {
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					setMentionSelectedIndex((i) =>
+						(i + 1) % mention.results.length,
+					);
+					return;
+				}
+				if (e.key === "ArrowUp") {
+					e.preventDefault();
+					setMentionSelectedIndex((i) =>
+						(i - 1 + mention.results.length) % mention.results.length,
+					);
+					return;
+				}
+				if (e.key === "Enter" && !e.shiftKey) {
+					e.preventDefault();
+					const entry = mention.results[mentionSelectedIndex];
+					if (entry && !entry.isDirectory) {
+						mention.selectFile(entry);
+						const before = text.slice(0, mention.triggerPosition ?? 0);
+						setText(`${before}@${entry.name} `);
+						setMentionSelectedIndex(0);
+					}
+					return;
+				}
+				if (e.key === "Escape") {
+					e.preventDefault();
+					mention.cancel();
+					setMentionSelectedIndex(0);
+					return;
+				}
+				if (e.key === "Tab") {
+					e.preventDefault();
+					const entry = mention.results[mentionSelectedIndex] ?? mention.results[0];
+					if (entry && !entry.isDirectory) {
+						mention.selectFile(entry);
+						const before = text.slice(0, mention.triggerPosition ?? 0);
+						setText(`${before}@${entry.name} `);
+						setMentionSelectedIndex(0);
+					}
+					return;
+				}
+			}
+
 			// Palette is open: its keys take precedence over send/steer/newline.
 			if (paletteOpen) {
 				if (e.key === "ArrowDown") {
@@ -404,11 +472,35 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						/>
 					)}
 
+					{/* File mention popup */}
+					{mention.state === "active" && mention.results.length > 0 && (
+						<FileMentionPopup
+							entries={mention.results}
+							selectedIndex={mentionSelectedIndex}
+							query={mention.query}
+							breadcrumb={mention.breadcrumb}
+							onSelectIndex={setMentionSelectedIndex}
+							onSelect={(entry) => {
+								if (!entry.isDirectory) {
+									mention.selectFile(entry);
+									const before = text.slice(0, mention.triggerPosition ?? 0);
+									setText(`${before}@${entry.name} `);
+									setMentionSelectedIndex(0);
+								}
+							}}
+							anchorRect={calcMentionAnchor(shellRef.current, textareaRef.current)}
+						/>
+					)}
+
 					{/* Textarea */}
 					<textarea
 						ref={textareaRef}
 						value={text}
-						onChange={(e) => setText(e.target.value)}
+						onChange={(e) => {
+							const val = e.target.value;
+							setText(val);
+							mention.onInput(val, e.target.selectionStart ?? val.length);
+						}}
 						onKeyDown={handleKeyDown}
 						onPaste={(e) => pasteHandler(e.nativeEvent)}
 						placeholder={placeholder}

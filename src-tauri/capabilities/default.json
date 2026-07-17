@@ -26,7 +26,7 @@
     "process:default",
     { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
     { "identifier": "fs:allow-write-text-file", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
-    { "identifier": "fs:allow-read-dir", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
+    { "identifier": "fs:allow-read-dir", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }, { "path": "$HOME/**" }] },
     { "identifier": "fs:allow-mkdir", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
     { "identifier": "fs:allow-remove", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
     { "identifier": "fs:allow-exists", "allow": [{ "path": "$HOME/.zosmaai/cowork/**" }] },
