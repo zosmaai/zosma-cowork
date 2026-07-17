@@ -96,6 +96,10 @@ interface MessageInputProps {
 	 * nothing accidentally fires.
 	 */
 	onEditQueue?: () => void;
+	/** Files dropped onto the chat area (drag-and-drop) */
+	pendingDropFiles?: FileAttachment[];
+	/** Incrementing counter to trigger re-processing of pendingDropFiles */
+	pendingDropNonce?: number;
 }
 
 export interface MessageInputHandle {
@@ -122,6 +126,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			onFollowUp,
 			queue,
 			onEditQueue,
+			pendingDropFiles,
+			pendingDropNonce,
 		},
 		ref,
 	) => {
@@ -139,6 +145,14 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		useImperativeHandle(ref, () => ({
 			focus: () => textareaRef.current?.focus(),
 		}));
+
+		// Accept files dropped onto the chat area (nonce triggers re-processing)
+		// biome-ignore lint/correctness/useExhaustiveDependencies: only react to new drops
+		useEffect(() => {
+			if (pendingDropFiles && pendingDropFiles.length > 0) {
+				setAttachedFiles((prev) => [...prev, ...pendingDropFiles]);
+			}
+		}, [pendingDropNonce]);
 
 		// Reset mention selection when results change
 		// biome-ignore lint/correctness/useExhaustiveDependencies: reset on results change

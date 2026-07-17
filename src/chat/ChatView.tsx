@@ -1,8 +1,10 @@
 import { ChatMessageItem } from "@/components/ChatMessage";
+import { DropZoneOverlay } from "@/components/DropZoneOverlay";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
-import type { ChatMessage, ModelInfo } from "@/types";
+import { useFileDrop } from "@/hooks/useFileDrop";
+import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +39,8 @@ interface ChatViewProps {
 	queue?: { steering: readonly string[]; followUp: readonly string[] };
 	/** Issue #201, PR 3 — user pressed Ctrl+↑ to edit the pending queue. */
 	onEditQueue?: () => void;
+	/** Called when files are dropped onto the chat area */
+	onFilesDrop?: (filePaths: string[]) => void;
 }
 
 export function ChatView({
@@ -60,6 +64,7 @@ export function ChatView({
 	onFollowUp,
 	queue,
 	onEditQueue,
+	onFilesDrop,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -72,6 +77,46 @@ export function ChatView({
 	const [findQuery, setFindQuery] = useState("");
 	const [activeMatch, setActiveMatch] = useState(0);
 	const reducedScroll = useReducedMotion();
+
+	// ── Drag-and-drop ──
+	const [pendingDrop, setPendingDrop] = useState<{ files: FileAttachment[]; nonce: number }>({
+		files: [],
+		nonce: 0,
+	});
+	const { isDragging, handlers: dropHandlers } = useFileDrop({
+		onDrop: async (paths) => {
+			onFilesDrop?.(paths);
+			// Convert paths to FileAttachment with metadata
+			const { invoke } = await import("@tauri-apps/api/core");
+			const files: FileAttachment[] = [];
+			for (const p of paths) {
+				try {
+					const info = await invoke<{
+						name: string;
+						size: number;
+						mime_type: string;
+					}>("get_file_info", { path: p });
+					files.push({
+						path: p,
+						name: info.name,
+						size: info.size,
+						mimeType: info.mime_type,
+					});
+				} catch {
+					files.push({
+						path: p,
+						name: p.split("/").pop() ?? p,
+						size: 0,
+						mimeType: "application/octet-stream",
+					});
+				}
+			}
+			setPendingDrop((prev) => ({
+				files,
+				nonce: prev.nonce + 1,
+			}));
+		},
+	});
 	// Flat, top-to-bottom list of every match (one entry per occurrence).
 	const findMatches = useMemo(() => {
 		const q = findQuery.trim().toLowerCase();
@@ -233,9 +278,14 @@ export function ChatView({
 			<div
 				ref={scrollContainerRef}
 				onScroll={handleScroll}
-				className="flex-1 overflow-y-auto"
+				className="flex-1 overflow-y-auto relative"
 				style={{ scrollbarGutter: "stable" }}
+				onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
+				onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
+				onDragLeave={dropHandlers.onDragLeave as unknown as React.DragEventHandler}
+				onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
 			>
+				<DropZoneOverlay isVisible={isDragging} />
 				{!isEmpty && (
 					<div className="pt-1 pb-6">
 						{allMessages.map((msg) => {
@@ -332,6 +382,8 @@ export function ChatView({
 					onModelSelect={onModelSelect}
 					modelSelectorOpen={modelSelectorOpen}
 					onModelSelectorOpenChange={onModelSelectorOpenChange}
+					pendingDropFiles={pendingDrop.files}
+					pendingDropNonce={pendingDrop.nonce}
 					draft={draft}
 					commands={commands}
 					onRunCommand={onRunCommand}
