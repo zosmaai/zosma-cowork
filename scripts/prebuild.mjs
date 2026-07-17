@@ -22,15 +22,24 @@ execSync("pnpm install --frozen-lockfile && pnpm run bundle", {
 	stdio: "inherit",
 });
 
-// Patch import_meta.url for CJS compatibility
-// esbuild outputs var import_meta = {}; but needs import_meta.url for CJS
+// Patch import_meta.url for CJS compatibility.
+// esbuild shims `import.meta.url` as `import_meta<number> = {}` and reads `.url`
+// at runtime. In CJS the object is empty so `.url` is undefined -> fileURLToPath
+// throws at module load. Two shapes occur:
+//   (a) top-level: `var import_meta10 = {};`            (our own source)
+//   (b) inside __esm() wrappers, split: declaration `var ..., import_meta, ...;`
+//       then assignment `import_meta = {};` with NO `var` (pi-SDK modules).
+// Matching the assignment (no `var ` prefix) catches both.
 console.log("[prebuild] Patching import_meta.url...");
 const bundlePath = join(sidecarDir, "dist", "bundle.cjs");
 let code = readFileSync(bundlePath, "utf-8");
+const importMetaRe = /(import_meta\d*) = \{\};/g;
+const patchedCount = (code.match(importMetaRe) || []).length;
 code = code.replace(
-	/var (import_meta\d*) = \{\};/g,
-	'var $1 = { url: require("url").pathToFileURL(__filename).href };',
+	importMetaRe,
+	'$1 = { url: require("url").pathToFileURL(__filename).href };',
 );
+console.log(`[prebuild]   patched ${patchedCount} import_meta.url shims`);
 writeFileSync(bundlePath, code, "utf-8");
 
 // Inline pi-coding-agent's package.json into the bundle to avoid
