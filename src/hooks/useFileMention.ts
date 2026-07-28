@@ -29,7 +29,7 @@ async function getWorkspaceFiles(): Promise<FileEntry[]> {
 	cachedEntries = entries.map((e) => ({
 		name: e.name,
 		path: `${root}/${e.name}`,
-		isDirectory: typeof e.isDirectory === "function" ? e.isDirectory() : false,
+		isDirectory: e.isDirectory,
 	}));
 	return cachedEntries;
 }

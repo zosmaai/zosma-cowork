@@ -128,6 +128,7 @@ describe("ChatMessage model label", () => {
 			reasoning: false,
 			contextWindow: 200000,
 			maxTokens: 8192,
+			input: ["text", "image"],
 		},
 	];
 
@@ -157,6 +158,7 @@ describe("ChatMessage model label", () => {
 				reasoning: false,
 				contextWindow: 0,
 				maxTokens: 0,
+				input: ["text", "image"],
 			},
 			{
 				id: "glm-4.6",
@@ -165,6 +167,7 @@ describe("ChatMessage model label", () => {
 				reasoning: false,
 				contextWindow: 0,
 				maxTokens: 0,
+				input: ["text", "image"],
 			},
 		];
 		render(

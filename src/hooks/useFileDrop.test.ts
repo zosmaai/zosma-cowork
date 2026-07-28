@@ -96,7 +96,7 @@ describe("useFileDrop", () => {
 	it("calls onDrop with paths from files that have a path property", () => {
 		const onDrop = vi.fn();
 		const { result } = renderHook(() => useFileDrop({ onDrop }));
-		const file = { path: "/home/user/dragged.txt" } as File;
+		const file = { path: "/home/user/dragged.txt" } as unknown as File;
 		const event = {
 			preventDefault: vi.fn(),
 			stopPropagation: vi.fn(),

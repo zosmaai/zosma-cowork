@@ -1,7 +1,8 @@
 import { cleanupMocks, mockInvoke } from "@/test/mocks";
+import type { ModelInfo } from "@/types";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock @tauri-apps/plugin-dialog
 const mockOpen = vi.hoisted(() => vi.fn());
@@ -163,7 +164,7 @@ describe("MessageInput draft (prompt templates)", () => {
 });
 
 describe("MessageInput image warning", () => {
-	const textOnlyModels = [
+	const textOnlyModels: ModelInfo[] = [
 		{
 			id: "llama3.1:8b",
 			name: "Llama 3.1 8B",
@@ -174,7 +175,7 @@ describe("MessageInput image warning", () => {
 			input: ["text"],
 		},
 	];
-	const visionModels = [
+	const visionModels: ModelInfo[] = [
 		{
 			id: "gpt-4o",
 			name: "GPT-4o",

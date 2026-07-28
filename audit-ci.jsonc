@@ -35,6 +35,23 @@
 		// GHSA-4x5r-pxfx-6jf8 — @babel/core arbitrary file read via
 		// sourceMappingURL. Transitive devDependency of vite/test infra.
 		// Never shipped in the app binary.
-		"GHSA-4x5r-pxfx-6jf8"
+		"GHSA-4x5r-pxfx-6jf8",
+
+		// GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg — brace-expansion ReDoS.
+		// Transitive via vite-plugin-pwa > workbox-build > glob/minimatch.
+		// Build-time only, never shipped.
+		"GHSA-3jxr-9vmj-r5cp",
+		"GHSA-mh99-v99m-4gvg",
+
+		// GHSA-4c8g-83qw-93j6, GHSA-v2hh-gcrm-f6hx — fast-uri improper regex.
+		// Transitive via vite-plugin-pwa > workbox-build > ajv.
+		// Build-time only, never shipped.
+		"GHSA-4c8g-83qw-93j6",
+		"GHSA-v2hh-gcrm-f6hx",
+
+		// GHSA-r28c-9q8g-f849 — postcss line-parser ReDoS.
+		// postcss is a build-only devDependency (via Tailwind, autoprefixer).
+		// Never shipped.
+		"GHSA-r28c-9q8g-f849"
 	]
 }
