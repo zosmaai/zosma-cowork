@@ -1,4 +1,5 @@
 import { cleanupMocks } from "@/test/mocks";
+import type { ModelInfo } from "@/types";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -120,7 +121,7 @@ describe("ChatMessage model label", () => {
 		model: "claude-sonnet-4",
 	};
 
-	const models = [
+	const models: ModelInfo[] = [
 		{
 			id: "claude-sonnet-4",
 			name: "Claude Sonnet 4",
@@ -150,7 +151,7 @@ describe("ChatMessage model label", () => {
 
 	it("resolves the name for the right provider when ids collide", () => {
 		// Same id under two providers — must pick the message's actual provider.
-		const collide = [
+		const collide: ModelInfo[] = [
 			{
 				id: "glm-4.6",
 				name: "GLM 4.6 (zai)",
