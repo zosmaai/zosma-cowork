@@ -3,6 +3,7 @@
 > Branch: `feat/file-upload-brainstorm`
 > Status: Draft spec
 > Related: `docs/research/file-upload-patterns.md`
+> Implementation plan: [`../plans/2026-07-19-file-upload-fix-plan.md`](../plans/2026-07-19-file-upload-fix-plan.md)
 
 ---
 
@@ -14,6 +15,8 @@ Add two complementary ways to attach files to a chat message:
 2. **@ mention autocomplete** — inline `@` trigger → workspace-rooted file/folder autocomplete → send
 
 Both resolve to the same underlying data: a list of absolute file paths sent alongside the message text. The AI sees these paths and reads files using its existing `read` tool.
+
+For image files, successful file access is separate from vision delivery. `read` returns an image block to Pi; Pi sends that block to the selected model only when model metadata declares image input. Cowork must expose that metadata honestly so users are not told an image was attached when the model will receive text only.
 
 ---
 
@@ -30,6 +33,7 @@ Both resolve to the same underlying data: a list of absolute file paths sent alo
 | As a user, I can click on an attachment in a message to open it with the OS default app | P0 |
 | As a user, the AI can read my attached files by their paths | P0 |
 | As a user, I can remove a file from the pre-send preview | P0 |
+| As a user, I am warned before sending an image to a model that cannot receive images | P0 |
 
 ---
 
@@ -89,6 +93,27 @@ The user has attached these files:
 ```
 
 AI uses its existing `read` tool to access file contents as needed.
+
+### Image Capability Contract
+
+`ModelInfo` must include Pi's resolved input capabilities:
+
+```typescript
+type ModelInput = "text" | "image";
+
+interface ModelInfo {
+  // existing model fields
+  input: ModelInput[];
+}
+```
+
+Custom providers persist the same field in each `models[]` entry. A model without an explicit `input` declaration is text-only. Cowork must not infer vision from a model name.
+
+`zosma-router` is the source of truth for its routes. When it publishes optional model capability data from `GET /v1/models` (`input`, `input_modalities`, or `capabilities.image`), Cowork normalizes it to Pi's `input` field. Until router exposes this metadata, Cowork may carry a small explicit catalog for known router vision models.
+
+For a model with `input: ["text", "image"]`, Pi's existing OpenAI-compatible adapter sends tool-result images as standard `image_url` data URLs. `zosma-router` must accept and forward those image URLs to its selected upstream. Cowork must not add a second image-upload/base64 transport.
+
+For a text-only model, Cowork retains the file path and normal file behavior but warns that attached images will not be visible to the model.
 
 ---
 
@@ -267,9 +292,11 @@ This is the simplest approach — **no new Tauri commands needed** for directory
 
 | Component | Changes |
 |---|---|
-| `MessageInput.tsx` | Wire `FilePreviewChip` + `FileMentionPopup`; build `attachments[]` on send |
+| `MessageInput.tsx` | Wire `FilePreviewChip` + `FileMentionPopup`; build `attachments[]` on send; warn for images unsupported by selected model |
 | `ChatMessage.tsx` | Render `AttachmentCard` for messages with `attachments[]` |
 | `ChatView.tsx` | Pass workspace path to MessageInput |
+| `agent-sidecar/src/custom-providers.ts` | Persist custom-model `input`; parse router capability metadata; text-only fallback |
+| `agent-sidecar/src/commands/handlers/core.ts` | Return resolved model `input` from `get_models` |
 
 ---
 
@@ -283,6 +310,8 @@ This is the simplest approach — **no new Tauri commands needed** for directory
 | 1.2 | `src/types/index.ts` | — | Add `attachments` to `ChatMessage` |
 | 1.3 | `src-tauri/src/lib.rs` | — | Add `get_file_info` command |
 | 1.4 | `src-tauri/capabilities/` | — | Add `readDir` permission for `tauri-plugin-fs` |
+| 1.5 | `agent-sidecar/src/custom-providers.ts` | `custom-providers.test.ts` | Persist image capability; parse router metadata; default unknown models to text-only |
+| 1.6 | `agent-sidecar/src/commands/handlers/core.ts` + `src/types/index.ts` | Focused handler test | Expose resolved `input` to composer |
 
 ### Phase 2 — Pre-send Preview
 
@@ -314,6 +343,8 @@ This is the simplest approach — **no new Tauri commands needed** for directory
 |---|---|---|---|
 | 5.1 | `agent-sidecar/src/commands/` | Update handler tests | Accept `attachments` in prompt/steer payloads |
 | 5.2 | `agent-sidecar/src/prompt-runner.ts` | Update tests | Inject attachment paths into system prompt |
+| 5.3 | `src/components/MessageInput.tsx` | `MessageInput.test.tsx` | Warn when an attached image targets a text-only model; no warning for image-capable model |
+| 5.4 | Router integration suite | Opt-in integration test | Send a tiny image through `POST /v1/chat/completions`; assert vision-grounded response from an image-capable router model |
 
 ### Phase 6 — Polish
 
@@ -335,3 +366,4 @@ This is the simplest approach — **no new Tauri commands needed** for directory
 | Image thumbnails — generate on Rust side or frontend? | Frontend via `convertFileSrc` (simplest) |
 | Multiple file upload — allow multi-select? | Yes, already wired in `dialog.open({ multiple: true })` |
 | Drag & drop? | Out of scope for v1 |
+| Who decides image forwarding? | Cowork/Pi gates by model `input`; zosma-router accepts and forwards OpenAI `image_url` payloads for image-capable routes |

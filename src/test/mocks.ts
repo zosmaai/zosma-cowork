@@ -8,6 +8,7 @@ const mockReadFileFn = vi.hoisted(() => vi.fn());
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: mockInvokeFn,
+	convertFileSrc: (path: string) => `tauri://localhost/${path}`,
 }));
 
 vi.mock("@tauri-apps/plugin-fs", () => ({

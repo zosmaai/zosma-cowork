@@ -23,6 +23,95 @@ import { dirname } from "node:path";
 /** Sentinel stored when the user leaves the API-key field blank. See header. */
 export const NO_AUTH_SENTINEL = "no-auth";
 
+export type ModelInput = "text" | "image";
+
+/**
+ * Known router vision model catalog (compatibility bridge).
+ * Until zosma-router exposes capability metadata via GET /v1/models,
+ * seed known vision-capable model ids here so they are not treated
+ * as text-only after discovery.
+ */
+export const KNOWN_ROUTER_VISION_MODELS: ReadonlySet<string> = new Set([
+	// Native model ids (generic fallback)
+	"gpt-4o",
+	"gpt-4o-mini",
+	"gpt-4.1",
+	"gpt-4.1-mini",
+	"gpt-4.1-nano",
+	"claude-sonnet-4",
+	"claude-sonnet-4.20250514",
+	"claude-4-opus",
+	"claude-opus-4-8",
+	"gemini-2.5-pro",
+	"gemini-2.5-flash",
+	"gemini-2.0-flash",
+	// zosma-router actual model ids
+	"mimo-v2.5",
+	"openai-codex/gpt-5.5",
+	"openai-codex/gpt-5.6-sol",
+	"openai-codex/gpt-5.6-luna",
+	"openai-codex/gpt-5.6-terra",
+]);
+
+/**
+ * Normalize optional model capability metadata from a /v1/models row
+ * to Pi's `input` shape. Accepts Cowork aliases:
+ *   - `input: ("text" | "image")[]`
+ *   - `input_modalities: string[]`
+ *   - `capabilities: { image?: boolean }`
+ * Returns undefined when no explicit capability is declared — caller
+ * should fall back to text-only.
+ */
+export function normalizeModelInput(row: Record<string, unknown>): ModelInput[] | undefined {
+	// 1. Explicit `input` field (Pi native shape)
+	const input = row.input;
+	if (Array.isArray(input)) {
+		const normalized = input
+			.filter((v): v is ModelInput => v === "text" || v === "image");
+		if (normalized.length > 0) return normalized;
+	}
+
+	// 2. `input_modalities` (router shape)
+	const mods = row.input_modalities;
+	if (Array.isArray(mods)) {
+		const result: ModelInput[] = ["text"];
+		if (mods.some((m: unknown) => typeof m === "string" && (m === "image" || m === "vision" || m === "image_url"))) {
+			result.push("image");
+		}
+		return result;
+	}
+
+	// 3. `capabilities.image` (router shape)
+	const caps = row.capabilities;
+	if (caps && typeof caps === "object" && !Array.isArray(caps)) {
+		const cap = caps as Record<string, unknown>;
+		if (cap.image === true) {
+			return ["text", "image"];
+		}
+	}
+
+	return undefined;
+}
+
+/**
+ * Resolve the effective `input` for a model, considering:
+ *   1. Explicit stored value
+ *   2. Known router catalog match
+ *   3. Text-only fallback
+ */
+export function resolveModelInput(
+	id: string,
+	explicitInput?: ModelInput[] | null,
+): ModelInput[] {
+	if (explicitInput && Array.isArray(explicitInput) && explicitInput.length > 0) {
+		return explicitInput;
+	}
+	if (KNOWN_ROUTER_VISION_MODELS.has(id)) {
+		return ["text", "image"];
+	}
+	return ["text"];
+}
+
 /**
  * Zosma-managed provider ids that live in the shared ~/.pi/agent/models.json
  * but are NOT user-created via the Cowork "Custom Local LLM" UI.
@@ -72,6 +161,8 @@ export interface SaveCustomProviderInput {
 		thinkingLevelMap?: Record<string, string | null>;
 		/** Wire-format quirks (e.g. `{thinkingFormat:"qwen-chat-template"}`). */
 		compat?: Record<string, unknown>;
+		/** Input capabilities (text-only or text+image). Omit/empty → text-only. */
+		input?: ModelInput[];
 	}>;
 }
 
@@ -87,6 +178,7 @@ const PRESERVED_MODEL_FIELDS = [
 	"compat",
 	"contextWindow",
 	"maxTokens",
+	"input",
 ] as const;
 
 /** Outward-facing summary — never leaks the raw API key. */
@@ -178,6 +270,11 @@ export interface DiscoverModelsResult {
 	 * Helps distinguish auth failures (401) from missing endpoints (404).
 	 */
 	status?: number;
+	/**
+	 * Per-model capability metadata parsed from response rows.
+	 * Maps model id to its resolved input capabilities.
+	 */
+	modelCapabilities?: Record<string, ModelInput[]>;
 }
 
 /**
@@ -221,10 +318,21 @@ export async function discoverModels(
 				: Array.isArray((json as { data?: unknown })?.data)
 					? (json as { data: unknown[] }).data
 					: [];
-			const ids = rows
-				.map((r) => (r && typeof (r as { id?: unknown }).id === "string" ? (r as { id: string }).id : null))
-				.filter((id): id is string => id !== null && id.trim().length > 0);
-			if (ids.length > 0) return { models: [...new Set(ids)], reachable: true, status: lastStatus };
+			const ids: string[] = [];
+			const caps: Record<string, ModelInput[]> = {};
+			for (const r of rows) {
+				if (r && typeof (r as { id?: unknown }).id === "string") {
+					const id = (r as { id: string }).id.trim();
+					if (id.length > 0 && !ids.includes(id)) {
+						ids.push(id);
+						const input = normalizeModelInput(r as Record<string, unknown>);
+						if (input) caps[id] = input;
+					}
+				}
+			}
+			if (ids.length > 0) {
+				return { models: ids, reachable: true, status: lastStatus, modelCapabilities: caps };
+			}
 		} catch {
 			// Connection refused / DNS / timeout / bad JSON — try the next URL.
 		}
@@ -245,6 +353,7 @@ function validateInput(input: SaveCustomProviderInput): {
 		reasoning?: boolean;
 		thinkingLevelMap?: Record<string, string | null>;
 		compat?: Record<string, unknown>;
+		input?: ModelInput[];
 	}>;
 } {
 	const id = require_("id", input.id);
@@ -264,6 +373,7 @@ function validateInput(input: SaveCustomProviderInput): {
 			...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
 			...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 			...(m.compat !== undefined ? { compat: m.compat } : {}),
+			...(m.input !== undefined ? { input: m.input } : {}),
 		};
 	});
 
@@ -313,7 +423,17 @@ export function saveCustomProvider(modelsPath: string, input: SaveCustomProvider
 	}
 	const models = v.models.map((m) => {
 		const prevM = prevById.get(m.id);
-		if (!prevM) return m;
+		if (!prevM) {
+			// New model (no previous entry): apply known router catalog fallback
+			// when discovery didn't provide capability metadata.
+			if (!m.input) {
+				const resolved = resolveModelInput(m.id, undefined);
+				if (resolved.length > 0 && (resolved.length > 1 || resolved[0] !== "text")) {
+					return { ...m, input: resolved };
+				}
+			}
+			return m;
+		}
 		const merged: Record<string, unknown> = { ...m };
 		for (const k of PRESERVED_MODEL_FIELDS) {
 			if (merged[k] === undefined && prevM[k] !== undefined) merged[k] = prevM[k];
@@ -327,6 +447,13 @@ export function saveCustomProvider(modelsPath: string, input: SaveCustomProvider
 			prevM.name !== m.id
 		) {
 			merged.name = prevM.name;
+		}
+		// Apply known router catalog fallback when input still unset after merge
+		if (merged.input === undefined) {
+			const resolved = resolveModelInput(m.id, undefined);
+			if (resolved.length > 0 && (resolved.length > 1 || resolved[0] !== "text")) {
+				merged.input = resolved;
+			}
 		}
 		return merged;
 	});

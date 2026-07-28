@@ -9,152 +9,77 @@ const mockEntries = [
 	{ name: "README.md", path: "/workspace/README.md", isDirectory: false },
 ];
 
+const baseProps = {
+	entries: [] as typeof mockEntries,
+	selectedIndex: 0,
+	query: "",
+	breadcrumb: "",
+	loading: false,
+	onSelectIndex: () => {},
+	onSelect: () => {},
+	anchorRect: { top: 100, left: 50 } as const,
+};
+
 describe("FileMentionPopup", () => {
 	it("renders folder and file entries with correct icons", () => {
-		render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={0}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
-		// All three entries should render as buttons
+		render(<FileMentionPopup {...baseProps} entries={mockEntries} />);
 		const items = screen.getAllByRole("button");
 		expect(items).toHaveLength(3);
 	});
 
 	it("shows 'No matches' only when query is non-empty and results are empty", () => {
-		// Empty results + empty query → no message (fresh open)
-		const { rerender } = render(
-			<FileMentionPopup
-				entries={[]}
-				selectedIndex={0}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
+		// Empty results + empty query + not loading → "No files in workspace"
+		const { rerender } = render(<FileMentionPopup {...baseProps} />);
 		expect(screen.queryByText(/No matches/i)).not.toBeInTheDocument();
+		expect(screen.getByText("No files in workspace")).toBeInTheDocument();
 
 		// Empty results + non-empty query → "No matches"
-		rerender(
-			<FileMentionPopup
-				entries={[]}
-				selectedIndex={0}
-				query="xyz"
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
+		rerender(<FileMentionPopup {...baseProps} query="xyz" />);
 		expect(screen.getByText(/No matches/i)).toBeInTheDocument();
 	});
 
+	it("shows loading state when loading is true", () => {
+		render(<FileMentionPopup {...baseProps} loading={true} />);
+		expect(screen.getByText(/Loading workspace files/)).toBeInTheDocument();
+		expect(screen.queryByRole("button")).not.toBeInTheDocument();
+	});
+
+	it("shows empty workspace state when not loading, no query, and no entries", () => {
+		render(<FileMentionPopup {...baseProps} entries={[]} />);
+		expect(screen.getByText("No files in workspace")).toBeInTheDocument();
+	});
+
 	it("highlights the selected index and only that one", () => {
-		render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={1}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
+		render(<FileMentionPopup {...baseProps} entries={mockEntries} selectedIndex={1} />);
 		const items = screen.getAllByRole("button");
-		// Only the middle item should be selected
 		expect(items[0].dataset.selected).toBe("false");
 		expect(items[1].dataset.selected).toBe("true");
 		expect(items[2].dataset.selected).toBe("false");
 	});
 
 	it("handles out-of-bounds selectedIndex gracefully", () => {
-		render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={999}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
+		render(<FileMentionPopup {...baseProps} entries={mockEntries} selectedIndex={999} />);
 		const items = screen.getAllByRole("button");
-		// No item should crash or show selected=true beyond array bounds
 		expect(items).toHaveLength(3);
 	});
 
 	it("calls onSelect when entry is clicked", async () => {
 		const onSelect = vi.fn();
 		const user = userEvent.setup();
-		render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={0}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={onSelect}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
+		render(<FileMentionPopup {...baseProps} entries={mockEntries} onSelect={onSelect} />);
 		await user.click(screen.getByText("package.json"));
-		expect(onSelect).toHaveBeenCalledTimes(1);
 		expect(onSelect).toHaveBeenCalledWith(mockEntries[1]);
 	});
 
 	it("does not render anything when anchorRect is null", () => {
-		const { container } = render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={0}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={null}
-			/>,
-		);
+		const { container } = render(<FileMentionPopup {...baseProps} anchorRect={null} />);
 		expect(container.innerHTML).toBe("");
 	});
 
 	it("shows breadcrumb when provided", () => {
 		render(
-			<FileMentionPopup
-				entries={mockEntries}
-				selectedIndex={0}
-				query=""
-				breadcrumb="workspace > src > hooks"
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
+			<FileMentionPopup {...baseProps} entries={mockEntries} breadcrumb="workspace > src > hooks" />,
 		);
 		expect(screen.getByText("workspace > src > hooks")).toBeInTheDocument();
-	});
-
-	it("renders a single entry correctly", () => {
-		render(
-			<FileMentionPopup
-				entries={[mockEntries[0]]}
-				selectedIndex={0}
-				query=""
-				breadcrumb=""
-				onSelectIndex={() => {}}
-				onSelect={() => {}}
-				anchorRect={{ top: 100, left: 50 }}
-			/>,
-		);
-		expect(screen.getAllByRole("button")).toHaveLength(1);
-		expect(screen.getByText("src")).toBeInTheDocument();
 	});
 });

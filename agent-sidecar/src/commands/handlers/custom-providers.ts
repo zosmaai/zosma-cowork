@@ -25,8 +25,36 @@ export async function handleListCustomProviders(deps: HandlerDependencies, cmd: 
 
 export async function handleSaveCustomProvider(deps: HandlerDependencies, cmd: any): Promise<void> {
 	try {
-		const { saveCustomProvider } = await import("../../custom-providers.js");
-		const result = saveCustomProvider(modelsPath(), cmd.provider);
+		const { saveCustomProvider, discoverModels } = await import("../../custom-providers.js");
+		let provider = { ...cmd.provider };
+
+		// Empty models array = contract with the frontend: "auto-discover from server".
+		// Call discoverModels() before validating, then inject the discovered ids.
+		if (!Array.isArray(provider.models) || provider.models.length === 0) {
+			const baseUrl = typeof provider.baseUrl === "string" ? provider.baseUrl.trim() : "";
+			const apiKey = typeof provider.apiKey === "string" && provider.apiKey.trim() ? provider.apiKey.trim() : undefined;
+
+			if (baseUrl.length > 0) {
+				const result = await discoverModels(baseUrl, apiKey, { timeoutMs: 10000 });
+				if (result.models.length > 0) {
+					// Inject discovered capability metadata into model entries
+					const caps = result.modelCapabilities ?? {};
+					provider.models = result.models.map((id: string) => ({
+						id,
+						...(caps[id] ? { input: caps[id] } : {}),
+					}));
+				} else {
+					// Frontend expects NO_MODELS_DISCOVERED prefix so it can show manual entry
+					const parts = ["NO_MODELS_DISCOVERED"];
+					parts.push(result.reachable ? "reachable" : "unreachable");
+					if (result.status !== undefined) parts.push(String(result.status));
+					sendMsg({ type: "error", id: cmd.id, message: parts.join(":") });
+					return;
+				}
+			}
+		}
+
+		const result = saveCustomProvider(modelsPath(), provider);
 		sendMsg({ type: "result", id: cmd.id, data: result });
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -48,49 +76,89 @@ export async function handleDeleteCustomProvider(deps: HandlerDependencies, cmd:
 export async function handleTestCustomProviderConnection(deps: HandlerDependencies, cmd: any): Promise<void> {
 	try {
 		const baseUrl = (cmd.baseUrl as string)?.replace(/\/+$/, "");
-		const testKey = (cmd.apiKey as string) || "test-key";
+		const apiKey = (cmd.apiKey as string)?.trim();
+		const hasRealKey = apiKey != null && apiKey.length > 0;
 
 		log("Testing custom provider connection: %s", baseUrl);
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 10_000);
 
-		try {
-			const res = await fetch(`${baseUrl}/models`, {
-				headers: { Authorization: `Bearer ${testKey}` },
-				signal: controller.signal,
-			});
-			clearTimeout(timeout);
+		// Reuse the same discovery logic as the Save path so Test and Save
+		// agree on endpoints and behavior. Use a short timeout so it feels
+		// like a quick connectivity check.
+		const { discoverModels } = await import("../../custom-providers.js");
+		const result = await discoverModels(baseUrl, apiKey || undefined, { timeoutMs: 8000 });
 
-			if (res.ok) {
-				const body: any = await res.json();
-				const models = (body.data || body.models || [])
-					.slice(0, 20)
-					.map((m: { id: string; name?: string }) => ({ id: m.id, name: m.name || m.id }));
-				sendMsg({ type: "result", id: cmd.id, data: { reachable: true, models } });
-			} else {
-				const text = await res.text();
-				sendMsg({
-					type: "result",
-					id: cmd.id,
-					data: {
-						reachable: true,
-						error: `HTTP ${res.status}: ${text.slice(0, 200)}`,
-						models: [],
-					},
-				});
-			}
-		} catch (fetchErr) {
-			clearTimeout(timeout);
+		if (!result.reachable) {
 			sendMsg({
 				type: "result",
 				id: cmd.id,
 				data: {
 					reachable: false,
-					error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+					message: "Could not connect to that endpoint.",
 					models: [],
 				},
 			});
+			return;
 		}
+
+		if (result.models.length > 0) {
+			// Happy path: server returned models
+			const models = result.models.slice(0, 20).map((id) => ({ id }));
+			sendMsg({
+				type: "result",
+				id: cmd.id,
+				data: {
+					reachable: true,
+					ok: true,
+					message: `Connected. Found ${result.models.length} model(s).`,
+					models,
+				},
+			});
+			return;
+		}
+
+		// Reachable but no models. Differentiate auth vs "no /models".
+		if (result.status === 401 && !hasRealKey) {
+			sendMsg({
+				type: "result",
+				id: cmd.id,
+				data: {
+					reachable: true,
+					ok: true,
+					message: "Connected, but models require an API key.",
+					models: [],
+				},
+			});
+			return;
+		}
+
+		if (result.status === 401 && hasRealKey) {
+			sendMsg({
+				type: "result",
+				id: cmd.id,
+				data: {
+					reachable: true,
+					ok: false,
+					message: "Connected, but your API key was rejected (401).",
+					models: [],
+				},
+			});
+			return;
+		}
+
+		// Other non-200 or no models endpoint
+		const hint = result.status
+			? ` (HTTP ${result.status})`
+			: "";
+		sendMsg({
+			type: "result",
+			id: cmd.id,
+			data: {
+				reachable: true,
+				ok: true,
+				message: `Endpoint is reachable, but no models were discovered${hint}. You can still try saving it.`,
+				models: [],
+			},
+		});
 	} catch (err: unknown) {
 		const msg = err instanceof Error ? err.message : String(err);
 		sendMsg({ type: "error", id: cmd.id, message: msg });

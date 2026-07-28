@@ -14,6 +14,8 @@ export interface FileAttachment {
 	size: number;
 	/** MIME type hint (for preview rendering) */
 	mimeType: string;
+	/** How this file was attached (uploaded or @-mentioned). */
+	source?: "upload" | "mention";
 }
 
 export interface ChatMessage {
@@ -78,6 +80,8 @@ export interface ModelInfo {
 	reasoning: boolean;
 	contextWindow: number;
 	maxTokens: number;
+	/** Capabilities the model supports for input (text-only or text+image). */
+	input: ("text" | "image")[];
 }
 
 // Config snapshot from the engine

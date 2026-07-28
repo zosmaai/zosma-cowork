@@ -9,6 +9,7 @@ const mk = (provider: string, id: string, name: string): ModelInfo => ({
 	reasoning: false,
 	contextWindow: 0,
 	maxTokens: 0,
+	input: ["text"],
 });
 
 describe("model-key", () => {

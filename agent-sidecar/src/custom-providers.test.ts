@@ -24,6 +24,8 @@ import {
 	discoverModels,
 	listCustomProviders,
 	modelsEndpoints,
+	normalizeModelInput,
+	resolveModelInput,
 	saveCustomProvider,
 } from "./custom-providers.js";
 
@@ -215,6 +217,54 @@ describe("custom-providers", () => {
 		});
 		const m = JSON.parse(readFileSync(modelsPath, "utf-8")).providers["custom-local-llm"].models[0];
 		expect(m.reasoning).toBe(false);
+	});
+
+	// ── image capability (input field) ──────────────────────────────────
+
+	it("persists explicit input (image capability) field on a model", () => {
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "vision-model", input: ["text", "image"] }],
+		});
+		const m = JSON.parse(readFileSync(modelsPath, "utf-8")).providers["custom-local-llm"].models[0];
+		expect(m.input).toEqual(["text", "image"]);
+	});
+
+	it("defaults to text-only when input is omitted", () => {
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "text-only-model" }],
+		});
+		const m = JSON.parse(readFileSync(modelsPath, "utf-8")).providers["custom-local-llm"].models[0];
+		// input is omitted (not written) — the ModelRegistry default handles fallback
+		expect(m.input).toBeUndefined();
+	});
+
+	it("preserves per-model input capability across a re-save/re-discovery", () => {
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "vision-model", input: ["text", "image"] }],
+		});
+		// Simulate re-discovery with bare id (no input field)
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "vision-model" }],
+		});
+		const m = JSON.parse(readFileSync(modelsPath, "utf-8")).providers["custom-local-llm"].models[0];
+		expect(m.input).toEqual(["text", "image"]);
+	});
+
+	it("lets an incoming save override a previously stored input field", () => {
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "vision-model", input: ["text", "image"] }],
+		});
+		saveCustomProvider(modelsPath, {
+			...VALID_INPUT,
+			models: [{ id: "vision-model", input: ["text"] }],
+		});
+		const m = JSON.parse(readFileSync(modelsPath, "utf-8")).providers["custom-local-llm"].models[0];
+		expect(m.input).toEqual(["text"]);
 	});
 
 	// ── validation ─────────────────────────────────────────────────────
@@ -468,7 +518,11 @@ describe("discoverModels", () => {
 		const fetchImpl = async () =>
 			fakeResponse({ object: "list", data: [{ id: "llama3.1:8b" }, { id: "mistral:7b" }] });
 		const res = await discoverModels("http://localhost:11434/v1", undefined, { fetchImpl });
-		expect(res).toEqual({ models: ["llama3.1:8b", "mistral:7b"], reachable: true });
+		expect(res).toEqual({
+			models: ["llama3.1:8b", "mistral:7b"],
+			reachable: true,
+			modelCapabilities: {},
+		});
 	});
 
 	it("accepts a bare array response and dedupes ids", async () => {
@@ -489,7 +543,11 @@ describe("discoverModels", () => {
 			fetchImpl: fetchImpl as unknown as typeof fetch,
 		});
 		expect(seen).toEqual(["http://127.0.0.1:8080/models", "http://127.0.0.1:8080/v1/models"]);
-		expect(res).toEqual({ models: ["phi3"], reachable: true });
+		expect(res).toEqual({
+			models: ["phi3"],
+			reachable: true,
+			modelCapabilities: {},
+		});
 	});
 
 	it("reports reachable:true but no models when every probe 404s", async () => {
@@ -532,5 +590,122 @@ describe("discoverModels", () => {
 
 	it("throws on a malformed base URL (a real validation error, not a network miss)", async () => {
 		await expect(discoverModels("not-a-url")).rejects.toThrow(/valid URL/);
+	});
+
+	it("parses input capability metadata from response rows", async () => {
+		const fetchImpl = async () =>
+			fakeResponse({
+				data: [
+					{ id: "vision-model", input: ["text", "image"] },
+					{ id: "text-model", input: ["text"] },
+					{ id: "bare-model" },
+				],
+			});
+		const res = await discoverModels("http://localhost:11434/v1", undefined, { fetchImpl });
+		expect(res.models).toEqual(["vision-model", "text-model", "bare-model"]);
+		expect(res.modelCapabilities).toEqual({
+			"vision-model": ["text", "image"],
+			"text-model": ["text"],
+		});
+		// bare-model has no capability metadata → not in modelCapabilities
+		expect(res.modelCapabilities!["bare-model"]).toBeUndefined();
+	});
+
+	it("parses input_modalities from response rows", async () => {
+		const fetchImpl = async () =>
+			fakeResponse({
+				data: [
+					{ id: "vision-model", input_modalities: ["text", "image"] },
+					{ id: "text-model", input_modalities: ["text"] },
+				],
+			});
+		const res = await discoverModels("http://localhost:11434/v1", undefined, { fetchImpl });
+		expect(res.modelCapabilities).toEqual({
+			"vision-model": ["text", "image"],
+			"text-model": ["text"],
+		});
+	});
+
+	it("parses capabilities.image from response rows", async () => {
+		const fetchImpl = async () =>
+			fakeResponse({
+				data: [
+					{ id: "vision-model", capabilities: { image: true } },
+					{ id: "text-model", capabilities: { image: false } },
+				],
+			});
+		const res = await discoverModels("http://localhost:11434/v1", undefined, { fetchImpl });
+		expect(res.modelCapabilities).toEqual({
+			"vision-model": ["text", "image"],
+		});
+	});
+});
+
+// ── normalizeModelInput ───────────────────────────────────────────────
+
+describe("normalizeModelInput", () => {
+	it("returns input from explicit array", () => {
+		expect(normalizeModelInput({ input: ["text", "image"] })).toEqual(["text", "image"]);
+	});
+
+	it("returns input from explicit text-only array", () => {
+		expect(normalizeModelInput({ input: ["text"] })).toEqual(["text"]);
+	});
+
+	it("returns undefined for missing input", () => {
+		expect(normalizeModelInput({})).toBeUndefined();
+	});
+
+	it("filters invalid values in the input array", () => {
+		const result = normalizeModelInput({ input: ["text", "image", "audio"] });
+		expect(result).toEqual(["text", "image"]);
+	});
+
+	it("parses input_modalities containing image/vision/image_url", () => {
+		expect(normalizeModelInput({ input_modalities: ["text", "image"] })).toEqual(["text", "image"]);
+		expect(normalizeModelInput({ input_modalities: ["text", "vision"] })).toEqual(["text", "image"]);
+		expect(normalizeModelInput({ input_modalities: ["text", "image_url"] })).toEqual(["text", "image"]);
+	});
+
+	it("parses input_modalities with text only", () => {
+		expect(normalizeModelInput({ input_modalities: ["text"] })).toEqual(["text"]);
+	});
+
+	it("parses capabilities.image: true", () => {
+		expect(normalizeModelInput({ capabilities: { image: true } })).toEqual(["text", "image"]);
+	});
+
+	it("returns undefined for capabilities.image: false", () => {
+		expect(normalizeModelInput({ capabilities: { image: false } })).toBeUndefined();
+	});
+
+	it("returns undefined for capabilities missing image field", () => {
+		expect(normalizeModelInput({ capabilities: {} })).toBeUndefined();
+	});
+});
+
+// ── resolveModelInput ────────────────────────────────────────────────
+
+describe("resolveModelInput", () => {
+	it("returns explicit input when provided", () => {
+		expect(resolveModelInput("any-model", ["text", "image"])).toEqual(["text", "image"]);
+	});
+
+	it("returns known router vision model from catalog", () => {
+		expect(resolveModelInput("gpt-4o", undefined)).toEqual(["text", "image"]);
+		expect(resolveModelInput("claude-sonnet-4", undefined)).toEqual(["text", "image"]);
+		expect(resolveModelInput("gemini-2.5-pro", undefined)).toEqual(["text", "image"]);
+	});
+
+	it("returns text-only for unknown model with no explicit input", () => {
+		expect(resolveModelInput("unknown-local-model", undefined)).toEqual(["text"]);
+	});
+
+	it("prefers explicit input over known router catalog match", () => {
+		expect(resolveModelInput("gpt-4o", ["text"])).toEqual(["text"]);
+	});
+
+	it("handles empty input array as no explicit input", () => {
+		expect(resolveModelInput("unknown-model", [])).toEqual(["text"]);
 	});
 });

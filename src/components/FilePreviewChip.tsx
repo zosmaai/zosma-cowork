@@ -7,6 +7,7 @@ interface FilePreviewChipProps {
 	name: string;
 	size: number;
 	mimeType: string;
+	source?: "upload" | "mention";
 	onRemove: (path: string) => void;
 }
 
@@ -39,7 +40,7 @@ function truncateName(name: string, max = 30): string {
 	return `${name.slice(0, max - 1)}…`;
 }
 
-export function FilePreviewChip({ path, name, size, mimeType, onRemove }: FilePreviewChipProps) {
+export function FilePreviewChip({ path, name, size, mimeType, source, onRemove }: FilePreviewChipProps) {
 	const isImage = mimeType.startsWith("image/");
 
 	return (
@@ -47,6 +48,9 @@ export function FilePreviewChip({ path, name, size, mimeType, onRemove }: FilePr
 			className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs max-w-60 bg-muted text-foreground"
 			title={path}
 		>
+			{source === "mention" && (
+				<span className="shrink-0 text-[10px] font-semibold text-muted-foreground/70">@</span>
+			)}
 			{isImage ? (
 				<img
 					src={convertFileSrc(path)}

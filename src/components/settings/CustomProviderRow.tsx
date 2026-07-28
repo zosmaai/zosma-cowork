@@ -90,6 +90,11 @@ export function CustomProviderRow({ onChange }: Props) {
 		refresh();
 	}, [refresh]);
 
+	// Clear the last test result when the URL changes so the button resets.
+	useEffect(() => {
+		setTestResult(null);
+	}, [baseUrl]);
+
 	// Single-slot today: a save always targets PROVIDER_ID, so when one is
 	// already configured the form is an *edit* of it, not a second endpoint.
 	const editingExisting = existing.length > 0;

@@ -23,11 +23,12 @@ describe("useFileMention", () => {
 		]);
 	});
 
-	it("starts in idle state with empty results", () => {
+	it("starts in idle state with empty results and loading true", () => {
 		const { result } = renderHook(() => useFileMention());
 		expect(result.current.state).toBe("idle");
 		expect(result.current.results).toEqual([]);
 		expect(result.current.triggerPosition).toBeNull();
+		expect(result.current.loading).toBe(true);
 	});
 
 	it("transitions to active when @ is typed with whitespace before it", async () => {

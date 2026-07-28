@@ -21,6 +21,7 @@ const MODELS: ModelInfo[] = [
 		reasoning: false,
 		contextWindow: 128000,
 		maxTokens: 4096,
+		input: ["text", "image"],
 	},
 	{
 		id: "claude-3-5-sonnet",
@@ -29,6 +30,7 @@ const MODELS: ModelInfo[] = [
 		reasoning: false,
 		contextWindow: 200000,
 		maxTokens: 8192,
+		input: ["text", "image"],
 	},
 ];
 

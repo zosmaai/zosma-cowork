@@ -1,6 +1,7 @@
 import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { useFileMention } from "@/hooks/useFileMention";
 import { trackEvent } from "@/lib/telemetry";
+import { findModel, modelKey } from "@/lib/model-key";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
@@ -138,6 +139,17 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
 		const mention = useFileMention();
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
+		const currentModel = useMemo(
+			() => (models && currentModelId ? findModel(models, currentModelId) : undefined),
+			[models, currentModelId],
+		);
+		const modelSupportsImages = currentModel?.input?.includes("image") ?? true;
+		const hasImageAttachments = useMemo(
+			() =>
+				attachedFiles.some((f) => f.mimeType.startsWith("image/")) ||
+				pastedImages.length > 0,
+			[attachedFiles, pastedImages],
+		);
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
 		const shellRef = useRef<HTMLDivElement>(null);
 		const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -247,6 +259,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							name: info.name,
 							size: info.size,
 							mimeType: info.mime_type,
+							source: "upload",
 						});
 					} catch {
 						files.push({
@@ -254,6 +267,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							name: p.split("/").pop() ?? p.split("\\").pop() ?? p,
 							size: 0,
 							mimeType: "application/octet-stream",
+							source: "upload",
 						});
 					}
 				}
@@ -367,6 +381,16 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						mention.selectFile(entry);
 						const before = text.slice(0, mention.triggerPosition ?? 0);
 						setText(`${before}@${entry.name} `);
+						setAttachedFiles((prev) => [
+							...prev,
+							{
+								path: entry.path,
+								name: entry.name,
+								size: 0,
+								mimeType: "application/octet-stream",
+								source: "mention",
+							},
+						]);
 						setMentionSelectedIndex(0);
 					}
 					return;
@@ -384,6 +408,16 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						mention.selectFile(entry);
 						const before = text.slice(0, mention.triggerPosition ?? 0);
 						setText(`${before}@${entry.name} `);
+						setAttachedFiles((prev) => [
+							...prev,
+							{
+								path: entry.path,
+								name: entry.name,
+								size: 0,
+								mimeType: "application/octet-stream",
+								source: "mention",
+							},
+						]);
 						setMentionSelectedIndex(0);
 					}
 					return;
@@ -487,18 +521,32 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					)}
 
 					{/* File mention popup */}
-					{mention.state === "active" && mention.results.length > 0 && (
+					{mention.state === "active" && (
 						<FileMentionPopup
 							entries={mention.results}
 							selectedIndex={mentionSelectedIndex}
 							query={mention.query}
 							breadcrumb={mention.breadcrumb}
+							loading={mention.loading}
 							onSelectIndex={setMentionSelectedIndex}
 							onSelect={(entry) => {
 								if (!entry.isDirectory) {
 									mention.selectFile(entry);
 									const before = text.slice(0, mention.triggerPosition ?? 0);
 									setText(`${before}@${entry.name} `);
+									// Add to attached files for chip rendering
+									setAttachedFiles((prev) => [
+										...prev,
+										{
+											path: entry.path,
+											name: entry.name,
+											size: 0,
+											mimeType: entry.isDirectory
+												? "inode/directory"
+												: "application/octet-stream",
+											source: "mention",
+										},
+									]);
 									setMentionSelectedIndex(0);
 								}
 							}}
@@ -584,6 +632,22 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 									onRemove={removeFile}
 								/>
 							))}
+						</div>
+					)}
+
+					{/* Image capability warning */}
+					{!modelSupportsImages && hasImageAttachments && (
+						<div className="px-4 pb-1.5">
+							<p
+								className="text-[11px] leading-tight flex items-center gap-1.5"
+								style={{ color: "hsl(var(--warning))" }}
+							>
+								<span>⚠</span>
+								<span>
+									Your current model does not support images.
+									{currentModel && ` Selected: ${currentModel.name}.`}
+								</span>
+							</p>
 						</div>
 					)}
 

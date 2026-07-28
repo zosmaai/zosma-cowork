@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { readDir } from "@tauri-apps/plugin-fs";
 
@@ -14,6 +14,7 @@ interface UseFileMentionReturn {
 	results: FileEntry[];
 	triggerPosition: number | null;
 	breadcrumb: string;
+	loading: boolean;
 	onInput: (value: string, cursorPos: number) => void;
 	selectFile: (entry: FileEntry) => { path: string; name: string } | null;
 	cancel: () => void;
@@ -46,13 +47,14 @@ export function useFileMention(): UseFileMentionReturn {
 	const [allEntries, setAllEntries] = useState<FileEntry[]>([]);
 	const [triggerPosition, setTriggerPosition] = useState<number | null>(null);
 	const [breadcrumb] = useState("");
-	const loaded = useRef(false);
+	const [loading, setLoading] = useState(true);
 
 	// Load workspace files once
 	useEffect(() => {
-		if (loaded.current) return;
-		loaded.current = true;
-		getWorkspaceFiles().then(setAllEntries).catch(() => {});
+		getWorkspaceFiles()
+			.then(setAllEntries)
+			.catch(() => {})
+			.finally(() => setLoading(false));
 	}, []);
 
 	const onInput = useCallback(
@@ -104,6 +106,7 @@ export function useFileMention(): UseFileMentionReturn {
 		results,
 		triggerPosition,
 		breadcrumb,
+		loading,
 		onInput,
 		selectFile,
 		cancel,

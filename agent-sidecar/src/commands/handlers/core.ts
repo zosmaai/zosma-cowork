@@ -48,6 +48,7 @@ export async function handleGetModels(
 		reasoning: m.reasoning,
 		contextWindow: m.contextWindow,
 		maxTokens: m.maxTokens,
+		input: Array.isArray(m.input) && m.input.length > 0 ? m.input : ["text"],
 	}));
 	sendMsg({ type: "result", id: cmd.id, data: { models } });
 }

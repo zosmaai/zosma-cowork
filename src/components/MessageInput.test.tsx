@@ -1,4 +1,4 @@
-import { cleanupMocks } from "@/test/mocks";
+import { cleanupMocks, mockInvoke } from "@/test/mocks";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -159,5 +159,85 @@ describe("MessageInput draft (prompt templates)", () => {
 
 		expect(onSend).toHaveBeenCalledTimes(1);
 		expect(onSend.mock.calls[0][0]).toBe("Editable prompt");
+	});
+});
+
+describe("MessageInput image warning", () => {
+	const textOnlyModels = [
+		{
+			id: "llama3.1:8b",
+			name: "Llama 3.1 8B",
+			provider: "custom-local-llm",
+			reasoning: false,
+			contextWindow: 8192,
+			maxTokens: 2048,
+			input: ["text"],
+		},
+	];
+	const visionModels = [
+		{
+			id: "gpt-4o",
+			name: "GPT-4o",
+			provider: "openai",
+			reasoning: false,
+			contextWindow: 128000,
+			maxTokens: 4096,
+			input: ["text", "image"],
+		},
+	];
+
+	beforeEach(() => {
+		mockOpen.mockResolvedValue(["/home/test/photo.png"]);
+		mockInvoke(
+			async (cmd: string, args?: Record<string, unknown>) => {
+				if (cmd === "get_file_info") {
+					const path = args?.path as string;
+					const mimeType = path.endsWith(".png") ? "image/png" : "application/octet-stream";
+					const name = path.split("/").pop() ?? path;
+					return { name, size: 1024, mime_type: mimeType };
+				}
+				throw new Error(`unexpected invoke: ${cmd}`);
+			},
+		);
+	});
+
+	afterEach(() => {
+		cleanupMocks();
+	});
+
+	it("shows warning when image file is attached with text-only model", async () => {
+		const user = userEvent.setup();
+		render(
+			<MessageInput
+				onSend={vi.fn()}
+				models={textOnlyModels}
+				currentModelId="custom-local-llm/llama3.1:8b"
+			/>,
+		);
+
+		await user.click(screen.getByLabelText("Attach files"));
+		await screen.findByText(/does not support images/i);
+	});
+
+	it("does not show warning when image file is attached with vision model", async () => {
+		const user = userEvent.setup();
+		render(
+			<MessageInput
+				onSend={vi.fn()}
+				models={visionModels}
+				currentModelId="openai/gpt-4o"
+			/>,
+		);
+
+		await user.click(screen.getByLabelText("Attach files"));
+		expect(screen.queryByText(/does not support images/i)).not.toBeInTheDocument();
+	});
+
+	it("does not show warning when no models prop is passed (assumes image support)", async () => {
+		const user = userEvent.setup();
+		render(<MessageInput onSend={vi.fn()} />);
+
+		await user.click(screen.getByLabelText("Attach files"));
+		expect(screen.queryByText(/does not support images/i)).not.toBeInTheDocument();
 	});
 });

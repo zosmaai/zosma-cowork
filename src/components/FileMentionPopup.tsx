@@ -6,6 +6,7 @@ interface FileMentionPopupProps {
 	selectedIndex: number;
 	query: string;
 	breadcrumb: string;
+	loading: boolean;
 	onSelectIndex: (index: number) => void;
 	onSelect: (entry: FileEntry) => void;
 	anchorRect: { top: number; left: number } | null;
@@ -22,6 +23,7 @@ export function FileMentionPopup({
 	selectedIndex,
 	query,
 	breadcrumb,
+	loading,
 	onSelect,
 	anchorRect,
 }: FileMentionPopupProps) {
@@ -37,9 +39,17 @@ export function FileMentionPopup({
 					{breadcrumb}
 				</div>
 			)}
-			{entries.length === 0 && query ? (
+			{loading ? (
 				<div className="px-2 py-3 text-xs text-muted-foreground text-center">
-					No matches
+					Loading workspace files…
+				</div>
+			) : entries.length === 0 && query ? (
+				<div className="px-2 py-3 text-xs text-muted-foreground text-center">
+					No matches for <span className="font-mono">{query}</span>
+				</div>
+			) : entries.length === 0 && !query ? (
+				<div className="px-2 py-3 text-xs text-muted-foreground text-center">
+					No files in workspace
 				</div>
 			) : (
 				entries.map((entry, i) => (
