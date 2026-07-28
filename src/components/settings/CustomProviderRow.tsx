@@ -91,6 +91,7 @@ export function CustomProviderRow({ onChange }: Props) {
 	}, [refresh]);
 
 	// Clear the last test result when the URL changes so the button resets.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on URL change
 	useEffect(() => {
 		setTestResult(null);
 	}, [baseUrl]);

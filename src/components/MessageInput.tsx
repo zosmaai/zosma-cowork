@@ -1,7 +1,7 @@
 import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { useFileMention } from "@/hooks/useFileMention";
 import { trackEvent } from "@/lib/telemetry";
-import { findModel, modelKey } from "@/lib/model-key";
+import { findModel } from "@/lib/model-key";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";

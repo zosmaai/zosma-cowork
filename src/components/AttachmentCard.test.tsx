@@ -107,7 +107,7 @@ describe("AttachmentCard", () => {
 	});
 
 	it("truncates long filenames in the display", () => {
-		const longName = "a".repeat(60) + ".txt";
+		const longName = `${'a'.repeat(60)}.txt`;
 		render(
 			<AttachmentCard
 				path={`/${longName}`}

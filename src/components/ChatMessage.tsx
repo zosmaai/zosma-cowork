@@ -47,8 +47,7 @@ function extractFilePath(content: string): string | null {
 function parseInlineAttachments(content: string): FileAttachment[] {
 	const regex = /\[File:\s+([^\]]+)\]\s+(\S+)\s+(\d+)\s+(\S+)/g;
 	const attachments: FileAttachment[] = [];
-	let match;
-	while ((match = regex.exec(content)) !== null) {
+	for (const match of content.matchAll(regex)) {
 		attachments.push({
 			path: match[1],
 			name: match[2],
