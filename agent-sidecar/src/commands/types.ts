@@ -18,49 +18,58 @@ export interface GetModelsCommand {
 	id: string;
 }
 
-export interface GetActiveModelCommand {
+interface SessionBoundCommand {
+	sessionFile: string;
+}
+
+export interface GetActiveModelCommand extends SessionBoundCommand {
 	type: "get_active_model";
 	id: string;
 }
 
-export interface PromptCommand {
+export interface PromptCommand extends SessionBoundCommand {
 	type: "prompt";
 	id: string;
 	text: string;
 	_origin?: "remote";
 }
 
-export interface AbortCommand {
+export interface AbortCommand extends SessionBoundCommand {
 	type: "abort";
 	id: string;
 }
 
-export interface SteerCommand {
+export interface SteerCommand extends SessionBoundCommand {
 	type: "steer";
 	id: string;
 	text: string;
 	images?: SteerImage[];
 }
 
-export interface FollowUpCommand {
+export interface FollowUpCommand extends SessionBoundCommand {
 	type: "follow_up";
 	id: string;
 	text: string;
 	images?: SteerImage[];
 }
 
-export interface ClearQueueCommand {
+export interface ClearQueueCommand extends SessionBoundCommand {
 	type: "clear_queue";
 	id: string;
 }
 
 export type SteerImage = import("../steering.js").ImageAttachment;
 
-export interface SetModelCommand {
+export interface SetModelCommand extends SessionBoundCommand {
 	type: "set_model";
 	id: string;
 	provider: string;
 	model: string;
+}
+
+export interface GetWorkspaceCommand {
+	type: "get_workspace";
+	id: string;
 }
 
 // ── Auth commands ──────────────────────────────────────────────────────────
@@ -224,6 +233,8 @@ export interface GetWorkspaceCommand {
 export interface ListSessionsCommand {
 	type: "list_sessions";
 	id: string;
+	allFolders?: boolean;
+	cwd?: string;
 }
 
 export interface SaveSessionCommand {
@@ -265,6 +276,8 @@ export interface SearchSessionsCommand {
 	type: "search_sessions";
 	id: string;
 	query: string;
+	allFolders?: boolean;
+	cwd?: string;
 }
 
 // ── Settings / Instructions commands ───────────────────────────────────────

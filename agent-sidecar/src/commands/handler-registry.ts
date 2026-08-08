@@ -99,25 +99,20 @@ import {
 import { send, log, logWarn } from "../protocol.js";
 import type { Command } from "./types.js";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { SessionRuntimeManager } from "../session-runtime-manager.js";
 
 export interface HandlerDependencies {
 	// Agent infrastructure
 	initialized: boolean;
 	modelRegistry: ModelRegistry;
-	session: any;
 	authStorage: any;
 	settingsManager: any;
-	sessionManager: any;
-	resourceLoader: any;
+
+	// Runtime management
+	runtimeManager: SessionRuntimeManager;
 
 	// Directories
 	zosmaDir: string;
-	workspaceCwd: string;
-
-	// Prompt scheduling
-	promptScheduler: {
-		schedule: (task: () => Promise<void>, onError: (err: unknown) => void) => void;
-	};
 
 	// OAuth state
 	oauthAbort: AbortController | null;
@@ -126,16 +121,10 @@ export interface HandlerDependencies {
 
 	// Functions
 	initAgent: (zosmaDir: string, workspace?: string) => Promise<void>;
-	buildResourceLoader: (cwd: string, opts?: any) => Promise<any>;
-	bindExtensionUi: (session: any) => Promise<void>;
 	resolveUiResponse: (response: any) => void;
 
 	// State mutation helpers
 	setInitialized: (v: boolean) => void;
-	setSession: (s: any) => void;
-	setSessionManager: (sm: any) => void;
-	setResourceLoader: (rl: any) => void;
-	setWorkspaceCwd: (cwd: string) => void;
 	setOauthAbort: (ac: AbortController | null) => void;
 	setOauthInflight: (p: Promise<void> | null) => void;
 	setGoogleConsentAbort: (ac: AbortController | null) => void;
