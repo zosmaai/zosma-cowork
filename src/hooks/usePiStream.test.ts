@@ -26,6 +26,28 @@ describe("errorFromFinalMessage", () => {
 });
 
 describe("streamReducer — single bubble per agent run", () => {
+	it("START_STREAM preserves hydrated history and appends the new prompt", () => {
+		const saved = run([
+			{ type: "HYDRATE_SESSION", snapshot: {
+				sessionFile: "/s/a.jsonl",
+				mode: "chat",
+				cwd: "/work",
+				messages: [
+					{ id: "h1", role: "assistant", content: "Saved history", timestamp: 1 },
+				],
+				isRunning: false,
+				status: "idle",
+				queue: { steering: ["steer"], followUp: ["later"] },
+			} as never },
+			{ type: "START_STREAM", prompt: "new prompt" },
+		]);
+		// Saved history remains BEFORE the new user prompt.
+		expect(saved.messages.map((m) => m.content)).toEqual(["Saved history", "new prompt"]);
+		expect(saved.messages[0].role).toBe("assistant");
+		expect(saved.messages[1].role).toBe("user");
+		expect(saved.isRunning).toBe(true);
+	});
+
 	it("clubs a multi-step run (think→tool→think→answer) into ONE assistant message", () => {
 		const state = run([
 			{ type: "START_STREAM", prompt: "What projects I have?" },

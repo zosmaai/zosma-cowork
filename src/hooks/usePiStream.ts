@@ -2,15 +2,15 @@ import type { ChatMessage, ToolCallInfo } from "@/types";
 import { log } from "../lib/log";
 import type {
 	PiErrorEvent,
-	PiEvent,
 	PiMessageUpdateEvent,
 	PiToolExecutionEndEvent,
 	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
+import type { SessionEventEnvelope, SessionSnapshot, SessionWireError } from "@/types/session-runtime";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 
 /**
  * Snapshot of the agent session's pending message queue (#201 PR 3).
@@ -37,6 +37,8 @@ export interface StreamState {
 	isRunning: boolean;
 	status: "idle" | "thinking" | "tool_call" | "responding" | "error";
 	error: string | null;
+	/** Structured form of the terminal error (hydration + ErrorBanner). */
+	sessionError: SessionWireError | null;
 	/** Pending steer + follow-up messages — see {@link QueueSnapshot}. */
 	queue: QueueSnapshot;
 	/**
@@ -103,6 +105,11 @@ export type StreamAction =
 	| { type: "RESET" }
 	| { type: "CLEAR_MESSAGES" }
 	/**
+	 * Adopt a full sidecar snapshot (ready/new/load). Replaces the reducer's
+	 * transcript, queue, status, running state, and structured error.
+	 */
+	| { type: "HYDRATE_SESSION"; snapshot: SessionSnapshot }
+	/**
 	 * Reconciling action — dispatched on every `queue_update` event from
 	 * the sidecar. Replaces the entire queue snapshot (no merge: the
 	 * SDK is the source of truth).
@@ -151,6 +158,7 @@ export const INITIAL_STATE: StreamState = {
 	isRunning: false,
 	status: "idle",
 	error: null,
+	sessionError: null,
 	queue: { steering: [], followUp: [] },
 	streamSegments: [],
 	queuedKinds: {},
@@ -185,18 +193,14 @@ export const INITIAL_TOOL_PHASE: ToolPhase | null = null;
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
 	switch (action.type) {
 		case "START_STREAM":
+			// Preserve the persisted transcript (hydrated history) and append the
+			// new user prompt; reset only turn-local fields so history survives.
 			return {
-				...INITIAL_STATE,
+				...state,
 				isRunning: true,
 				status: "thinking",
-				messages: [
-					{
-						id: crypto.randomUUID(),
-						role: "user",
-						content: action.prompt,
-						timestamp: Date.now(),
-					},
-				],
+				error: null,
+				sessionError: null,
 				streamingMessage: {
 					id: crypto.randomUUID(),
 					role: "assistant",
@@ -206,6 +210,29 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					toolCalls: [],
 					timestamp: Date.now(),
 				},
+				streamSegments: [],
+				promptEchoConsumed: false,
+				messages: [
+					...state.messages,
+					{
+						id: crypto.randomUUID(),
+						role: "user",
+						content: action.prompt,
+						timestamp: Date.now(),
+					},
+				],
+			};
+
+		case "HYDRATE_SESSION":
+			// Adopt a full sidecar snapshot into the single active reducer.
+			return {
+				...INITIAL_STATE,
+				messages: action.snapshot.messages,
+				isRunning: action.snapshot.isRunning,
+				status: action.snapshot.status,
+				error: action.snapshot.error?.message ?? null,
+				sessionError: action.snapshot.error ?? null,
+				queue: action.snapshot.queue,
 			};
 
 		/**
@@ -509,7 +536,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "CLEAR_MESSAGES":
 			return state.error
-				? { ...INITIAL_STATE, error: state.error, status: "error" }
+				? { ...INITIAL_STATE, error: state.error, sessionError: state.sessionError, status: "error" }
 				: INITIAL_STATE;
 
 		case "QUEUE_UPDATE": {
@@ -568,16 +595,44 @@ function extractToolCallInfo(tc: {
 	};
 }
 
-export function usePiStream() {
+export function usePiStream(activeSessionFile: string | null) {
 	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
 	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
 
-	const startStream = useCallback(async (text: string) => {
+	// Current-session + generation guards: an aborted A channel can never
+	// mutate the reducer after B is hydrated, even though the late envelope
+	// correctly says A.
+	const activeSessionRef = useRef(activeSessionFile);
+	const generationRef = useRef(0);
+
+	// Keep the ref in sync for active-session deletion/reset paths.
+	useLayoutEffect(() => {
+		activeSessionRef.current = activeSessionFile;
+	}, [activeSessionFile]);
+
+	const hydrateSession = useCallback((snapshot: SessionSnapshot) => {
+		activeSessionRef.current = snapshot.sessionFile;
+		generationRef.current += 1;
+		setToolPhase(null);
+		dispatch({ type: "HYDRATE_SESSION", snapshot });
+	}, []);
+
+	const startStream = useCallback(async (sessionFile: string, text: string) => {
+		activeSessionRef.current = sessionFile;
+		const generation = ++generationRef.current;
 		dispatch({ type: "START_STREAM", prompt: text });
 
-		const channel = new Channel<PiEvent>();
+		const channel = new Channel<SessionEventEnvelope>();
 
-		channel.onmessage = (event: PiEvent) => {
+		channel.onmessage = (envelope: SessionEventEnvelope) => {
+			if (
+				envelope.sessionFile !== sessionFile ||
+				activeSessionRef.current !== sessionFile ||
+				generationRef.current !== generation
+			) {
+				return;
+			}
+			const event = envelope.event;
 			try {
 				switch (event.type) {
 					case "message_update": {
@@ -708,6 +763,22 @@ export function usePiStream() {
 						dispatch({ type: "STREAM_COMPLETE" });
 						break;
 
+					// Pi SDK session-level queue snapshot (#201 PR 3). Also flows
+					// via the global session_event listener; kept here for
+					// active-stream reconciliation (already session-filtered).
+					case "queue_update": {
+						const qe = event as unknown as {
+							steering?: string[];
+							followUp?: string[];
+						};
+						dispatch({
+							type: "QUEUE_UPDATE",
+							steering: qe.steering ?? [],
+							followUp: qe.followUp ?? [],
+						});
+						break;
+					}
+
 					case "error": {
 						const errEvent = event as PiErrorEvent;
 						// Prefer pi's structured payload (v0.3.0+) over the bare
@@ -724,24 +795,8 @@ export function usePiStream() {
 						});
 						break;
 					}
-
-					// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
-					// on every steer/follow-up enqueue, dequeue, and clear.
-					// The Rust layer also emits this globally (see
-					// `listen("queue_update")` below) so the queue stays in
-					// sync even when no prompt channel is active.
-					case "queue_update": {
-						const qe = event as unknown as {
-							steering?: string[];
-							followUp?: string[];
-						};
-						dispatch({
-							type: "QUEUE_UPDATE",
-							steering: qe.steering ?? [],
-							followUp: qe.followUp ?? [],
-						});
+					default:
 						break;
-					}
 				}
 			} catch (err) {
 				log.error("[cowork] Error processing event:", err, event);
@@ -749,7 +804,7 @@ export function usePiStream() {
 		};
 
 		try {
-			await invoke("send_prompt", { text, ch: channel });
+			await invoke("send_prompt", { sessionFile, text, ch: channel });
 		} catch (err) {
 			dispatch({
 				type: "STREAM_ERROR",
@@ -758,10 +813,10 @@ export function usePiStream() {
 		}
 	}, []);
 
-	const abortStream = useCallback(async () => {
+	const abortStream = useCallback(async (sessionFile: string) => {
 		dispatch({ type: "ABORT_STREAM" });
 		try {
-			await invoke("abort_prompt");
+			await invoke("abort_prompt", { sessionFile });
 		} catch {
 			// ignore
 		}
@@ -776,13 +831,13 @@ export function usePiStream() {
 	 * to surface a stack trace mid-conversation. Future PR may surface them
 	 * as a transient toast.
 	 */
-	const steerStream = useCallback(async (text: string) => {
+	const steerStream = useCallback(async (sessionFile: string, text: string) => {
 		// Optimistic: surface the user bubble immediately so the UI doesn't
 		// feel like the message vanished. The next queue_update event will
 		// reconcile (no-op if it matches; visible if SDK rejected text).
 		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text });
 		try {
-			await invoke("steer_prompt", { text });
+			await invoke("steer_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] steer_prompt rejected:", err);
 		}
@@ -793,10 +848,10 @@ export function usePiStream() {
 	 * Delivered after the agent finishes all current work. Same error
 	 * handling rationale as {@link steerStream}.
 	 */
-	const followUpStream = useCallback(async (text: string) => {
+	const followUpStream = useCallback(async (sessionFile: string, text: string) => {
 		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
 		try {
-			await invoke("follow_up_prompt", { text });
+			await invoke("follow_up_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] follow_up_prompt rejected:", err);
 		}
@@ -810,9 +865,9 @@ export function usePiStream() {
 	 * steerStream/followUpStream. Returns empty arrays on failure (so the
 	 * caller can render "nothing to edit" rather than crash).
 	 */
-	const clearQueue = useCallback(async (): Promise<QueueSnapshot> => {
+	const clearQueue = useCallback(async (sessionFile: string): Promise<QueueSnapshot> => {
 		try {
-			const raw = (await invoke("clear_queue")) as {
+			const raw = (await invoke("clear_queue", { sessionFile })) as {
 				steering?: string[];
 				followUp?: string[];
 			};
@@ -827,21 +882,24 @@ export function usePiStream() {
 	}, []);
 
 	/**
-	 * Global queue_update listener. The Rust event router emits
-	 * `queue_update` globally (separate from the prompt channel) so we
-	 * get queue mutations even when no prompt is active — e.g. a
-	 * follow-up dequeues right after STREAM_COMPLETE.
+	 * Global session_event listener. The Rust router emits every full session
+	 * envelope as `session_event`; we dispatch queue updates only when the
+	 * envelope belongs to the ACTIVE session (single-active Phase 1).
 	 */
-	// #268 — seed the reasoning level on mount and whenever the sidecar
-
 	useEffect(() => {
 		let unlisten: (() => void) | undefined;
-		listen<{ steering?: string[]; followUp?: string[] }>("queue_update", (evt) => {
-			const payload = evt.payload ?? {};
+		listen<SessionEventEnvelope>("session_event", (evt) => {
+			const envelope = evt.payload;
+			if (!envelope || envelope.sessionFile !== activeSessionRef.current) return;
+			if (envelope.event.type !== "queue_update") return;
+			const qe = envelope.event as unknown as {
+				steering?: string[];
+				followUp?: string[];
+			};
 			dispatch({
 				type: "QUEUE_UPDATE",
-				steering: payload.steering ?? [],
-				followUp: payload.followUp ?? [],
+				steering: qe.steering ?? [],
+				followUp: qe.followUp ?? [],
 			});
 		}).then((fn) => {
 			unlisten = fn;
@@ -853,6 +911,7 @@ export function usePiStream() {
 
 	return {
 		state,
+		hydrateSession,
 		startStream,
 		abortStream,
 		steerStream,

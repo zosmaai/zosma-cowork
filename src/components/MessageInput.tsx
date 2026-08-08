@@ -42,6 +42,8 @@ function calcMentionAnchor(
 }
 
 interface MessageInputProps {
+	/** Canonical session file for workspace file-mention lookups. */
+	sessionFile: string;
 	onSend: (message: string) => void;
 	disabled?: boolean;
 	modelLabel?: string;
@@ -110,6 +112,7 @@ export interface MessageInputHandle {
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 	(
 		{
+			sessionFile,
 			onSend,
 			disabled,
 			modelLabel,
@@ -137,7 +140,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
 		const [isListening, setIsListening] = useState(false);
 		const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
-		const mention = useFileMention();
+		const mention = useFileMention(sessionFile);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
 		const currentModel = useMemo(
 			() => (models && currentModelId ? findModel(models, currentModelId) : undefined),

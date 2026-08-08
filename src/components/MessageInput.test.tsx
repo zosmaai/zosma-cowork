@@ -18,14 +18,14 @@ describe("MessageInput file picker", () => {
 	});
 
 	it("renders file attach button", () => {
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 		expect(screen.getByLabelText("Attach files")).toBeInTheDocument();
 	});
 
 	it("opens file dialog on attach button click", async () => {
 		mockOpen.mockResolvedValue(["/home/test/doc.md"]);
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 
@@ -35,7 +35,7 @@ describe("MessageInput file picker", () => {
 	it("shows file chip after selection", async () => {
 		mockOpen.mockResolvedValue(["/home/test/doc.md"]);
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 
@@ -45,7 +45,7 @@ describe("MessageInput file picker", () => {
 	it("shows multiple file chips", async () => {
 		mockOpen.mockResolvedValue(["/home/test/a.ts", "/home/test/b.ts", "/home/test/c.ts"]);
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 
@@ -57,7 +57,7 @@ describe("MessageInput file picker", () => {
 	it("removes file chip on remove button click", async () => {
 		mockOpen.mockResolvedValue(["/home/test/doc.md", "/home/test/other.md"]);
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 		expect(screen.getByText("doc.md")).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe("MessageInput file picker", () => {
 		const onSend = vi.fn();
 		const user = userEvent.setup();
 
-		render(<MessageInput onSend={onSend} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={onSend} />);
 
 		// Attach file
 		await user.click(screen.getByLabelText("Attach files"));
@@ -99,7 +99,7 @@ describe("MessageInput file picker", () => {
 		const onSend = vi.fn();
 		const user = userEvent.setup();
 
-		render(<MessageInput onSend={onSend} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={onSend} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 		expect(screen.getByText("doc.md")).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("MessageInput file picker", () => {
 		const longName = `${"a".repeat(60)}.ts`;
 		mockOpen.mockResolvedValue([`/home/test/${longName}`]);
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 
@@ -132,7 +132,7 @@ describe("MessageInput draft (prompt templates)", () => {
 
 	it("fills the textarea with the draft text without sending", () => {
 		const onSend = vi.fn();
-		render(<MessageInput onSend={onSend} draft={{ text: "Draft prompt", nonce: 1 }} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={onSend} draft={{ text: "Draft prompt", nonce: 1 }} />);
 
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		expect(textarea.value).toBe("Draft prompt");
@@ -142,19 +142,19 @@ describe("MessageInput draft (prompt templates)", () => {
 
 	it("replaces the draft when the nonce changes", () => {
 		const { rerender } = render(
-			<MessageInput onSend={vi.fn()} draft={{ text: "First", nonce: 1 }} />,
+			<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} draft={{ text: "First", nonce: 1 }} />,
 		);
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		expect(textarea.value).toBe("First");
 
-		rerender(<MessageInput onSend={vi.fn()} draft={{ text: "Second", nonce: 2 }} />);
+		rerender(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} draft={{ text: "Second", nonce: 2 }} />);
 		expect(textarea.value).toBe("Second");
 	});
 
 	it("sends the draft text once the user submits", async () => {
 		const onSend = vi.fn();
 		const user = userEvent.setup();
-		render(<MessageInput onSend={onSend} draft={{ text: "Editable prompt", nonce: 1 }} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={onSend} draft={{ text: "Editable prompt", nonce: 1 }} />);
 
 		await user.click(screen.getByRole("button", { name: /send/i }));
 
@@ -210,6 +210,7 @@ describe("MessageInput image warning", () => {
 		const user = userEvent.setup();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				onSend={vi.fn()}
 				models={textOnlyModels}
 				currentModelId="custom-local-llm/llama3.1:8b"
@@ -224,6 +225,7 @@ describe("MessageInput image warning", () => {
 		const user = userEvent.setup();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				onSend={vi.fn()}
 				models={visionModels}
 				currentModelId="openai/gpt-4o"
@@ -236,7 +238,7 @@ describe("MessageInput image warning", () => {
 
 	it("does not show warning when no models prop is passed (assumes image support)", async () => {
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} />);
 
 		await user.click(screen.getByLabelText("Attach files"));
 		expect(screen.queryByText(/does not support images/i)).not.toBeInTheDocument();

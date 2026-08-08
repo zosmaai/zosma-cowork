@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { readDir } from "@tauri-apps/plugin-fs";
 
@@ -20,18 +20,23 @@ interface UseFileMentionReturn {
 	cancel: () => void;
 }
 
-let cachedEntries: FileEntry[] | null = null;
+/** Workspace root → entries cache, keyed per session's resolved cwd. */
+const workspaceCache = new Map<string, FileEntry[]>();
 
-async function getWorkspaceFiles(): Promise<FileEntry[]> {
-	if (cachedEntries) return cachedEntries;
-	const root: string = await invoke("get_workspace");
+async function getWorkspaceFiles(sessionFile: string): Promise<FileEntry[]> {
+	// The Rust relay maps get_workspace to the selected session's cwd string.
+	const root: string = await invoke<string>("get_workspace", { sessionFile });
+	if (!root) return [];
+	const cached = workspaceCache.get(root);
+	if (cached) return cached;
 	const entries = await readDir(root);
-	cachedEntries = entries.map((e) => ({
+	const mapped = entries.map((e) => ({
 		name: e.name,
 		path: `${root}/${e.name}`,
 		isDirectory: e.isDirectory,
 	}));
-	return cachedEntries;
+	workspaceCache.set(root, mapped);
+	return mapped;
 }
 
 function fuzzyFilter(entries: FileEntry[], query: string): FileEntry[] {
@@ -40,7 +45,7 @@ function fuzzyFilter(entries: FileEntry[], query: string): FileEntry[] {
 	return entries.filter((e) => e.name.toLowerCase().includes(lower));
 }
 
-export function useFileMention(): UseFileMentionReturn {
+export function useFileMention(sessionFile: string): UseFileMentionReturn {
 	const [state, setState] = useState<"idle" | "active">("idle");
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<FileEntry[]>([]);
@@ -48,14 +53,32 @@ export function useFileMention(): UseFileMentionReturn {
 	const [triggerPosition, setTriggerPosition] = useState<number | null>(null);
 	const [breadcrumb] = useState("");
 	const [loading, setLoading] = useState(true);
+	// Reset the workspace when the session changes (each session owns its cwd).
+	const sessionRef = useRef(sessionFile);
 
-	// Load workspace files once
+	// Load the selected session's workspace files; skip while empty
+	// (no active session yet — the top render boundary uses "").
 	useEffect(() => {
-		getWorkspaceFiles()
-			.then(setAllEntries)
+		if (!sessionFile) {
+			setLoading(false);
+			return;
+		}
+		sessionRef.current = sessionFile;
+		let cancelled = false;
+		setLoading(true);
+		getWorkspaceFiles(sessionFile)
+			.then((entries) => {
+				if (cancelled) return;
+				setAllEntries(entries);
+			})
 			.catch(() => {})
-			.finally(() => setLoading(false));
-	}, []);
+			.finally(() => {
+				if (!cancelled) setLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [sessionFile]);
 
 	const onInput = useCallback(
 		(value: string, cursorPos: number) => {

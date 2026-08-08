@@ -20,6 +20,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	it("renders queued steer and follow-up items as inline bubbles in the chat area", () => {
 		render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				messages={[{ id: "u1", role: "user", content: "Tell me a big story", timestamp: 1 }]}
@@ -41,6 +42,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 		// AI finishes current work, so they belong below the streaming bubble.
 		const { container } = render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				messages={[{ id: "u1", role: "user", content: "original prompt", timestamp: 1 }]}
@@ -64,6 +66,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	it("labels queued items with pi-style 'Steering:' / 'Follow-up:' inline prefix (no chunky badge)", () => {
 		render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				streamingMessage={{
@@ -86,6 +89,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	it("shows a single 'Ctrl+↑ to edit all queued messages' hint when queue is non-empty", () => {
 		render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				streamingMessage={{
@@ -109,6 +113,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 		// the data-testid="queued-thread" element.
 		const { container } = render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				streamingMessage={{
@@ -130,6 +135,7 @@ describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	it("does not render queued section when queue is empty", () => {
 		render(
 			<ChatView
+				sessionFile="/s.test.jsonl"
 				{...defaultProps}
 				isRunning={true}
 				streamingMessage={{
@@ -151,6 +157,7 @@ describe("ChatView in-thread find (#267)", () => {
 	afterEach(() => cleanupMocks());
 
 	const findProps = {
+		sessionFile: "/s.test.jsonl",
 		streamingMessage: null,
 		isRunning: false,
 		error: null,

@@ -37,6 +37,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 	it("streaming: queue affordance lives in the textarea placeholder (count + Ctrl+↑)", () => {
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				{...baseProps}
 				streaming
 				queue={{ steering: ["stop, do A", "actually B"], followUp: [] }}
@@ -51,7 +52,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 
 	it("streaming: total count appears in placeholder for follow-up only queue", () => {
 		render(
-			<MessageInput {...baseProps} streaming queue={{ steering: [], followUp: ["finally C"] }} />,
+			<MessageInput sessionFile="/s.test.jsonl" {...baseProps} streaming queue={{ steering: [], followUp: ["finally C"] }} />,
 		);
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		expect(textarea.placeholder).toMatch(/1 queued/i);
@@ -59,14 +60,14 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 
 	it("streaming: placeholder combines steer + follow-up counts into one total", () => {
 		render(
-			<MessageInput {...baseProps} streaming queue={{ steering: ["a", "b"], followUp: ["c"] }} />,
+			<MessageInput sessionFile="/s.test.jsonl" {...baseProps} streaming queue={{ steering: ["a", "b"], followUp: ["c"] }} />,
 		);
 		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
 		expect(textarea.placeholder).toMatch(/3 queued/i);
 	});
 
 	it("idle: queue chip is visible because a follow-up can outlive STREAM_COMPLETE", () => {
-		render(<MessageInput {...baseProps} queue={{ steering: [], followUp: ["finally C"] }} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" {...baseProps} queue={{ steering: [], followUp: ["finally C"] }} />);
 		const summary = screen.getByTestId("composer-queue-summary");
 		expect(summary.textContent).toMatch(/1 queued/i);
 		expect(summary.textContent).toMatch(/Ctrl\+↑/i);
@@ -74,10 +75,10 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 
 	it("hides the queue summary when both queues are empty (idle and streaming)", () => {
 		const { rerender } = render(
-			<MessageInput {...baseProps} streaming queue={{ steering: [], followUp: [] }} />,
+			<MessageInput sessionFile="/s.test.jsonl" {...baseProps} streaming queue={{ steering: [], followUp: [] }} />,
 		);
 		expect(screen.queryByText(/queued/i)).not.toBeInTheDocument();
-		rerender(<MessageInput {...baseProps} queue={{ steering: [], followUp: [] }} />);
+		rerender(<MessageInput sessionFile="/s.test.jsonl" {...baseProps} queue={{ steering: [], followUp: [] }} />);
 		expect(screen.queryByText(/queued/i)).not.toBeInTheDocument();
 	});
 
@@ -86,6 +87,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 		const onEditQueue = vi.fn();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				{...baseProps}
 				onEditQueue={onEditQueue}
 				streaming
@@ -103,6 +105,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 		const onEditQueue = vi.fn();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				{...baseProps}
 				onEditQueue={onEditQueue}
 				streaming
@@ -117,7 +120,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 
 	it("Ctrl+ArrowUp is a no-op when onEditQueue handler is missing (graceful)", async () => {
 		const user = userEvent.setup();
-		render(<MessageInput onSend={vi.fn()} streaming queue={{ steering: ["x"], followUp: [] }} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" onSend={vi.fn()} streaming queue={{ steering: ["x"], followUp: [] }} />);
 		const textarea = screen.getByRole("textbox");
 		await user.click(textarea);
 		// Should not throw.
@@ -129,6 +132,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 		const onEditQueue = vi.fn();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				{...baseProps}
 				onEditQueue={onEditQueue}
 				streaming
@@ -150,6 +154,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 		const onEditQueue = vi.fn();
 		render(
 			<MessageInput
+				sessionFile="/s.test.jsonl"
 				{...baseProps}
 				onEditQueue={onEditQueue}
 				streaming={false}
@@ -165,7 +170,7 @@ describe("MessageInput — queue affordances (#201 PR 3)", () => {
 	it("queue summary is hidden during hard-disabled state (no model / sidecar not ready)", () => {
 		// `disabled` means a hard block. Showing "N queued — Ctrl+↑ to
 		// edit" while the user can't act on it is just confusing.
-		render(<MessageInput {...baseProps} disabled queue={{ steering: ["x"], followUp: [] }} />);
+		render(<MessageInput sessionFile="/s.test.jsonl" {...baseProps} disabled queue={{ steering: ["x"], followUp: [] }} />);
 		expect(screen.queryByText(/queued/i)).not.toBeInTheDocument();
 	});
 });

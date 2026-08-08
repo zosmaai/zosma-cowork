@@ -12,6 +12,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
 
 interface ChatViewProps {
+	/** Canonical session file of the active session (threaded to composer). */
+	sessionFile: string;
 	messages: ChatMessage[];
 	streamingMessage: ChatMessage | null;
 	isRunning: boolean;
@@ -44,6 +46,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({
+	sessionFile,
 	messages,
 	streamingMessage,
 	isRunning,
@@ -364,6 +367,7 @@ export function ChatView({
 			>
 				<MessageInput
 					key={sessionKey}
+					sessionFile={sessionFile}
 					ref={inputRef}
 					onSend={onSend}
 					/* Issue #201: while streaming, the input stays enabled and
