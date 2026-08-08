@@ -14,10 +14,18 @@
 import { EventEmitter } from "node:events";
 
 export type BusEvent =
-	| { type: "event"; data: unknown }
-	| { type: "result"; id: string; data: unknown }
-	| { type: "done"; id: string }
-	| { type: "error"; id: string; message: string }
+	| { type: "event"; data: Record<string, unknown> }
+	| { type: "result"; id: string; data: unknown; sessionFile?: string }
+	| { type: "done"; id: string; sessionFile?: string }
+	| {
+			type: "error";
+			id: string;
+			message: string;
+			sessionFile?: string;
+			code?: string;
+			retryable?: boolean;
+			details?: string;
+		}
 	| { type: "ready" };
 
 class EventBus {
