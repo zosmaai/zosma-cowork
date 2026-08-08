@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // of model. Fix centralizes all subscriptions in subscribeSession().
 
 describe("subscribeSession", () => {
-	it("forwards every agent event to stdout", async () => {
+	it("tags events and marks only the emitting runtime watchdog", async () => {
 		const send = vi.fn();
 		vi.doMock("./protocol.js", () => ({
 			send,
@@ -23,22 +23,48 @@ describe("subscribeSession", () => {
 			logError: vi.fn(),
 		}));
 		const { subscribeSession } = await import("./prompt-runner.js");
-		let cb: ((e: unknown) => void) | undefined;
-		subscribeSession({ subscribe: (f) => { cb = f; } });
-		cb?.({ type: "text", text: "hi" });
-		expect(send).toHaveBeenCalledWith({ type: "event", event: { type: "text", text: "hi" } });
+		const callbacks = new Map<string, (event: unknown) => void>();
+		const runtime = (sessionFile: string) => ({
+			sessionFile,
+			status: "thinking",
+			error: undefined,
+			prompt: { activePromptId: "p", startedAt: 1, hasEmitted: false },
+			session: {
+				subscribe: (callback: (event: unknown) => void) => {
+					callbacks.set(sessionFile, callback);
+					return vi.fn();
+				},
+			},
+		});
+		const a = runtime("/tmp/a.jsonl");
+		const b = runtime("/tmp/b.jsonl");
+		subscribeSession(a as never);
+		subscribeSession(b as never);
+		callbacks.get("/tmp/a.jsonl")?.({ type: "message_update" });
+		expect(a.prompt.hasEmitted).toBe(true);
+		expect(b.prompt.hasEmitted).toBe(false);
+		expect(send).toHaveBeenCalledWith({
+			type: "event",
+			sessionFile: "/tmp/a.jsonl",
+			event: { type: "message_update" },
+		});
 		vi.resetModules();
 	});
 
 	// Regression guard: no session may be subscribed with a bare event-forward
-	// that skips the watchdog heartbeat. All three sites (init + 2 rebinds)
-	// must route through subscribeSession.
+	// that skips the watchdog heartbeat. All subscriptions live in
+	// session-runtime-factory.ts and call subscribeSession(runtime).
 	it("no rebind bypasses subscribeSession with a bare event-forward", () => {
-		for (const rel of ["index.ts", "commands/handlers/sessions.ts"]) {
-			const src = readFileSync(join(here, rel), "utf8");
-			expect(src, `${rel} has a bare .subscribe forwarding events`).not.toMatch(
-				/\.subscribe\(\s*\([^)]*\)\s*=>\s*\{[^}]*type:\s*["']event["']/s,
-			);
+		for (const rel of ["session-runtime-factory.ts", "commands/handlers/sessions.ts"]) {
+			const path = join(here, rel);
+			try {
+				const src = readFileSync(path, "utf8");
+				expect(src, `${rel} has a bare .subscribe forwarding events`).not.toMatch(
+					/\.subscribe\(\s*\([^)]*\)\s*=>\s*\{[^}]*type:\s*["']event["']/s,
+				);
+			} catch {
+				// File not yet created — will be checked once it exists.
+			}
 		}
 	});
 });

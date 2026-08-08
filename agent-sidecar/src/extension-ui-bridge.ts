@@ -7,6 +7,8 @@
  * when the frontend posts back a `ui_response` command on stdin.
  *
  * Mirrors pi's RPC Extension-UI protocol but routes to React dialogs.
+ * Every UI request is tagged with the sessionFile it originated from so
+ * the frontend can dismiss stale dialogs when a session is disposed.
  */
 
 import { randomUUID } from "node:crypto";
@@ -19,6 +21,7 @@ import type {
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import { send } from "./protocol.js";
+import { makeSessionEvent } from "./session-protocol.js";
 
 // ── Pending UI response tracking ──────────────────────────────────────────
 
@@ -28,25 +31,44 @@ export interface PendingUiResponse {
 	cancelled?: boolean;
 }
 
-const pendingUiRequests = new Map<string, (response: PendingUiResponse) => void>();
+interface PendingUiRequest {
+	sessionFile: string;
+	resolve: (response: PendingUiResponse) => void;
+}
+
+const pendingUiRequests = new Map<string, PendingUiRequest>();
 
 /** Resolve a pending ctx.ui dialog from a `ui_response` stdin command. */
 export function resolveUiResponse(response: PendingUiResponse & { id: string }): void {
-	const resolve = pendingUiRequests.get(response.id);
-	if (resolve) {
+	const pending = pendingUiRequests.get(response.id);
+	if (pending) {
 		pendingUiRequests.delete(response.id);
-		resolve(response);
+		pending.resolve(response);
 	}
 }
 
-/** Emit a UI request wrapped in the standard event envelope. */
-function emitUiRequest(payload: Record<string, unknown>): void {
-	send({ type: "event", event: { kind: "ui_request", ...payload } });
+/** Emit a session-tagged UI request wrapped in the standard event envelope. */
+function emitUiRequest(sessionFile: string, payload: Record<string, unknown>): void {
+	send(makeSessionEvent(sessionFile, { kind: "ui_request", ...payload }));
 }
 
 /** Tell the frontend to dismiss a dialog the sidecar resolved on its own. */
-function emitUiCancel(id: string): void {
-	send({ type: "event", event: { kind: "ui_cancel", id } });
+function emitUiCancel(sessionFile: string, id: string): void {
+	send(makeSessionEvent(sessionFile, { kind: "ui_cancel", id }));
+}
+
+/**
+ * Cancel every pending UI dialog belonging to a session (runtime disposal).
+ * Emits session-tagged ui_cancel events so the frontend dismisses stale
+ * dialogs instead of leaving them visible for a disposed session.
+ */
+export function cancelSessionUiRequests(sessionFile: string): void {
+	for (const [id, pending] of pendingUiRequests) {
+		if (pending.sessionFile !== sessionFile) continue;
+		pendingUiRequests.delete(id);
+		emitUiCancel(sessionFile, id);
+		pending.resolve({ cancelled: true });
+	}
 }
 
 // ── Minimal Theme stub ────────────────────────────────────────────────────
@@ -69,6 +91,7 @@ const MINIMAL_THEME = {
 // ── Dialog helper ─────────────────────────────────────────────────────────
 
 function createUiDialog<T>(
+	sessionFile: string,
 	opts: ExtensionUIDialogOptions | undefined,
 	defaultValue: T,
 	request: Record<string, unknown>,
@@ -85,31 +108,32 @@ function createUiDialog<T>(
 		};
 		const onAbort = () => {
 			cleanup();
-			emitUiCancel(id);
+			emitUiCancel(sessionFile, id);
 			resolve(defaultValue);
 		};
 		opts?.signal?.addEventListener("abort", onAbort, { once: true });
 		if (opts?.timeout) {
 			timeoutId = setTimeout(() => {
 				cleanup();
-				emitUiCancel(id);
+				emitUiCancel(sessionFile, id);
 				resolve(defaultValue);
 			}, opts.timeout);
 		}
-		pendingUiRequests.set(id, (response) => {
+		pendingUiRequests.set(id, { sessionFile, resolve: (response) => {
 			cleanup();
 			resolve(parse(response));
-		});
-		emitUiRequest({ id, ...request });
+		}});
+		emitUiRequest(sessionFile, { id, ...request });
 	});
 }
 
 // ── ExtensionUIContext factory ────────────────────────────────────────────
 
-function createUiContext(): ExtensionUIContext {
+function createUiContext(sessionFile: string): ExtensionUIContext {
 	return {
 		select: (title, options, opts) =>
 			createUiDialog<string | undefined>(
+				sessionFile,
 				opts,
 				undefined,
 				{ method: "select", title, options, timeout: opts?.timeout },
@@ -117,6 +141,7 @@ function createUiContext(): ExtensionUIContext {
 			),
 		confirm: (title, message, opts) =>
 			createUiDialog<boolean>(
+				sessionFile,
 				opts,
 				false,
 				{ method: "confirm", title, message, timeout: opts?.timeout },
@@ -124,6 +149,7 @@ function createUiContext(): ExtensionUIContext {
 			),
 		input: (title, placeholder, opts) =>
 			createUiDialog<string | undefined>(
+				sessionFile,
 				opts,
 				undefined,
 				{ method: "input", title, placeholder, timeout: opts?.timeout },
@@ -131,18 +157,19 @@ function createUiContext(): ExtensionUIContext {
 			),
 		editor: (title, prefill) =>
 			createUiDialog<string | undefined>(
+				sessionFile,
 				undefined,
 				undefined,
 				{ method: "editor", title, prefill },
 				(r) => (r.cancelled ? undefined : r.value),
 			),
 		notify: (message, type) =>
-			emitUiRequest({ id: randomUUID(), method: "notify", message, notifyType: type }),
+			emitUiRequest(sessionFile, { id: randomUUID(), method: "notify", message, notifyType: type }),
 		setStatus: (key, text) =>
-			emitUiRequest({ id: randomUUID(), method: "setStatus", statusKey: key, statusText: text }),
+			emitUiRequest(sessionFile, { id: randomUUID(), method: "setStatus", statusKey: key, statusText: text }),
 		setWidget: (key, content, options) => {
 			if (content === undefined || Array.isArray(content)) {
-				emitUiRequest({
+				emitUiRequest(sessionFile, {
 					id: randomUUID(),
 					method: "setWidget",
 					widgetKey: key,
@@ -151,8 +178,8 @@ function createUiContext(): ExtensionUIContext {
 				});
 			}
 		},
-		setTitle: (title) => emitUiRequest({ id: randomUUID(), method: "setTitle", title }),
-		setEditorText: (text) => emitUiRequest({ id: randomUUID(), method: "set_editor_text", text }),
+		setTitle: (title) => emitUiRequest(sessionFile, { id: randomUUID(), method: "setTitle", title }),
+		setEditorText: (text) => emitUiRequest(sessionFile, { id: randomUUID(), method: "set_editor_text", text }),
 		pasteToEditor(text) {
 			this.setEditorText(text);
 		},
@@ -186,11 +213,12 @@ function createUiContext(): ExtensionUIContext {
  * `session_start` event, which previously never fired under Cowork.
  */
 export async function bindExtensionUi(
+	sessionFile: string,
 	session: {
 		bindExtensions: (opts: { uiContext: ExtensionUIContext }) => Promise<void>;
 	},
 ): Promise<void> {
-	await session.bindExtensions({ uiContext: createUiContext() });
+	await session.bindExtensions({ uiContext: createUiContext(sessionFile) });
 }
 
 // ── Whitelisted extension config file helpers ────────────────────────────
