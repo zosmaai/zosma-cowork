@@ -74,7 +74,7 @@ function makeDeps(runtimeManager: SessionRuntimeManager): HandlerDependencies {
 		runtimeManager,
 		initAgent: vi.fn(),
 		resolveUiResponse: vi.fn(),
-	} as HandlerDependencies;
+	} as unknown as HandlerDependencies;
 }
 
 describe("core command session isolation", () => {

@@ -67,11 +67,6 @@ export interface SetModelCommand extends SessionBoundCommand {
 	model: string;
 }
 
-export interface GetWorkspaceCommand {
-	type: "get_workspace";
-	id: string;
-}
-
 // ── Auth commands ──────────────────────────────────────────────────────────
 
 export interface SaveAuthCommand {
@@ -225,7 +220,7 @@ export interface NewSessionCommand {
 	cwd?: string;
 }
 
-export interface GetWorkspaceCommand {
+export interface GetWorkspaceCommand extends SessionBoundCommand {
 	type: "get_workspace";
 	id: string;
 }
