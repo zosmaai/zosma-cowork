@@ -61,6 +61,7 @@ function App() {
 
 	const {
 		state: streamState,
+		states: streamStates,
 		getSessionState,
 		hydrateSession,
 		ensureSession,
@@ -123,6 +124,8 @@ function App() {
 	}, [refreshOnboardingStatus]);
 	const announcementAuth = useZosmaAuth({ onComplete: handleAnnouncementComplete });
 	const [, setSidebarView] = useState("chats");
+	// Manual sidebar rail collapse (Phase 2). Default stays expanded.
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
@@ -790,17 +793,27 @@ function App() {
 		[activeSessionFile, ensureSession, getSessionState],
 	);
 
-	const sidebarSessions = sessionEntries.map((s) => ({
-		id: s.file,
-		title: s.title,
-		// Prefer a real content preview; fall back to a count for empty sessions.
-		lastMessage: s.preview?.trim() ? s.preview : `${s.messageCount} messages`,
-		timestamp: s.lastActivity || s.createdAt,
-		active: s.file === activeSessionFile,
-		folder: s.cwd,
-		pinned: s.pinned,
-		titleLocked: s.titleLocked,
-	}));
+	const sidebarSessions = sessionEntries.map((s) => {
+		const live = streamStates.get(s.file);
+		const runtimeStatus: "idle" | "running" | "error" = live?.isRunning
+			? "running"
+			: live?.status === "error" || live?.error
+				? "error"
+				: "idle";
+		return {
+			id: s.file,
+			title: s.title,
+			// Prefer a real content preview; fall back to a count for empty sessions.
+			lastMessage: s.preview?.trim() ? s.preview : `${s.messageCount} messages`,
+			timestamp: s.lastActivity || s.createdAt,
+			active: s.file === activeSessionFile,
+			folder: s.cwd,
+			pinned: s.pinned,
+			titleLocked: s.titleLocked,
+			runtimeStatus,
+			runtimeError: live?.error ?? undefined,
+		};
+	});
 
 	// Hide the app chrome (sidebar, mobile bars, share button) whenever the
 	// main pane is showing a full-screen state: onboarding, settings, or the
@@ -893,6 +906,8 @@ function App() {
 							allFolders={allFolders}
 							onToggleAllFolders={() => setAllFolders((v) => !v)}
 							onChangeView={handleChangeView}
+							collapsed={sidebarCollapsed}
+							onCollapsedChange={setSidebarCollapsed}
 						/>
 					</div>
 				</>

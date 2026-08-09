@@ -1,9 +1,11 @@
 import { Tooltip } from "@/components/ui/tooltip";
 import {
+	CircleAlert,
 	Folder,
 	FolderOpen,
 	FolderPlus,
 	Folders,
+	LoaderCircle,
 	MessagesSquare,
 	Pencil,
 	Pin,
@@ -25,6 +27,9 @@ interface Session {
 	pinned?: boolean;
 	/** Whether the title was manually set (kept for parity with the header). */
 	titleLocked?: boolean;
+	/** Live runtime state — independent from `active` (selected row). */
+	runtimeStatus?: "idle" | "running" | "error";
+	runtimeError?: string;
 }
 
 /** A deep-search hit: the matching session file + a contextual snippet. */
@@ -507,6 +512,18 @@ function SessionRow({
 					{/* Title */}
 					<span className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
 					>
+						{session.runtimeStatus === "running" && (
+							<LoaderCircle
+								className="w-3 h-3 shrink-0 text-primary animate-spin motion-reduce:animate-none"
+								aria-label={`${session.title} is running`}
+							/>
+						)}
+						{session.runtimeStatus === "error" && (
+							<CircleAlert
+								className="w-3 h-3 shrink-0 text-destructive"
+								aria-label={`${session.title} failed${session.runtimeError ? `: ${session.runtimeError}` : ""}`}
+							/>
+						)}
 						{session.pinned && (
 							<Pin className="w-2.5 h-2.5 shrink-0 text-primary/70" fill="currentColor" />
 						)}
