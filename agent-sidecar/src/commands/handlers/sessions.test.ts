@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	send: vi.fn(),
 	deletePiSession: vi.fn(() => true),
+	getPiSessionMode: vi.fn(() => "chat" as "chat" | "work"),
 	listPiSessions: vi.fn(async () => []),
 	renamePiSession: vi.fn(() => true),
 	searchPiSessions: vi.fn(async () => []),
+	setPiSessionMode: vi.fn(() => true),
 	setPiSessionPinned: vi.fn(() => true),
 	loadPiSession: vi.fn(() => ({
 		messages: [],
@@ -24,9 +26,11 @@ vi.mock("../../protocol.js", () => ({
 }));
 vi.mock("../../pi-session-store.js", () => ({
 	deletePiSession: mocks.deletePiSession,
+	getPiSessionMode: mocks.getPiSessionMode,
 	listPiSessions: mocks.listPiSessions,
 	renamePiSession: mocks.renamePiSession,
 	searchPiSessions: mocks.searchPiSessions,
+	setPiSessionMode: mocks.setPiSessionMode,
 	setPiSessionPinned: mocks.setPiSessionPinned,
 	loadPiSession: mocks.loadPiSession,
 	convertAgentMessagesToChat: (messages: unknown[]) => messages as Array<Record<string, unknown>>,
@@ -46,6 +50,7 @@ import {
 	handleReload,
 	handleRenameSession,
 	handleSearchSessions,
+	handleSetSessionMode,
 	handleSetSessionPinned,
 } from "./sessions.js";
 import type { HandlerDependencies } from "../handler-registry.js";
@@ -110,9 +115,11 @@ describe("session lifecycle handlers", () => {
 	beforeEach(async () => {
 		mocks.send.mockClear();
 		mocks.deletePiSession.mockClear();
+		mocks.getPiSessionMode.mockClear();
 		mocks.listPiSessions.mockClear();
 		mocks.searchPiSessions.mockClear();
 		mocks.renamePiSession.mockClear();
+		mocks.setPiSessionMode.mockClear();
 		mocks.setPiSessionPinned.mockClear();
 
 		runtimeA = fakeRuntime("/a.jsonl", "/work/a");
@@ -217,6 +224,85 @@ describe("session lifecycle handlers", () => {
 	it("reload delegates to initAgent", async () => {
 		await handleReload(deps, { type: "reload", id: "rl-1" });
 		expect(deps.initAgent).toHaveBeenCalledWith("/zosma");
+	});
+
+	it("returns persisted mode in a loaded runtime snapshot", async () => {
+		mocks.getPiSessionMode.mockReturnValue("work");
+		await handleLoadSession(deps, {
+			type: "load_session",
+			id: "l-work",
+			sessionFile: "/a.jsonl",
+		});
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			data: expect.objectContaining({ mode: "work" }),
+		}));
+	});
+
+	it("changes mode while the runtime has no conversation", async () => {
+		(runtimeManager as any).runtimes.set(runtimeA.sessionFile, runtimeA);
+		await handleSetSessionMode(deps, {
+			type: "set_session_mode",
+			id: "sm-1",
+			sessionFile: "/a.jsonl",
+			mode: "work",
+		});
+		expect(mocks.setPiSessionMode).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.stringContaining("a.jsonl"),
+			"work",
+		);
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			type: "result",
+			id: "sm-1",
+			data: { success: true, mode: "work" },
+		}));
+	});
+
+	it("rejects mode changes after the first user message", async () => {
+		(runtimeManager as any).runtimes.set(runtimeA.sessionFile, runtimeA);
+		(runtimeA.session.messages as unknown[]).push({ role: "user", content: "started" });
+		await handleSetSessionMode(deps, {
+			type: "set_session_mode",
+			id: "sm-locked",
+			sessionFile: "/a.jsonl",
+			mode: "work",
+		});
+		expect(mocks.setPiSessionMode).not.toHaveBeenCalled();
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			type: "error",
+			code: "session_mode_locked",
+			retryable: false,
+		}));
+	});
+
+	it("rejects mode changes while first-prompt streaming has begun", async () => {
+		(runtimeManager as any).runtimes.set(runtimeA.sessionFile, runtimeA);
+		(runtimeA.session as unknown as { isStreaming: boolean }).isStreaming = true;
+		await handleSetSessionMode(deps, {
+			type: "set_session_mode",
+			id: "sm-running",
+			sessionFile: "/a.jsonl",
+			mode: "work",
+		});
+		expect(mocks.setPiSessionMode).not.toHaveBeenCalled();
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			code: "session_mode_locked",
+		}));
+	});
+
+	it("rejects invalid mode input at the sidecar boundary", async () => {
+		(runtimeManager as any).runtimes.set(runtimeA.sessionFile, runtimeA);
+		await handleSetSessionMode(deps, {
+			type: "set_session_mode",
+			id: "sm-invalid",
+			sessionFile: "/a.jsonl",
+			mode: "project",
+		} as never);
+		expect(mocks.setPiSessionMode).not.toHaveBeenCalled();
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			code: "invalid_session_mode",
+			retryable: false,
+		}));
 	});
 });
 

@@ -73,6 +73,7 @@ import {
 	handleDeleteSession,
 	handleRenameSession,
 	handleSetSessionPinned,
+	handleSetSessionMode,
 	handleSearchSessions,
 } from "./handlers/sessions.js";
 
@@ -98,6 +99,7 @@ import {
 // ── Types ──────────────────────────────────────────────────────────────────
 import { send, log, logWarn } from "../protocol.js";
 import type { Command } from "./types.js";
+import type { SetSessionModeCommand } from "./types.js";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { SessionRuntimeManager } from "../session-runtime-manager.js";
 
@@ -330,6 +332,10 @@ export function createHandler(deps: HandlerDependencies): (cmd: Command) => Prom
 
 			case "set_session_pinned":
 				await handleSetSessionPinned(deps, cmd as any);
+				break;
+
+			case "set_session_mode":
+				await handleSetSessionMode(deps, cmd as SetSessionModeCommand);
 				break;
 
 			case "search_sessions":

@@ -17,7 +17,10 @@ export type SessionErrorCode =
 	| "session_busy"
 	| "session_aborted"
 	| "session_interrupted"
-	| "provider_error";
+	| "provider_error"
+	| "invalid_session_mode"
+	| "session_mode_locked"
+	| "session_metadata_failed";
 
 export interface SessionWireError {
 	code: SessionErrorCode;

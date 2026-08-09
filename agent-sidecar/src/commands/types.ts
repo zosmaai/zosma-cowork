@@ -267,6 +267,12 @@ export interface SetSessionPinnedCommand {
 	pinned: boolean;
 }
 
+export interface SetSessionModeCommand extends SessionBoundCommand {
+	type: "set_session_mode";
+	id: string;
+	mode: import("../session-protocol.js").SessionMode;
+}
+
 export interface SearchSessionsCommand {
 	type: "search_sessions";
 	id: string;
@@ -473,6 +479,7 @@ export type Command =
 	| DeleteSessionCommand
 	| RenameSessionCommand
 	| SetSessionPinnedCommand
+	| SetSessionModeCommand
 	| SearchSessionsCommand
 	| NewSessionCommand
 	| GetWorkspaceCommand

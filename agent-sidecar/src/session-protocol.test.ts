@@ -55,6 +55,18 @@ describe("session protocol envelopes", () => {
 		expect(modes).toEqual(["chat", "work"]);
 	});
 
+	it.each([
+		["invalid_session_mode", false],
+		["session_mode_locked", false],
+		["session_metadata_failed", true],
+	] as const)("serializes %s", (code, retryable) => {
+		expect(makeSessionError("sm-1", "/a.jsonl", {
+			code,
+			message: code,
+			retryable,
+		})).toMatchObject({ code, retryable });
+	});
+
 	it("serializes an interrupted-session error without losing retryability", () => {
 		expect(makeSessionError("p-1", "/a.jsonl", {
 			code: "session_interrupted",

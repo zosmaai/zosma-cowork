@@ -86,7 +86,7 @@ describe("pi-session-store", () => {
 			expect(readMeta(dir).pinned).not.toContain("/p/a.jsonl");
 		});
 		it("tolerates a corrupt meta file", () => {
-			writeMeta(dir, { pinned: ["/x"], titles: {} });
+			writeMeta(dir, { pinned: ["/x"], titles: {}, modes: {} });
 			expect(readMeta(dir).pinned).toEqual(["/x"]);
 		});
 	});

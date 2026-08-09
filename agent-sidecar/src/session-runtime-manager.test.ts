@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createPromptScheduler } from "./prompt-scheduler.js";
 import {
 	SessionRuntimeManager,
+	snapshotRuntime,
 	type SessionRuntime,
 	type SessionRuntimeFactory,
 } from "./session-runtime-manager.js";
@@ -105,5 +106,13 @@ describe("SessionRuntimeManager", () => {
 		await disposing;
 		expect(loaded.dispose).toHaveBeenCalledOnce();
 		expect(manager.get("/tmp/a.jsonl")).toBeUndefined();
+	});
+
+	describe("snapshotRuntime", () => {
+		it("snapshots an explicit persisted mode without changing the default", () => {
+			const runtime = fakeRuntime("/tmp/a.jsonl");
+			expect(snapshotRuntime(runtime).mode).toBe("chat");
+			expect(snapshotRuntime(runtime, "work").mode).toBe("work");
+		});
 	});
 });

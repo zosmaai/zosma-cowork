@@ -836,6 +836,15 @@ fn build_clear_queue_payload(id: &str, session_file: &str) -> Value {
     })
 }
 
+fn build_set_session_mode_payload(id: &str, session_file: &str, mode: &str) -> Value {
+    serde_json::json!({
+        "type": "set_session_mode",
+        "id": id,
+        "sessionFile": session_file,
+        "mode": mode,
+    })
+}
+
 /// Build the JSONL payload sent to the sidecar for a `follow_up` command.
 /// See [`build_steer_payload`] for rationale.
 fn build_follow_up_payload(id: &str, session_file: &str, text: &str) -> Value {
@@ -1511,6 +1520,24 @@ async fn set_session_pinned(
             "sessionFile": session_file,
             "pinned": pinned,
         }),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+/// Set the durable Chat/Work mode for an empty session. The sidecar rejects
+/// any change once the first prompt has started, keeping mode a pre-first-
+/// prompt choice.
+#[tauri::command]
+async fn set_session_mode(
+    session_file: String,
+    mode: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("sm-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &build_set_session_mode_payload(&id, &session_file, &mode),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -2593,6 +2620,7 @@ pub fn run() {
             delete_session,
             rename_session,
             set_session_pinned,
+            set_session_mode,
             search_sessions,
             new_session,
             get_workspace,
@@ -2623,8 +2651,8 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload, fail_pending_requests, has_pi_state_files, is_fresh_start,
-        normalize_session_stream_message, PendingRequest,
+        build_set_session_mode_payload, build_steer_payload, fail_pending_requests,
+        has_pi_state_files, is_fresh_start, normalize_session_stream_message, PendingRequest,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -2748,6 +2776,19 @@ mod tests {
             obj.len(),
             3,
             "unexpected fields in clear_queue payload: {p}"
+        );
+    }
+
+    #[test]
+    fn set_session_mode_payload_preserves_identity_and_mode() {
+        assert_eq!(
+            build_set_session_mode_payload("sm-1", "/sessions/a.jsonl", "work"),
+            serde_json::json!({
+                "type": "set_session_mode",
+                "id": "sm-1",
+                "sessionFile": "/sessions/a.jsonl",
+                "mode": "work",
+            })
         );
     }
 

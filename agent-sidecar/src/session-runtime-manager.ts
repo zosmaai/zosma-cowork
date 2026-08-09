@@ -19,6 +19,7 @@ import { convertAgentMessagesToChat } from "./pi-session-store.js";
 import type { PromptScheduler } from "./prompt-scheduler.js";
 import type {
 	SessionErrorCode,
+	SessionMode,
 	SessionSnapshot,
 	SessionStatus,
 	SessionWireError,
@@ -80,11 +81,14 @@ export function canonicalSessionFile(sessionFile: string): string {
  * new_session, load_session, and ready payloads so the frontend hydrates
  * the full transcript, queue, status, and structured error in one shot.
  */
-export function snapshotRuntime(runtime: SessionRuntime): SessionSnapshot {
+export function snapshotRuntime(
+	runtime: SessionRuntime,
+	mode: SessionMode = "chat",
+): SessionSnapshot {
 	const model = runtime.session.model;
 	return {
 		sessionFile: runtime.sessionFile,
-		mode: "chat",
+		mode,
 		cwd: runtime.cwd,
 		messages: convertAgentMessagesToChat(runtime.session.messages as unknown[]),
 		isRunning:

@@ -11,14 +11,20 @@
 
 import { send, log } from "../../protocol.js";
 import { makeSessionDone, makeSessionError, makeSessionResult } from "../../session-protocol.js";
-import { snapshotRuntime } from "../../session-runtime-manager.js";
+import {
+	snapshotRuntime,
+	SessionRuntimeError,
+	type SessionRuntime,
+} from "../../session-runtime-manager.js";
 import type { HandlerDependencies } from "../handler-registry.js";
-import type { DeleteSessionCommand } from "../types.js";
+import type { DeleteSessionCommand, SetSessionModeCommand } from "../types.js";
 import { resolveWorkspace, defaultWorkspaceDir, piAgentDir } from "../../agent-init.js";
 import {
+	getPiSessionMode,
 	listPiSessions,
 	deletePiSession,
 	renamePiSession,
+	setPiSessionMode,
 	setPiSessionPinned,
 	searchPiSessions,
 } from "../../pi-session-store.js";
@@ -84,7 +90,8 @@ export async function handleLoadSession(deps: HandlerDependencies, cmd: any): Pr
 	try {
 		const runtime = await deps.runtimeManager.load(cmd.sessionFile);
 		log("load_session: runtime ready for %s", runtime.sessionFile);
-		send(makeSessionResult(cmd.id, runtime.sessionFile, snapshotRuntime(runtime)));
+		const mode = getPiSessionMode(piAgentDir(), runtime.sessionFile);
+		send(makeSessionResult(cmd.id, runtime.sessionFile, snapshotRuntime(runtime, mode)));
 	} catch (err) {
 		log(
 			"load_session failed for %s: %s",
@@ -128,6 +135,56 @@ export async function handleRenameSession(_deps: HandlerDependencies, cmd: any):
 export async function handleSetSessionPinned(_deps: HandlerDependencies, cmd: any): Promise<void> {
 	const ok = setPiSessionPinned(piAgentDir(), cmd.sessionFile, cmd.pinned);
 	send({ type: "result", id: cmd.id, data: { ok, pinned: cmd.pinned } });
+}
+
+export async function handleSetSessionMode(
+	deps: HandlerDependencies,
+	cmd: SetSessionModeCommand,
+): Promise<void> {
+	if (cmd.mode !== "chat" && cmd.mode !== "work") {
+		send(makeSessionError(cmd.id, cmd.sessionFile, {
+			code: "invalid_session_mode",
+			message: "Session mode must be chat or work",
+			retryable: false,
+		}));
+		return;
+	}
+
+	let runtime: SessionRuntime;
+	try {
+		runtime = deps.runtimeManager.require(cmd.sessionFile);
+	} catch (error) {
+		const runtimeError = error as SessionRuntimeError;
+		send(makeSessionError(cmd.id, cmd.sessionFile, {
+			code: runtimeError.code ?? "session_not_loaded",
+			message: runtimeError.message,
+			retryable: runtimeError.retryable ?? true,
+		}));
+		return;
+	}
+
+	if (runtime.session.isStreaming || runtime.session.messages.length > 0) {
+		send(makeSessionError(cmd.id, runtime.sessionFile, {
+			code: "session_mode_locked",
+			message: "Session mode is locked after the first prompt",
+			retryable: false,
+		}));
+		return;
+	}
+
+	try {
+		setPiSessionMode(piAgentDir(), runtime.sessionFile, cmd.mode);
+		send(makeSessionResult(cmd.id, runtime.sessionFile, {
+			success: true,
+			mode: cmd.mode,
+		}));
+	} catch (error) {
+		send(makeSessionError(cmd.id, runtime.sessionFile, {
+			code: "session_metadata_failed",
+			message: error instanceof Error ? error.message : String(error),
+			retryable: true,
+		}));
+	}
 }
 
 export async function handleSearchSessions(deps: HandlerDependencies, cmd: any): Promise<void> {
