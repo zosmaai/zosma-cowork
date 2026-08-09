@@ -2210,48 +2210,113 @@ async fn get_file_info(path: String) -> Result<FileInfo, String> {
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
-    // Per-platform browser opener. Previous implementation shelled out to
-    // `sh -c "xdg-open ... || open ... || start '' ..."` which silently
-    // fails on Windows: GUI Tauri processes don't have `sh` on PATH, and
-    // even when Git Bash is installed `start` is a cmd.exe builtin, not
-    // a real executable. That broke every OAuth flow (Claude Pro, GitHub
-    // Copilot, OpenAI Codex) on Windows — the UI stuck at "Opening
-    // browser…" with no error because the React side `.catch(() => {})`s
-    // the rejection.
+    open_target(&url)
+}
+
+/// Launch the platform browser/file-manager for an already-validated target.
+fn open_target(target: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let result = {
-        // `cmd /c start "" "<url>"`. Two things are load-bearing here:
-        //   1. The empty `""` is the window title `start` expects as its first
-        //      quoted arg.
-        //   2. The URL MUST be wrapped in double quotes, appended via `raw_arg`
-        //      so Rust doesn't re-escape it. Without the quotes, cmd.exe treats
-        //      `&` as a command separator and truncates the URL at the FIRST
-        //      `&` — so an OAuth URL like
-        //        …/auth?client_id=X&redirect_uri=…&response_type=code&scope=…
-        //      collapses to just `client_id=X`, and Google rejects it with
-        //      "Access blocked: Authorisation error — Required parameter is
-        //      missing: response_type" (Error 400: invalid_request). Quoting
-        //      also stops `%` in percent-encoded params being read as a cmd
-        //      variable reference. This mirrors how the `open` crate (used by
-        //      tauri-plugin-shell) opens URLs on Windows.
-        // CREATE_NO_WINDOW (0x08000000) prevents a brief console-window flash.
+        // `cmd /c start "" "<target>"`. Quoting prevents `&` being read as a
+        // command separator and `%` being read as a variable reference, and
+        // CREATE_NO_WINDOW (0x08000000) prevents a console-window flash.
         use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
             .args(["/c", "start", ""])
-            .raw_arg(format!("\"{url}\""))
+            .raw_arg(format!("\"{target}\""))
             .creation_flags(0x0800_0000)
             .status()
     };
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&url).status();
+    let result = std::process::Command::new("open").arg(target).status();
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&url).status();
+    let result = std::process::Command::new("xdg-open").arg(target).status();
 
     let st = result.map_err(|e| format!("open: {e}"))?;
     if !st.success() {
         return Err(format!("exit: {}", st));
     }
     Ok(())
+}
+
+const MAX_ARTIFACT_BYTES: u64 = 5 * 1024 * 1024;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtifactFile {
+    bytes: Vec<u8>,
+    mime_type: String,
+}
+
+fn canonical_workspace_file(workspace: &Path, path: &Path) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let file = std::fs::canonicalize(path).map_err(|_| "File unavailable".to_string())?;
+    if !file.starts_with(&root) || !file.is_file() {
+        return Err("File unavailable".to_string());
+    }
+    Ok(file)
+}
+
+fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<ArtifactFile, String> {
+    use std::io::Read;
+    let canonical = canonical_workspace_file(workspace, requested)?;
+    let mut handle = std::fs::File::open(&canonical).map_err(|_| "File unavailable".to_string())?;
+    if !handle
+        .metadata()
+        .map_err(|_| "File unavailable".to_string())?
+        .is_file()
+    {
+        return Err("File unavailable".to_string());
+    }
+    let mut bytes = Vec::new();
+    handle
+        .by_ref()
+        .take(MAX_ARTIFACT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "File unavailable".to_string())?;
+    if bytes.len() as u64 > MAX_ARTIFACT_BYTES {
+        return Err("File unavailable".to_string());
+    }
+    // Bind validation to the opened handle as far as std permits without a
+    // platform dependency: do not return bytes if the requested path changed
+    // after open/read. canonical_workspace_file also resolves symlink parents.
+    if canonical_workspace_file(workspace, requested)? != canonical {
+        return Err("File unavailable".to_string());
+    }
+    Ok(ArtifactFile {
+        mime_type: mime_guess::from_path(&canonical)
+            .first_or(mime_guess::mime::APPLICATION_OCTET_STREAM)
+            .to_string(),
+        bytes,
+    })
+}
+
+#[tauri::command]
+async fn read_workspace_artifact(path: String, workspace: String) -> Result<ArtifactFile, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_authorized_artifact(Path::new(&workspace), Path::new(&path))
+    })
+    .await
+    .map_err(|_| "File unavailable".to_string())?
+}
+
+fn canonical_workspace_parent(workspace: &Path, path: &Path) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let requested_parent = path
+        .parent()
+        .ok_or_else(|| "Folder unavailable".to_string())?;
+    let parent =
+        std::fs::canonicalize(requested_parent).map_err(|_| "Folder unavailable".to_string())?;
+    if !parent.starts_with(&root) || !parent.is_dir() {
+        return Err("Folder unavailable".to_string());
+    }
+    Ok(parent)
+}
+
+#[tauri::command]
+async fn open_workspace_folder(path: String, workspace: String) -> Result<(), String> {
+    let parent = canonical_workspace_parent(Path::new(&workspace), Path::new(&path))?;
+    open_target(parent.to_string_lossy().as_ref())
 }
 
 // ── Zosma Router Auth relay commands ────────────────────────────
@@ -2636,6 +2701,8 @@ pub fn run() {
             remove_skill,
             write_user_file,
             open_url,
+            read_workspace_artifact,
+            open_workspace_folder,
             get_file_info,
             crate::analytics::track_analytics_event,
             crate::analytics::set_analytics_enabled,
@@ -2651,12 +2718,97 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_set_session_mode_payload, build_steer_payload, fail_pending_requests,
-        has_pi_state_files, is_fresh_start, normalize_session_stream_message, PendingRequest,
+        build_set_session_mode_payload, build_steer_payload, canonical_workspace_file,
+        canonical_workspace_parent, fail_pending_requests, has_pi_state_files, is_fresh_start,
+        normalize_session_stream_message, read_authorized_artifact, PendingRequest,
+        MAX_ARTIFACT_BYTES,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
+
+    #[test]
+    fn workspace_artifact_guard_accepts_a_file_inside_root() {
+        let base = std::env::temp_dir().join(format!("cowork-artifact-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("report.md");
+        std::fs::write(&file, "ok").unwrap();
+        assert_eq!(
+            canonical_workspace_file(&root, &file).unwrap(),
+            std::fs::canonicalize(&file).unwrap()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_artifact_guard_rejects_parent_escape() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-escape-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = base.join("secret.txt");
+        std::fs::write(&outside, "no").unwrap();
+        assert!(canonical_workspace_file(&root, &outside).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_artifact_guard_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-symlink-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = base.join("secret.txt");
+        std::fs::write(&outside, "no").unwrap();
+        let link = root.join("linked.txt");
+        symlink(&outside, &link).unwrap();
+        assert!(canonical_workspace_file(&root, &link).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn authorized_artifact_read_rejects_oversized_files() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-size-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("big.txt");
+        std::fs::write(&file, vec![b'x'; (MAX_ARTIFACT_BYTES + 1) as usize]).unwrap();
+        let result = read_authorized_artifact(&root, &file);
+        assert!(result.is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_parent_guard_accepts_missing_file_inside_root() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-missing-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let missing = root.join("missing.md");
+        assert_eq!(
+            canonical_workspace_parent(&root, &missing).unwrap(),
+            std::fs::canonicalize(&root).unwrap()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_parent_guard_rejects_parent_escape() {
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-parent-escape-{}",
+            std::process::id()
+        ));
+        let root = base.join("workspace");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        assert!(canonical_workspace_parent(&root, &outside.join("missing.md")).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn fresh_agent_directory_has_no_pi_state() {

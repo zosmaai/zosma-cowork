@@ -22,14 +22,24 @@ import { ArtifactPreview } from "./ArtifactPreview";
 interface ToolCallTimelineProps {
 	toolCalls: ToolCallInfo[];
 	detailsExpanded?: boolean;
+	workspaceCwd?: string | null;
 }
 
-export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelineProps) {
+export function ToolCallTimeline({
+	toolCalls,
+	detailsExpanded,
+	workspaceCwd,
+}: ToolCallTimelineProps) {
 	if (toolCalls.length === 0) return null;
 	return (
 		<div className="flex flex-col gap-1 my-1.5">
 			{toolCalls.map((tc) => (
-				<ToolCallBlock key={tc.id} toolCall={tc} detailsExpanded={detailsExpanded} />
+				<ToolCallBlock
+					key={tc.id}
+					toolCall={tc}
+					detailsExpanded={detailsExpanded}
+					workspaceCwd={workspaceCwd}
+				/>
 			))}
 		</div>
 	);
@@ -40,7 +50,12 @@ export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelin
 function ToolCallBlock({
 	toolCall,
 	detailsExpanded,
-}: { toolCall: ToolCallInfo; detailsExpanded?: boolean }) {
+	workspaceCwd,
+}: {
+	toolCall: ToolCallInfo;
+	detailsExpanded?: boolean;
+	workspaceCwd?: string | null;
+}) {
 	const [localExpanded, setLocalExpanded] = useState(false);
 	const isRunning = toolCall.status === "running";
 	const isError = toolCall.status === "error";
@@ -62,7 +77,10 @@ function ToolCallBlock({
 
 	// Extract file path for artifact preview after completed write/edit tools
 	const artifactPath = extractWriteFilePath(toolCall);
-	const artifact = useArtifactLoader(artifactPath);
+	const load = useArtifactLoader(
+		artifactPath && workspaceCwd ? artifactPath : null,
+		workspaceCwd ?? "",
+	);
 
 	return (
 		<div
@@ -102,14 +120,17 @@ function ToolCallBlock({
 			)}
 
 			{/* Artifact preview (shown after completed write/edit tools) */}
-			{artifact && (
+			{load.artifact && (
 				<div className="px-2 pb-1.5">
 					<ArtifactPreview
-						filePath={artifact.filePath}
-						fileContent={artifact.fileContent}
-						artifactType={artifact.artifactType}
-						onOpenFolder={(dir) => {
-							invoke("open_url", { url: `file://${dir}` }).catch(() => {});
+						filePath={load.artifact.filePath}
+						fileContent={load.artifact.fileContent}
+						artifactType={load.artifact.artifactType}
+						onOpenFolder={() => {
+							invoke("open_workspace_folder", {
+								path: load.artifact.filePath,
+								workspace: workspaceCwd ?? "",
+							}).catch(() => {});
 						}}
 						onCopyPath={(path) => {
 							navigator.clipboard.writeText(path).catch(() => {});
@@ -578,7 +599,7 @@ function extractWriteFilePath(toolCall: ToolCallInfo): string | null {
 	if (toolCall.status !== "completed") return null;
 	if (toolCall.name !== "write" && toolCall.name !== "edit") return null;
 
-	const path = str(toolCall.args.path) || str(toolCall.args.file_path);
+	const path = toolCall.outputPath?.path || str(toolCall.args.path) || str(toolCall.args.file_path);
 	return path || null;
 }
 

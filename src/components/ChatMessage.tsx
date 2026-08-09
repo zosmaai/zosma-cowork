@@ -22,6 +22,8 @@ interface ChatMessageProps {
 	findTerm?: string;
 	/** Index (within THIS message) of the occurrence to mark active, if any. */
 	activeFindIndex?: number;
+	/** Active workspace used to authorize artifact previews. */
+	workspaceCwd?: string | null;
 }
 
 /**
@@ -64,6 +66,7 @@ export function ChatMessageItem({
 	models,
 	findTerm,
 	activeFindIndex,
+	workspaceCwd,
 }: ChatMessageProps) {
 	const [copied, setCopied] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -230,7 +233,11 @@ export function ChatMessageItem({
 						message.toolCalls &&
 						message.toolCalls.length > 0 &&
 						(detailsExpanded ? (
-							<ToolCallTimeline toolCalls={message.toolCalls} detailsExpanded={detailsExpanded} />
+							<ToolCallTimeline
+								toolCalls={message.toolCalls}
+								detailsExpanded={detailsExpanded}
+								workspaceCwd={workspaceCwd}
+							/>
 						) : message.isStreaming ? (
 							<ActivityBlock toolCalls={message.toolCalls} active />
 						) : (

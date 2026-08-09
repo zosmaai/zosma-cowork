@@ -332,6 +332,7 @@ export function ChatView({
 									message={msg}
 									detailsExpanded={detailsExpanded}
 									models={models}
+									workspaceCwd={workspaceCwd}
 									findTerm={isStreaming ? undefined : findTerm}
 									activeFindIndex={
 										activeEntry && activeEntry.messageId === msg.id

@@ -66,6 +66,60 @@ export function detectArtifactType(filePath: string): ArtifactType {
 	return "unknown";
 }
 
+export function sanitizeSvg(content: string): string | null {
+	const document = new DOMParser().parseFromString(content, "image/svg+xml");
+	if (document.querySelector("parsererror") || document.documentElement.localName !== "svg") {
+		return null;
+	}
+
+	for (const element of document.querySelectorAll("script, foreignObject, iframe, style")) {
+		element.remove();
+	}
+	for (const element of document.querySelectorAll("*")) {
+		for (const attribute of [...element.attributes]) {
+			const name = attribute.name.toLowerCase();
+			const value = attribute.value.trim();
+			if (
+				name.startsWith("on") ||
+				(name === "style" && /url\s*\(/i.test(value)) ||
+				((name === "href" || name === "xlink:href") &&
+					!value.startsWith("#") &&
+					!value.startsWith("data:image/"))
+			) {
+				element.removeAttribute(attribute.name);
+			}
+		}
+	}
+	return new XMLSerializer().serializeToString(document.documentElement);
+}
+
+export function sandboxedHtml(content: string): string {
+	const document = new DOMParser().parseFromString(content, "text/html");
+	for (const element of document.querySelectorAll("script, base, iframe, object, embed, form")) {
+		element.remove();
+	}
+	for (const meta of document.querySelectorAll("meta[http-equiv]")) {
+		if (meta.getAttribute("http-equiv")?.toLowerCase() === "refresh") meta.remove();
+	}
+	for (const element of document.querySelectorAll("a[href], area[href]")) {
+		element.removeAttribute("href");
+	}
+	for (const element of document.querySelectorAll("[src]")) {
+		const src = element.getAttribute("src")?.trim() ?? "";
+		if (!src.startsWith("data:image/")) element.removeAttribute("src");
+	}
+	for (const element of document.querySelectorAll("*")) {
+		for (const attribute of [...element.attributes]) {
+			if (attribute.name.toLowerCase().startsWith("on")) {
+				element.removeAttribute(attribute.name);
+			}
+		}
+	}
+	const policy =
+		"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'; navigate-to 'none';";
+	return `<meta http-equiv="Content-Security-Policy" content="${policy}">${document.documentElement.outerHTML}`;
+}
+
 /**
  * Extract directory path from a file path for "Open folder" action.
  */

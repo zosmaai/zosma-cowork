@@ -1,77 +1,39 @@
-import { renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useArtifactLoader } from "./useArtifactLoader";
 
-const mockReadTextFile = vi.hoisted(() => vi.fn());
-
-vi.mock("@tauri-apps/plugin-fs", () => ({
-	readTextFile: mockReadTextFile,
-}));
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 describe("useArtifactLoader", () => {
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
+	beforeEach(() => invoke.mockReset());
 
-	it("returns null when filePath is null", () => {
-		const { result } = renderHook(() => useArtifactLoader(null));
-		expect(result.current).toBeNull();
-	});
-
-	it("loads file content for a valid HTML path", async () => {
-		mockReadTextFile.mockResolvedValue("<h1>Hello</h1>");
-		const { result } = renderHook(() => useArtifactLoader("/tmp/test.html"));
-
-		await waitFor(() => {
-			expect(result.current).toEqual({
-				filePath: "/tmp/test.html",
-				fileContent: "<h1>Hello</h1>",
-				artifactType: "html",
-			});
-		});
-	});
-
-	it("loads file content for a code file path", async () => {
-		mockReadTextFile.mockResolvedValue("const x = 1;");
-		const { result } = renderHook(() => useArtifactLoader("/tmp/script.ts"));
-
-		await waitFor(() => {
-			expect(result.current).toEqual({
-				filePath: "/tmp/script.ts",
-				fileContent: "const x = 1;",
-				artifactType: "code",
-			});
-		});
-	});
-
-	it("returns null on read error", async () => {
-		mockReadTextFile.mockRejectedValue(new Error("file not found"));
-		const { result } = renderHook(() => useArtifactLoader("/tmp/nonexistent.html"));
-
-		await waitFor(() => expect(result.current).toBeNull());
-	});
-
-	it("cleans up on unmount", () => {
-		mockReadTextFile.mockReturnValue(new Promise(() => {}));
-		const { result, unmount } = renderHook(() => useArtifactLoader("/tmp/test.html"));
-
-		unmount();
-		expect(result.current).toBeNull();
-	});
-
-	it("resets to null when filePath becomes null", async () => {
-		mockReadTextFile.mockResolvedValue("content");
+	it("distinguishes loading, loaded, and unavailable", async () => {
+		invoke.mockResolvedValueOnce({ bytes: [104, 105], mimeType: "text/plain" });
 		const { result, rerender } = renderHook(
-			({ path }: { path: string | null }) => useArtifactLoader(path),
-			{ initialProps: { path: "/tmp/first.html" } as { path: string | null } },
+			({ path }) => useArtifactLoader(path, "/work"),
+			{ initialProps: { path: "/work/a.txt" as string | null } },
 		);
+		expect(result.current.status).toBe("loading");
+		await waitFor(() => expect(result.current.status).toBe("loaded"));
+		expect(result.current.artifact?.fileContent).toBe("hi");
+		invoke.mockRejectedValueOnce(new Error("outside workspace"));
+		rerender({ path: "/outside/no.txt" });
+		await waitFor(() => expect(result.current.status).toBe("unavailable"));
+	});
 
-		await waitFor(() => {
-			expect(result.current).not.toBeNull();
-			expect(result.current?.filePath).toBe("/tmp/first.html");
-		});
-
-		rerender({ path: null });
-		expect(result.current).toBeNull();
+	it("ignores a late result for the previously selected path", async () => {
+		let release!: (value: unknown) => void;
+		invoke.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+		invoke.mockResolvedValueOnce({ bytes: [98], mimeType: "text/plain" });
+		const { result, rerender } = renderHook(
+			({ path }) => useArtifactLoader(path, "/work"),
+			{ initialProps: { path: "/work/a.txt" } },
+		);
+		rerender({ path: "/work/b.txt" });
+		await waitFor(() => expect(result.current.artifact?.fileContent).toBe("b"));
+		act(() => release({ bytes: [97], mimeType: "text/plain" }));
+		await Promise.resolve();
+		expect(result.current.artifact?.filePath).toBe("/work/b.txt");
 	});
 });
