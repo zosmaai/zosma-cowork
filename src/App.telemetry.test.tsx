@@ -54,7 +54,6 @@ vi.mock("@/hooks/usePiStream", () => ({
 		clearQueue: vi.fn(),
 		setSessionModel: vi.fn(),
 		removeSession: vi.fn(),
-		dispatch: vi.fn(),
 	}),
 }));
 

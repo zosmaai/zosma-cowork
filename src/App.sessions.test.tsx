@@ -18,7 +18,6 @@ const controller = vi.hoisted(() => ({
 	steerStream: vi.fn(),
 	followUpStream: vi.fn(),
 	clearQueue: vi.fn(),
-	dispatch: vi.fn(),
 	getSessionState: vi.fn(),
 }));
 
@@ -73,7 +72,6 @@ vi.mock("@/hooks/usePiStream", () => ({
 		clearQueue: controller.clearQueue,
 		setSessionModel: controller.setSessionModel,
 		removeSession: controller.removeSession,
-		dispatch: controller.dispatch,
 	}),
 }));
 
@@ -257,7 +255,6 @@ describe("App cached session switching", () => {
 			controller.steerStream,
 			controller.followUpStream,
 			controller.clearQueue,
-			controller.dispatch,
 			controller.getSessionState,
 		]) {
 			mock.mockReset();

@@ -8,6 +8,7 @@ import type {
 } from "@/types/pi-events";
 import type {
 	SessionEventEnvelope,
+	SessionMode,
 	SessionModel,
 	SessionSnapshot,
 	SessionLoadStatus,
@@ -50,6 +51,8 @@ export interface StreamState {
 	cwd: string | null;
 	/** Model metadata for this session (set on load and MODEL_INFO). */
 	model?: SessionModel;
+	/** Durable product mode; mutable only while the session is empty. */
+	mode: SessionMode;
 	/** True after hydration/load; false after sidecar_loss or load failure. */
 	runtimeLoaded: boolean;
 	loadStatus: SessionLoadStatus;
@@ -130,6 +133,7 @@ export type StreamAction =
 	| { type: "BEGIN_LOAD" }
 	| { type: "LOAD_FAILED"; error: SessionWireError }
 	| { type: "SET_SESSION_MODEL"; model: SessionModel }
+	| { type: "SET_SESSION_MODE"; mode: SessionMode }
 	/**
 	 * Reconciling action — dispatched on every `queue_update` event from
 	 * the sidecar. Replaces the entire queue snapshot (no merge: the
@@ -183,6 +187,7 @@ export const INITIAL_STATE: StreamState = {
 	sessionFile: null,
 	cwd: null,
 	model: undefined,
+	mode: "chat",
 	runtimeLoaded: false,
 	loadStatus: "loaded",
 	awaitingDone: false,
@@ -273,6 +278,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				sessionFile: action.snapshot.sessionFile,
 				cwd: action.snapshot.cwd,
 				model: action.snapshot.model,
+				mode: action.snapshot.mode,
 				messages: action.snapshot.messages,
 				isRunning: action.snapshot.isRunning,
 				status: action.snapshot.status,
@@ -300,6 +306,9 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "SET_SESSION_MODEL":
 			return { ...state, model: action.model };
+
+		case "SET_SESSION_MODE":
+			return { ...state, mode: action.mode };
 
 		/**
 		 * TURN_RESET — Soft boundary at the start of each assistant sub-message
@@ -751,6 +760,9 @@ export function usePiStream(activeSessionFile: string | null) {
 	const loadingRef = useRef(new Map<string, Promise<SessionSnapshot>>());
 	const deletedRef = useRef(new Set<string>());
 	const sidecarEpochRef = useRef(0);
+	const modeRef = useRef(new Map<string, SessionMode>());
+	const modeVersionRef = useRef(new Map<string, number>());
+	const modeSavesRef = useRef(new Map<string, Promise<void>>());
 	const listenerReadyRef = useRef<Promise<void> | null>(null);
 	const resolveListenerReadyRef = useRef<(() => void) | null>(null);
 	if (!listenerReadyRef.current) {
@@ -774,6 +786,7 @@ export function usePiStream(activeSessionFile: string | null) {
 	const hydrateSession = useCallback((snapshot: SessionSnapshot) => {
 		if (deletedRef.current.has(snapshot.sessionFile)) return;
 		loadedRef.current.add(snapshot.sessionFile);
+		modeRef.current.set(snapshot.sessionFile, snapshot.mode);
 		dispatchTo(snapshot.sessionFile, { type: "HYDRATE_SESSION", snapshot });
 	}, [dispatchTo]);
 
@@ -905,10 +918,53 @@ export function usePiStream(activeSessionFile: string | null) {
 		dispatchTo(sessionFile, { type: "SET_SESSION_MODEL", model });
 	}, [dispatchTo]);
 
+	const setSessionMode = useCallback(async (
+		sessionFile: string,
+		mode: SessionMode,
+	): Promise<void> => {
+		await ensureSession(sessionFile);
+		if (deletedRef.current.has(sessionFile)) throw new Error("Session was deleted");
+
+		const previous = modeRef.current.get(sessionFile) ?? "chat";
+		const version = (modeVersionRef.current.get(sessionFile) ?? 0) + 1;
+		modeVersionRef.current.set(sessionFile, version);
+		modeRef.current.set(sessionFile, mode);
+		dispatchTo(sessionFile, { type: "SET_SESSION_MODE", mode });
+
+		const prior = modeSavesRef.current.get(sessionFile) ?? Promise.resolve();
+		const save = prior
+			.catch(() => undefined)
+			.then(async () => {
+				await invoke("set_session_mode", { sessionFile, mode });
+			});
+		modeSavesRef.current.set(sessionFile, save);
+
+		try {
+			await save;
+		} catch (error) {
+			// Ignore a deleted/superseded failure: the later mutation or tombstone
+			// determines truth. Never let rollback recreate a removed cache entry.
+			if (
+				deletedRef.current.has(sessionFile) ||
+				modeVersionRef.current.get(sessionFile) !== version
+			) return;
+			modeRef.current.set(sessionFile, previous);
+			dispatchTo(sessionFile, { type: "SET_SESSION_MODE", mode: previous });
+			throw error;
+		} finally {
+			if (modeSavesRef.current.get(sessionFile) === save) {
+				modeSavesRef.current.delete(sessionFile);
+			}
+		}
+	}, [dispatchTo, ensureSession]);
+
 	const removeSession = useCallback((sessionFile: string) => {
 		deletedRef.current.add(sessionFile);
 		loadedRef.current.delete(sessionFile);
 		loadingRef.current.delete(sessionFile);
+		modeRef.current.delete(sessionFile);
+		modeVersionRef.current.delete(sessionFile);
+		modeSavesRef.current.delete(sessionFile);
 		dispatchSessions({ type: "REMOVE_SESSION", sessionFile });
 	}, []);
 
@@ -1131,11 +1187,7 @@ export function usePiStream(activeSessionFile: string | null) {
 		followUpStream,
 		clearQueue,
 		setSessionModel,
+		setSessionMode,
 		removeSession,
-		// Compatibility dispatch for App reset/error paths — mutates only the
-		// active key (or nothing when no session is active).
-		dispatch: (action: StreamAction) => {
-			if (activeSessionFile) dispatchTo(activeSessionFile, action);
-		},
 	};
 }

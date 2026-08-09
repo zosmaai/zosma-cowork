@@ -13,6 +13,8 @@ export interface SessionModel {
 
 export type SessionLoadStatus = "loaded" | "loading" | "error";
 
+export type SessionMode = "chat" | "work";
+
 /** Structured wire error carried on every session-bound error envelope. */
 export interface SessionWireError {
 	code: string;
@@ -24,7 +26,7 @@ export interface SessionWireError {
 /** Full snapshot of a sidecar runtime — hydrates the single active reducer. */
 export interface SessionSnapshot {
 	sessionFile: string;
-	mode: "chat";
+	mode: SessionMode;
 	cwd: string;
 	messages: ChatMessage[];
 	isRunning: boolean;
