@@ -7,6 +7,7 @@ interface ArtifactPreviewProps {
 	artifactType: ArtifactType;
 	onOpenFolder?: (dir: string) => void;
 	onCopyPath?: (path: string) => void;
+	openFolderLabel?: string;
 }
 
 export function ArtifactPreview({
@@ -15,6 +16,7 @@ export function ArtifactPreview({
 	artifactType,
 	onOpenFolder,
 	onCopyPath,
+	openFolderLabel,
 }: ArtifactPreviewProps) {
 	const fileName = filePath.split("/").pop() || filePath;
 	const safeSvg = useMemo(
@@ -39,6 +41,7 @@ export function ArtifactPreview({
 					<button
 						type="button"
 						onClick={() => onOpenFolder?.(parentDir(filePath))}
+						aria-label={openFolderLabel}
 						className="text-muted-foreground hover:text-foreground transition-colors"
 					>
 						📁 Open folder
