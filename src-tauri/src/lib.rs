@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -33,22 +32,54 @@ struct SidecarState {
     ready: Arc<AtomicBool>,
 }
 
-struct PendingPrompt {
-    session_file: String,
-    channel: Channel<Value>,
-}
 struct PendingRequest {
     sender: oneshot::Sender<Result<Value, String>>,
 }
 
-/// True when a buffered prompt channel belongs to `envelope`'s session.
-/// Only compares `session_file` (envelope top-level `sessionFile`) — the
-/// helper is pure and derives no serialization on `PendingPrompt`.
-fn matches_prompt_session(prompt: &PendingPrompt, envelope: &Value) -> bool {
-    envelope
-        .get("sessionFile")
-        .and_then(Value::as_str)
-        .is_some_and(|file| file == prompt.session_file)
+/// Normalize a prompt-channel `done`/`error` message into a complete
+/// `session_event` envelope so the frontend's keyed reducer receives a
+/// uniform transport for every event type.
+///
+/// Returns `None` for untagged global messages (`ready`, non-session `done`).
+fn normalize_session_stream_message(message: &Value) -> Option<Value> {
+    let session_file = message.get("sessionFile")?.as_str()?;
+    match message.get("type").and_then(Value::as_str) {
+        Some("event") => Some(message.clone()),
+        Some("done") => Some(serde_json::json!({
+            "type": "event",
+            "sessionFile": session_file,
+            "event": { "type": "done" }
+        })),
+        Some("error") => Some(serde_json::json!({
+            "type": "event",
+            "sessionFile": session_file,
+            "event": {
+                "type": "error",
+                "code": message.get("code").cloned().unwrap_or(Value::Null),
+                "message": message.get("message").cloned().unwrap_or(Value::Null),
+                "retryable": message.get("retryable").cloned().unwrap_or(Value::Bool(false)),
+                "details": message.get("details").cloned().unwrap_or(Value::Null)
+            }
+        })),
+        _ => None,
+    }
+}
+
+/// Drain all pending request promises so a dead sidecar process cannot hang
+/// or resolve against a replacement process.
+async fn fail_pending_requests(
+    pending: &Arc<Mutex<HashMap<String, PendingRequest>>>,
+    message: &str,
+) {
+    let requests: Vec<PendingRequest> = pending
+        .lock()
+        .await
+        .drain()
+        .map(|(_, request)| request)
+        .collect();
+    for request in requests {
+        let _ = request.sender.send(Err(message.to_string()));
+    }
 }
 
 struct TelemetryState {
@@ -58,7 +89,6 @@ struct TelemetryState {
 #[derive(Default)]
 struct AppState {
     sidecar: SidecarState,
-    pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
     // Captured before the sidecar can create models.json. Prevents a fresh
     // install from being reclassified as an existing user during startup.
@@ -557,7 +587,6 @@ use std::process::Stdio;
 
 async fn read_stdout(
     mut out: tokio::process::ChildStdout,
-    pp: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pr: Arc<Mutex<HashMap<String, PendingRequest>>>,
     rd: Arc<AtomicBool>,
     app: AppHandle,
@@ -598,35 +627,14 @@ async fn read_stdout(
                             let _ = app.emit(kind, payload);
                         }
                     }
-                    // Emit EVERY full session envelope as `session_event` so the
-                    // frontend's keyed listener can route queue updates (and
-                    // Phase 2's future per-session stream) by sessionFile.
-                    let _ = app.emit("session_event", m.clone());
-                    // Deliver the inner event only to the prompt channel for
-                    // the SAME session — an A event never reaches B's channel.
-                    for p in pp.lock().await.values() {
-                        if matches_prompt_session(p, &m) {
-                            let _ = p.channel.send(e.clone());
-                        }
-                    }
+                }
+                if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             "done" => {
-                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
-                    // Forward a terminal `done` to the matching prompt channel
-                    // BEFORE dropping it, tagged with the session so the keyed
-                    // frontend can reconcile. The UI ends a turn on `agent_end`
-                    // OR `done`; without this forward the only completion
-                    // signal is `agent_end`, so any turn that doesn't emit one
-                    // (incl. the sidecar's prompt-timeout abort, which only
-                    // sends `done`) leaves the UI stuck in "thinking" forever.
-                    if let Some(p) = pp.lock().await.remove(id) {
-                        let _ = p.channel.send(serde_json::json!({
-                            "type": "event",
-                            "sessionFile": p.session_file,
-                            "event": { "type": "done" }
-                        }));
-                    }
+                if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             "result" => {
@@ -639,28 +647,16 @@ async fn read_stdout(
                 }
             }
             "error" => {
-                let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let t = m.get("message").and_then(|v| v.as_str()).unwrap_or("err");
-                log::warn!("sidecar error response id={id}: {t}");
-                if let Some(p) = pr.lock().await.remove(id) {
+                let id = m.get("id").and_then(Value::as_str).unwrap_or("");
+                let message = m.get("message").and_then(Value::as_str).unwrap_or("err");
+                log::warn!("sidecar error response id={id}: {message}");
+                if let Some(request) = pr.lock().await.remove(id) {
                     // One-shot request error: return the FULL envelope string so
                     // structured fields (code/retryable/details) survive Tauri's
                     // rejection instead of collapsing to the message alone.
-                    let _ = p.sender.send(Err(m.to_string()));
-                } else if let Some(p) = pp.lock().await.get(id) {
-                    // Prompt error: send a session-tagged event envelope with
-                    // the structured fields so the keyed reducer can surface them.
-                    let _ = p.channel.send(serde_json::json!({
-                        "type": "event",
-                        "sessionFile": p.session_file,
-                        "event": {
-                            "type": "error",
-                            "message": m.get("message").cloned().unwrap_or(Value::Null),
-                            "details": m.get("details").cloned().unwrap_or(Value::Null),
-                            "code": m.get("code").cloned().unwrap_or(Value::Null),
-                            "retryable": m.get("retryable").cloned().unwrap_or(Value::Null),
-                        }
-                    }));
+                    let _ = request.sender.send(Err(m.to_string()));
+                } else if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             _ => {}
@@ -744,25 +740,13 @@ async fn get_active_model(session_file: String, s: State<'_, AppState>) -> Resul
 async fn send_prompt(
     session_file: String,
     text: String,
-    ch: Channel<Value>,
     s: State<'_, AppState>,
 ) -> Result<(), String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("p-{}", uuid_v4());
-    s.pending_prompts.lock().await.insert(
-        id.clone(),
-        PendingPrompt {
-            session_file: session_file.clone(),
-            channel: ch,
-        },
-    );
-    if let Err(error) = scmd(&s, &build_prompt_payload(&id, &session_file, &text)).await {
-        s.pending_prompts.lock().await.remove(&id);
-        return Err(error);
-    }
-    Ok(())
+    scmd(&s, &build_prompt_payload(&id, &session_file, &text)).await
 }
 
 #[tauri::command]
@@ -2492,7 +2476,6 @@ pub fn run() {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
                 format!("{}/.zosmaai", home)
             });
-            let pp = st.pending_prompts.clone();
             let pr = st.pending_requests.clone();
             let rd = Arc::clone(&st.sidecar.ready);
             app.manage(st);
@@ -2528,9 +2511,13 @@ pub fn run() {
                                     Err(e) => log::error!("Sidecar pid={pid_watch:?} wait error: {e}"),
                                 }
                             });
-                            read_stdout(o, pp.clone(), pr.clone(), rd.clone(), h.clone()).await;
-                            // Sidecar died — mark not ready so commands fail
-                            // fast with "not ready" instead of hanging.
+                            read_stdout(o, pr.clone(), rd.clone(), h.clone()).await;
+                            // Sidecar died — drain pending request promises
+                            // BEFORE emitting sidecar_lost / respawning so no
+                            // request hangs or resolves against the replacement.
+                            fail_pending_requests(&pr, "sidecar lost").await;
+                            // Mark not ready so commands fail fast with "not
+                            // ready" instead of hanging.
                             rd.store(false, Ordering::Release);
                             let _ = h.emit("sidecar_lost", ());
                             if attempt < max_retries - 1 {
@@ -2636,8 +2623,12 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload, has_pi_state_files, is_fresh_start,
+        build_steer_payload, fail_pending_requests, has_pi_state_files, is_fresh_start,
+        normalize_session_stream_message, PendingRequest,
     };
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     #[test]
     fn fresh_agent_directory_has_no_pi_state() {
@@ -2793,26 +2784,84 @@ mod tests {
     }
 
     #[test]
-    fn prompt_channel_matches_only_its_own_session() {
-        // An A envelope never routes to B's channel.
-        let a_prompt = super::PendingPrompt {
-            session_file: "/sessions/a.jsonl".to_string(),
-            // No Channel construction needed — matches_prompt_session only
-            // reads session_file; this call is only reachable in-device and
-            // never serialized.
-            channel: tauri::ipc::Channel::new(|_| Ok(())),
-        };
-        let env_a = serde_json::json!({
+    fn session_stream_keeps_complete_event_envelope() {
+        let message = serde_json::json!({
             "type": "event",
             "sessionFile": "/sessions/a.jsonl",
-            "event": { "type": "queue_update" }
+            "event": { "type": "text_delta", "delta": "A" }
         });
-        let env_b = serde_json::json!({
-            "type": "event",
-            "sessionFile": "/sessions/b.jsonl",
-            "event": { "type": "queue_update" }
+        assert_eq!(normalize_session_stream_message(&message), Some(message));
+    }
+
+    #[test]
+    fn session_stream_normalizes_prompt_done() {
+        let message = serde_json::json!({
+            "type": "done",
+            "id": "p-1",
+            "sessionFile": "/sessions/a.jsonl"
         });
-        assert!(super::matches_prompt_session(&a_prompt, &env_a));
-        assert!(!super::matches_prompt_session(&a_prompt, &env_b));
+        assert_eq!(
+            normalize_session_stream_message(&message),
+            Some(serde_json::json!({
+                "type": "event",
+                "sessionFile": "/sessions/a.jsonl",
+                "event": { "type": "done" }
+            }))
+        );
+    }
+
+    #[test]
+    fn session_stream_preserves_structured_prompt_error() {
+        let message = serde_json::json!({
+            "type": "error",
+            "id": "p-1",
+            "sessionFile": "/sessions/a.jsonl",
+            "code": "provider_error",
+            "message": "rate limited",
+            "retryable": true,
+            "details": "429"
+        });
+        assert_eq!(
+            normalize_session_stream_message(&message),
+            Some(serde_json::json!({
+                "type": "event",
+                "sessionFile": "/sessions/a.jsonl",
+                "event": {
+                    "type": "error",
+                    "code": "provider_error",
+                    "message": "rate limited",
+                    "retryable": true,
+                    "details": "429"
+                }
+            }))
+        );
+    }
+
+    #[test]
+    fn session_stream_ignores_untagged_global_messages() {
+        assert_eq!(
+            normalize_session_stream_message(&serde_json::json!({ "type": "ready" })),
+            None
+        );
+        assert_eq!(
+            normalize_session_stream_message(&serde_json::json!({
+                "type": "done",
+                "id": "save-session"
+            })),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn sidecar_loss_rejects_pending_requests() {
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .await
+            .insert("r-1".to_string(), PendingRequest { sender });
+        fail_pending_requests(&pending, "sidecar lost").await;
+        assert_eq!(receiver.await.unwrap(), Err("sidecar lost".to_string()));
+        assert!(pending.lock().await.is_empty());
     }
 }
