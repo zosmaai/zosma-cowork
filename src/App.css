@@ -44,6 +44,16 @@
 	--font-space-grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
 		sans-serif;
 	--font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, monospace;
+	--font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	--font-response: 17px;
+	--font-user-message: 16px;
+	--font-composer: 16px;
+	--font-empty-heading: 26px;
+	--font-task-header: 16px;
+	--font-session-title: 14px;
+	--font-secondary: 13px;
+	--font-code: 14px;
+	--font-control: 14px;
 
 	/* ── Elevation / glass depth (per-theme) ── */
 	--elev-bg: 0 0% 100%;
@@ -440,7 +450,7 @@ body {
 	color: hsl(var(--foreground));
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
-	font-size: 13px;
+	font-size: 14px;
 	line-height: 1.5;
 	overflow: hidden;
 }
@@ -719,8 +729,25 @@ body[data-wallpaper]::before {
 
 /* ── Chat font override ── */
 .chat-font,
-.chat-font * {
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+.session-shell {
+	font-family: var(--font-reading);
+}
+
+/* ── Semantic Chat/Work typography tokens ── */
+.session-empty-heading {
+	font-size: var(--font-empty-heading);
+}
+.session-composer {
+	font-size: var(--font-composer);
+}
+.session-row-title {
+	font-size: var(--font-session-title);
+}
+.session-secondary {
+	font-size: var(--font-secondary);
+}
+.session-control {
+	font-size: var(--font-control);
 }
 
 /* ── Code blocks ── */
@@ -754,11 +781,19 @@ body[data-wallpaper]::before {
    we re-establish a clean vertical rhythm here.
    ═══════════════════════════════════════════════ */
 .chat-markdown {
-	font-size: 14px;
-	line-height: 1.72;
+	font-size: var(--font-response);
+	line-height: 1.65;
 	color: inherit;
 	word-break: break-word;
 	overflow-wrap: anywhere;
+}
+.chat-markdown-user {
+	font-size: var(--font-user-message);
+}
+.chat-markdown code,
+.chat-markdown pre code,
+.session-shell pre {
+	font-size: var(--font-code);
 }
 
 /* ── In-thread find: match highlighting ── */

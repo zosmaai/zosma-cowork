@@ -69,7 +69,7 @@ export function ActivityBlock({ toolCalls, active = true, maxTrail = 3 }: Activi
 
 			{/* Trail of recent generic activities */}
 			{trail.length > 0 && (
-				<div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-6 text-[11px] opacity-60">
+				<div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-6 text-[13px] opacity-60">
 					{trail.map((a, i) => (
 						<span key={a.key} className="flex items-center gap-1.5">
 							{i > 0 && <span className="opacity-40">·</span>}
@@ -96,7 +96,7 @@ export function ActivityRecap({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
 	const color = anyError ? "hsl(var(--tool-error-fg))" : "hsl(var(--tool-complete-fg))";
 
 	return (
-		<div className="my-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+		<div className="my-1 flex items-center gap-1.5 text-[13px] text-muted-foreground">
 			{anyError ? (
 				<AlertCircle className="h-3 w-3 flex-shrink-0" style={{ color }} />
 			) : (

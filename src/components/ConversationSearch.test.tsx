@@ -372,4 +372,21 @@ describe("ConversationSearch — deep content search", () => {
 		// Non-matching session is filtered out.
 		expect(screen.queryByText("React")).toBeNull();
 	});
+
+	it("shows each session's durable Chat or Work label", () => {
+		render(
+			<ConversationSearch
+				sessions={[
+					{ ...mockSessions[0], mode: "work" },
+					{ ...mockSessions[1], mode: "chat" },
+				]}
+				onSelect={noop}
+				onNewSession={noop}
+				onOpenSession={noop}
+				onDeleteSession={noop}
+			/>,
+		);
+		expect(screen.getByRole("button", { name: /React project setup.*Work/ })).toHaveTextContent("Work");
+		expect(screen.getByRole("button", { name: /API design patterns.*Chat/ })).toHaveTextContent("Chat");
+	});
 });

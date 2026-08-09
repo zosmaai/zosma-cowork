@@ -23,6 +23,7 @@ import {
 	runBuiltinCommand,
 } from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
+import { fontScaleClass, getFontScale } from "@/lib/font-scale";
 import { trackEvent } from "@/lib/telemetry";
 import type { SessionMode, SessionSnapshot, SidecarReadyPayload } from "@/types/session-runtime";
 import type { Command } from "@/types/commands";
@@ -129,6 +130,8 @@ function App() {
 	const [, setSidebarView] = useState("chats");
 	// Manual sidebar rail collapse (Phase 2). Default stays expanded.
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	// Persisted font scaling (zoom preset) restored once at startup.
+	const [fontScale] = useState(getFontScale);
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
@@ -162,7 +165,7 @@ function App() {
 	const selectedModeRef = useRef<SessionMode>(activeMode);
 	useEffect(() => {
 		selectedModeRef.current = activeMode;
-	}, [activeSessionFile, activeMode]);
+	}, [activeMode]);
 	const isEmptySession =
 		streamState.messages.length === 0 &&
 		streamState.streamingMessage === null &&
@@ -171,6 +174,7 @@ function App() {
 	const modeLocked = !isEmptySession || firstSendPending;
 	const [modeError, setModeError] = useState<string | null>(null);
 	// Clear the mode error when entering a different session.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on session switch (value not read in body)
 	useEffect(() => {
 		setModeError(null);
 	}, [activeSessionFile]);
@@ -952,7 +956,7 @@ function App() {
 		// divided by the scale) so it always paints as exactly one viewport —
 		// otherwise Large/Extra-Large overflows <body>, and focus-scroll clips the
 		// fixed sidebar top-chrome (the New-chat button) off the top. The per-preset
-		<div className="flex md:gap-2.5 md:p-2.5 [zoom:1] h-screen">
+		<div className={`flex md:gap-2.5 md:p-2.5 ${fontScaleClass(fontScale)}`}>
 			{/* Delete chat confirmation */}
 			<ConfirmDialog
 				open={pendingDelete !== null}

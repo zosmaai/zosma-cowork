@@ -88,7 +88,7 @@ export function InThreadFind({
 
 						{/* Match counter */}
 						<span
-							className="min-w-[3.2rem] text-center text-[11px] tabular-nums select-none"
+							className="min-w-[3.2rem] text-center text-[13px] tabular-nums select-none"
 							style={{
 								color: hasQuery
 									? total > 0

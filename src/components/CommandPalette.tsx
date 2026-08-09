@@ -203,7 +203,7 @@ export function CommandPalette({
 		>
 			{/* Header strip */}
 			<div
-				className="flex items-center gap-2 border-b px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+				className="flex items-center gap-2 border-b px-3 py-2 text-sm font-medium uppercase tracking-wider text-muted-foreground"
 				style={{ borderColor: "hsl(var(--border) / 0.6)" }}
 			>
 				<CommandIcon className="h-3.5 w-3.5 opacity-70" />
@@ -214,7 +214,7 @@ export function CommandPalette({
 			</div>
 
 			{filtered.length === 0 ? (
-				<div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+				<div className="px-3 py-6 text-center text-sm text-muted-foreground">
 					No matching commands
 				</div>
 			) : (
@@ -225,7 +225,7 @@ export function CommandPalette({
 								const CategoryIcon = CATEGORY_ICON[category];
 								return (
 									<div key={category} role="group" aria-label={COMMAND_CATEGORY_LABELS[category]}>
-										<div className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+										<div className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
 											<CategoryIcon className="h-3 w-3" />
 											{COMMAND_CATEGORY_LABELS[category]}
 										</div>
@@ -245,7 +245,7 @@ export function CommandPalette({
 														e.preventDefault();
 														onRun(cmd, args);
 													}}
-													className="group relative mx-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors"
+													className="group relative mx-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors"
 													style={{
 														background: isSelected ? "hsl(var(--accent))" : "transparent",
 														color: isSelected
@@ -269,13 +269,13 @@ export function CommandPalette({
 														<span className="opacity-40">/</span>
 														{highlight(cmd.name, query)}
 													</span>
-													<span className="truncate text-[12px] text-muted-foreground">
+													<span className="truncate text-[13px] text-muted-foreground">
 														{cmd.description}
 													</span>
 													<span className="ml-auto flex shrink-0 items-center gap-2">
 														{cmd.argHint && (
 															<span
-																className="rounded px-1.5 py-0.5 text-[10px] tabular-nums"
+																className="rounded px-1.5 py-0.5 text-xs tabular-nums"
 																style={{
 																	background: "hsl(var(--muted))",
 																	color: "hsl(var(--muted-foreground))",
@@ -302,7 +302,7 @@ export function CommandPalette({
 
 			{/* Keyboard hint footer */}
 			<div
-				className="flex items-center gap-3 border-t px-3 py-1.5 text-[10px] text-muted-foreground/70"
+				className="flex items-center gap-3 border-t px-3 py-1.5 text-xs text-muted-foreground/70"
 				style={{ borderColor: "hsl(var(--border) / 0.6)" }}
 			>
 				<Hint keys="↑↓" label="navigate" />
@@ -319,7 +319,7 @@ function Hint({ keys, label }: { keys: string; label: string }) {
 	return (
 		<span className="flex items-center gap-1">
 			<kbd
-				className="rounded px-1 py-0.5 font-mono text-[9px] leading-none"
+				className="rounded px-1 py-0.5 font-mono text-xs leading-none"
 				style={{ background: "hsl(var(--muted))", color: "hsl(var(--foreground) / 0.7)" }}
 			>
 				{keys}

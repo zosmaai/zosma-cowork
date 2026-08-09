@@ -601,7 +601,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					    and the placeholder reverts to the idle wording. */}
 					{queueCount > 0 && !streaming && !disabled && (
 						<div
-							className="px-4 pb-1 text-[11px] leading-tight"
+							className="px-4 pb-1 text-[13px] leading-tight"
 							style={{ color: "hsl(var(--muted-foreground) / 0.85)" }}
 							data-testid="composer-queue-summary"
 						>
@@ -657,7 +657,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					{!modelSupportsImages && hasImageAttachments && (
 						<div className="px-4 pb-1.5">
 							<p
-								className="text-[11px] leading-tight flex items-center gap-1.5"
+								className="text-[13px] leading-tight flex items-center gap-1.5"
 								style={{ color: "hsl(var(--warning))" }}
 							>
 								<span>⚠</span>
@@ -705,7 +705,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 								/>
 							) : (
 								<span
-									className="px-1.5 text-xs"
+									className="px-1.5 text-sm"
 									style={{ color: "hsl(var(--muted-foreground) / 0.55)" }}
 								>
 									{modelLabel || "Zosma"}

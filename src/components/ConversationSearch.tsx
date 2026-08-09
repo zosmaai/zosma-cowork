@@ -1,4 +1,5 @@
 import { Tooltip } from "@/components/ui/tooltip";
+import type { SessionMode } from "@/types/session-runtime";
 import {
 	CircleAlert,
 	Folder,
@@ -30,6 +31,8 @@ interface Session {
 	/** Live runtime state — independent from `active` (selected row). */
 	runtimeStatus?: "idle" | "running" | "error";
 	runtimeError?: string;
+	/** Durable Chat/Work product mode. */
+	mode?: SessionMode;
 }
 
 /** A deep-search hit: the matching session file + a contextual snippet. */
@@ -243,7 +246,7 @@ export function ConversationSearch({
 		<div className="flex flex-col h-full min-h-0">
 			{/* ── Header ── */}
 			<div className="flex items-center justify-between px-4 pt-3 pb-2">
-				<span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+				<span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
 					Sessions
 				</span>
 				<div className="flex items-center gap-1.5">
@@ -254,7 +257,7 @@ export function ConversationSearch({
 							aria-label={allFolders ? "Show only this folder" : "Show all folders"}
 							aria-pressed={allFolders}
 							title={allFolders ? "Showing all folders — click for this folder only" : "Showing this folder only — click to show all folders"}
-							className={`flex items-center px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+							className={`flex items-center px-1.5 py-1 rounded-md text-sm font-medium transition-colors ${
 								allFolders ? "text-primary bg-primary/12" : "text-muted-foreground bg-transparent"
 							}`}
 							whileHover={reduced ? {} : { scale: 1.04 }}
@@ -269,7 +272,7 @@ export function ConversationSearch({
 						onClick={onNewSession}
 						aria-label="New session"
 						title="New session in your Zosma Cowork folder"
-						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-primary bg-primary/8 hover:bg-primary/15"
+						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-sm font-medium text-primary bg-primary/8 hover:bg-primary/15"
 						whileHover={reduced ? {} : { scale: 1.04 }}
 						whileTap={reduced ? {} : { scale: 0.96 }}
 						transition={{ duration: 0.15, ease: easeOutExpo }}
@@ -282,7 +285,7 @@ export function ConversationSearch({
 						onClick={onOpenSession}
 						aria-label="Open folder as session"
 						title="Open a folder for the agent to work in"
-						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground bg-muted hover:bg-muted/70 hover:text-foreground transition-colors"
+						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-sm font-medium text-muted-foreground bg-muted hover:bg-muted/70 hover:text-foreground transition-colors"
 						whileHover={reduced ? {} : { scale: 1.04 }}
 						whileTap={reduced ? {} : { scale: 0.96 }}
 						transition={{ duration: 0.15, ease: easeOutExpo }}
@@ -341,7 +344,7 @@ export function ConversationSearch({
 									setQuery("");
 									inputRef.current?.focus();
 								}}
-								className="shrink-0 rounded text-[10px] px-1 py-px text-muted-foreground/50 bg-muted"
+								className="shrink-0 rounded text-xs px-1 py-px text-muted-foreground/50 bg-muted"
 								initial={{ opacity: 0, scale: 0.7 }}
 								animate={{ opacity: 1, scale: 1 }}
 								exit={{ opacity: 0, scale: 0.7 }}
@@ -373,7 +376,7 @@ export function ConversationSearch({
 							>
 								<MessagesSquare className="w-7 h-7 text-muted-foreground/20" />
 							</motion.div>
-							<p className="text-[11px] text-muted-foreground/40">
+							<p className="text-[13px] text-muted-foreground/40">
 								{query.trim() ? "No results" : "No sessions yet"}
 							</p>
 						</motion.div>
@@ -383,13 +386,13 @@ export function ConversationSearch({
 				{/* Pinned group — only when at least one pinned session is visible */}
 				{pinned.length > 0 && (
 					<>
-						<div className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+						<div className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground/45">
 							<Pin className="w-2.5 h-2.5" fill="currentColor" />
 							Pinned
 						</div>
 						{pinned.map((session, i) => renderRow(session, i))}
 						{unpinned.length > 0 && (
-							<div className="px-2 pt-2.5 pb-1 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+							<div className="px-2 pt-2.5 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground/45">
 								Recent
 							</div>
 						)}
@@ -510,7 +513,7 @@ function SessionRow({
 					transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
 				>
 					{/* Title */}
-					<span className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
+					<span className={`session-row-title flex items-center gap-1 truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
 					>
 						{session.runtimeStatus === "running" && (
 							<LoaderCircle
@@ -528,10 +531,13 @@ function SessionRow({
 							<Pin className="w-2.5 h-2.5 shrink-0 text-primary/70" fill="currentColor" />
 						)}
 						<span className="truncate">{session.title}</span>
+						<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+							{session.mode === "work" ? "Work" : "Chat"}
+						</span>
 					</span>
 
 					{/* Folder path — where this session was opened (VSCode-style) */}
-					<span className="flex items-center gap-1 mt-0.5 text-[10px] truncate text-muted-foreground/50" title={session.folder || path}
+					<span className="flex items-center gap-1 mt-0.5 text-[13px] truncate text-muted-foreground/50" title={session.folder || path}
 					>
 						<Folder className="w-2.5 h-2.5 shrink-0" />
 						<span className="truncate">{path}</span>
@@ -539,10 +545,10 @@ function SessionRow({
 
 					{/* Last message / search snippet + timestamp */}
 					<span className="flex items-center gap-1.5 mt-0.5">
-						<span className="text-[11px] truncate flex-1 text-muted-foreground/55">
+						<span className="text-[13px] truncate flex-1 text-muted-foreground/55">
 							{snippet || session.lastMessage}
 						</span>
-						<span className="text-[10px] shrink-0 tabular-nums text-muted-foreground/35">
+						<span className="text-[13px] shrink-0 tabular-nums text-muted-foreground/35">
 							{formatTime(session.timestamp)}
 						</span>
 					</span>

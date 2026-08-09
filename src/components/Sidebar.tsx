@@ -6,6 +6,7 @@ import {
 	Settings,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import type { SessionMode } from "@/types/session-runtime";
 import { ConversationSearch, type DeepSearchMatch } from "./ConversationSearch";
 
 interface Session {
@@ -23,6 +24,8 @@ interface Session {
 	/** Live runtime state — independent from `active` (selected row). */
 	runtimeStatus?: "idle" | "running" | "error";
 	runtimeError?: string;
+	/** Durable Chat/Work product mode. */
+	mode?: SessionMode;
 }
 
 interface SidebarProps {
@@ -124,7 +127,7 @@ export function Sidebar({
 
 				{runningCount > 0 && (
 					<span
-						className="min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center"
+						className="min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center"
 						aria-label={`${runningCount} running ${runningCount === 1 ? "session" : "sessions"}`}
 					>
 						{runningCount}
@@ -194,7 +197,7 @@ export function Sidebar({
 				<motion.button
 					type="button"
 					onClick={() => onChangeView("settings")}
-					className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors"
+					className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors"
 					style={{ color: "hsl(var(--sidebar-foreground) / 0.45)" }}
 					whileHover={
 						reduced

@@ -27,7 +27,7 @@ export function ArtifactPreview({
 
 	return (
 		<div className="mt-2 rounded-lg border overflow-hidden border-border bg-card">
-			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[11px] border-border bg-muted">
+			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[13px] border-border bg-muted">
 				<span className="font-mono truncate" data-testid="artifact-filename">
 					{fileName}
 				</span>
@@ -79,12 +79,12 @@ export function ArtifactPreview({
 					</div>
 				)}
 				{artifactType === "code" && (
-					<pre className="text-[11px] p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+					<pre className="text-sm p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
 						{fileContent}
 					</pre>
 				)}
 				{artifactType === "unknown" && (
-					<div className="p-3 text-[11px] text-muted-foreground text-center">
+					<div className="p-3 text-[13px] text-muted-foreground text-center">
 						Unknown file type. File written to <code className="font-mono">{filePath}</code>
 					</div>
 				)}

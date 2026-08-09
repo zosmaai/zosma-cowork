@@ -1,5 +1,6 @@
 import type { SessionMode } from "@/types/session-runtime";
-import { FolderOpen, MessageCircle, PenLine, Search, Sparkles } from "lucide-react";
+import { FolderOpen, MessageCircle, PenLine, Search } from "lucide-react";
+import type { Sparkles } from "lucide-react";
 import { SessionModeSwitcher } from "./SessionModeSwitcher";
 
 const STARTERS: Record<SessionMode, Array<{ label: string; icon: typeof Sparkles }>> = {
