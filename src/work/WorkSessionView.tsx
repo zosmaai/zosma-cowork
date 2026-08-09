@@ -88,9 +88,11 @@ export function WorkSessionView({
 								<ActivityRecap toolCalls={toolCalls} />
 							))}
 						{message.content && (
-							<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-								{message.content}
-							</ReactMarkdown>
+							<div data-assistant-response={message.id}>
+								<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+									{message.content}
+								</ReactMarkdown>
+							</div>
 						)}
 					</article>
 				);

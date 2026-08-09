@@ -247,6 +247,7 @@ export function ChatMessageItem({
 					{/* Content */}
 					{(message.content || message.isStreaming) && (
 						<div
+							data-assistant-response={!isUser ? message.id : undefined}
 							className={`chat-markdown ${isUser ? "chat-markdown-user" : ""}`}
 							style={{
 								color: isUser ? "hsl(var(--chat-user-fg))" : "hsl(var(--chat-assistant-fg))",

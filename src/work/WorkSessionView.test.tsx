@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { WorkSessionView } from "./WorkSessionView";
 
 describe("WorkSessionView", () => {
+	it("marks only assistant Markdown and excludes directions and tool activity", () => {
+		const { container } = render(
+			<WorkSessionView
+				messages={[
+					{ id: "u", role: "user", content: "Direction", timestamp: 1 },
+					{ id: "a", role: "assistant", content: "Result", timestamp: 2 },
+				]}
+				streamingMessage={null}
+				isRunning={false}
+				models={[]}
+				detailsExpanded={false}
+				workspaceCwd="/work"
+			/>,
+		);
+		expect(container.querySelectorAll("[data-assistant-response]")).toHaveLength(1);
+		expect(container.querySelector("[data-assistant-response='a']")).toHaveTextContent("Result");
+		expect(screen.getByText("Direction").closest("[data-assistant-response]")).toBeNull();
+	});
 	it("renders user directions compactly and assistant content as a document", () => {
 		const { container } = render(
 			<WorkSessionView

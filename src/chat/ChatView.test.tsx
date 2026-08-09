@@ -5,6 +5,33 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "./ChatView";
 
+describe("ChatView selection boundaries", () => {
+	afterEach(() => cleanupMocks());
+
+	it("marks only assistant Markdown as a selection-action response root", () => {
+		const { container } = render(
+			<ChatView
+				sessionFile="/chat.jsonl"
+				messages={[
+					{ id: "u", role: "user", content: "User direction", timestamp: 1 },
+					{ id: "a", role: "assistant", content: "Assistant answer", timestamp: 2 },
+				]}
+				streamingMessage={null}
+				isRunning={false}
+				error={null}
+				onSend={vi.fn()}
+				onAbort={vi.fn()}
+				mode="chat"
+			/>,
+		);
+		expect(container.querySelectorAll("[data-assistant-response]")).toHaveLength(1);
+		expect(container.querySelector("[data-assistant-response='a']")).toHaveTextContent(
+			"Assistant answer",
+		);
+		expect(screen.getByText("User direction").closest("[data-assistant-response]")).toBeNull();
+	});
+});
+
 describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
 	afterEach(() => cleanupMocks());
 
