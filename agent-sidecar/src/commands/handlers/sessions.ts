@@ -13,6 +13,7 @@ import { send, log } from "../../protocol.js";
 import { makeSessionDone, makeSessionError, makeSessionResult } from "../../session-protocol.js";
 import { snapshotRuntime } from "../../session-runtime-manager.js";
 import type { HandlerDependencies } from "../handler-registry.js";
+import type { DeleteSessionCommand } from "../types.js";
 import { resolveWorkspace, defaultWorkspaceDir, piAgentDir } from "../../agent-init.js";
 import {
 	listPiSessions,
@@ -98,11 +99,25 @@ export async function handleLoadSession(deps: HandlerDependencies, cmd: any): Pr
 	}
 }
 
-export async function handleDeleteSession(deps: HandlerDependencies, cmd: any): Promise<void> {
+export async function handleDeleteSession(
+	deps: HandlerDependencies,
+	cmd: DeleteSessionCommand,
+): Promise<void> {
+	const runtime = deps.runtimeManager.get(cmd.sessionFile);
+	if (runtime && snapshotRuntime(runtime).isRunning) {
+		// Trust-boundary protection: the frontend stops first, but a race or
+		// direct command still cannot delete a running runtime.
+		send(makeSessionError(cmd.id, cmd.sessionFile, {
+			code: "session_busy",
+			message: "Stop the running session before deleting it",
+			retryable: true,
+		}));
+		return;
+	}
 	// Dispose the runtime first so its file handle is released before deletion.
 	await deps.runtimeManager.dispose(cmd.sessionFile);
 	const deleted = deletePiSession(piAgentDir(), cmd.sessionFile);
-	send({ type: "result", id: cmd.id, data: { deleted } });
+	send(makeSessionResult(cmd.id, cmd.sessionFile, { deleted }));
 }
 
 export async function handleRenameSession(_deps: HandlerDependencies, cmd: any): Promise<void> {

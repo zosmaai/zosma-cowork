@@ -49,4 +49,17 @@ describe("session protocol envelopes", () => {
 			details: "runtime missing",
 		});
 	});
+
+	it("serializes an interrupted-session error without losing retryability", () => {
+		expect(makeSessionError("p-1", "/a.jsonl", {
+			code: "session_interrupted",
+			message: "Session stopped because the sidecar restarted",
+			retryable: true,
+		})).toMatchObject({
+			type: "error",
+			sessionFile: "/a.jsonl",
+			code: "session_interrupted",
+			retryable: true,
+		});
+	});
 });

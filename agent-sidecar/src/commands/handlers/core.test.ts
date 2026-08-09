@@ -108,6 +108,22 @@ describe("core command session isolation", () => {
 		expect(runtimeB.session.abort).not.toHaveBeenCalled();
 	});
 
+	it("does not acknowledge abort until the target scheduler is idle", async () => {
+		const idle = vi.spyOn(runtimeA.promptScheduler, "idle").mockResolvedValue(undefined);
+		await handleAbort(deps, { type: "abort", id: "ab-a", sessionFile: "/a.jsonl" });
+		expect(runtimeA.session.abort).toHaveBeenCalledOnce();
+		expect(idle).toHaveBeenCalledOnce();
+		expect(vi.mocked(runtimeA.session.abort).mock.invocationCallOrder[0]).toBeLessThan(
+			idle.mock.invocationCallOrder[0],
+		);
+		const resultCall = mocks.send.mock.calls.findIndex(([message]) =>
+			message.type === "result" && message.id === "ab-a",
+		);
+		expect(idle.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.send.mock.invocationCallOrder[resultCall],
+		);
+	});
+
 	it("steer and follow-up use only the addressed runtime queue", async () => {
 		await handleSteer(deps, { type: "steer", id: "st-a", sessionFile: "/a.jsonl", text: "A" });
 		await handleFollowUp(deps, { type: "follow_up", id: "fu-b", sessionFile: "/b.jsonl", text: "B" });

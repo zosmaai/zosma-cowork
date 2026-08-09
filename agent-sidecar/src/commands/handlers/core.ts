@@ -133,9 +133,12 @@ export async function handleAbort(
 	cmd: AbortCommand,
 ): Promise<void> {
 	const runtime = runtimeFor(deps, cmd);
-	if (runtime) {
-		await runtime.session.abort();
-	}
+	if (!runtime) return;
+	await runtime.session.abort();
+	// The scheduler becomes idle only after runPromptTask's finally block
+	// emits terminal `done`. Therefore an awaited abort result means no old
+	// prompt terminal can race a new prompt or persistence deletion.
+	await runtime.promptScheduler.idle();
 	sendMsg(makeSessionResult(cmd.id, cmd.sessionFile, { aborted: true }));
 }
 

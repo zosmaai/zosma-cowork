@@ -170,6 +170,27 @@ describe("session lifecycle handlers", () => {
 		expect(mocks.deletePiSession).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("a.jsonl"));
 	});
 
+	it("rejects deletion while the target runtime is running", async () => {
+		(runtimeManager as any).runtimes.set(runtimeA.sessionFile, runtimeA);
+		runtimeA.status = "responding";
+		(runtimeA.session as unknown as { isStreaming: boolean }).isStreaming = true;
+
+		await handleDeleteSession(deps, {
+			type: "delete_session",
+			id: "d-running",
+			sessionFile: "/a.jsonl",
+		});
+
+		expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({
+			type: "error",
+			id: "d-running",
+			code: "session_busy",
+			retryable: true,
+		}));
+		expect(runtimeManager.dispose).not.toHaveBeenCalled();
+		expect(mocks.deletePiSession).not.toHaveBeenCalled();
+	});
+
 	it("list_sessions passes cwd when allFolders is false and undefined when true", async () => {
 		await handleListSessions(deps, { type: "list_sessions", id: "ls-1", allFolders: false, cwd: "/work/a" });
 		expect(mocks.listPiSessions).toHaveBeenCalledWith(expect.any(String), "/work/a");
