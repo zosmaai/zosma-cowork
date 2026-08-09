@@ -90,6 +90,26 @@ describe("streamReducer — single bubble per agent run", () => {
 		expect(state.isRunning).toBe(false);
 	});
 
+	it("preserves a derived output path on the streaming tool call", () => {
+		const s = run([
+			{ type: "START_STREAM", prompt: "write a report" },
+			{
+				type: "TOOL_CALL_START",
+				toolCall: {
+					id: "w1",
+					name: "write",
+					args: { path: "out.md" },
+					status: "running",
+					outputPath: { path: "/work/acme/out.md", displayPath: "out.md" },
+				},
+			},
+		]);
+		expect(s.streamingMessage?.toolCalls?.[0].outputPath).toEqual({
+			path: "/work/acme/out.md",
+			displayPath: "out.md",
+		});
+	});
+
 	it("MESSAGE_END does not split the bubble or drop tools", () => {
 		const mid = run([
 			{ type: "START_STREAM", prompt: "x" },

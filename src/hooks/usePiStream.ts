@@ -741,12 +741,14 @@ function extractToolCallInfo(tc: {
 	id: string;
 	name?: string;
 	arguments?: Record<string, unknown>;
+	outputPath?: { path: string; displayPath: string };
 }): ToolCallInfo {
 	return {
 		id: tc.id,
 		name: tc.name || "unknown",
 		args: tc.arguments || {},
 		status: "running" as const,
+		outputPath: tc.outputPath,
 	};
 }
 

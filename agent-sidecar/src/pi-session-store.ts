@@ -134,8 +134,9 @@ export function sortEntries(entries: CoworkSessionEntry[]): CoworkSessionEntry[]
  */
 export function convertAgentMessagesToChat(
 	agentMessages: unknown[],
+	cwd = "",
 ): Array<Record<string, unknown>> {
-	const chat = extractChatMessages(agentMessages);
+	const chat = extractChatMessages(agentMessages, cwd);
 	return chat.map((m, i) => ({
 		id: `${m.timestamp ?? "m"}-${i}`,
 		...m,
@@ -170,8 +171,8 @@ export function loadPiSession(path: string): {
 } {
 	const manager = SessionManager.open(path);
 	const ctx = manager.buildSessionContext();
-	const messages = convertAgentMessagesToChat(ctx.messages as unknown[]);
 	const header = manager.getHeader();
+	const messages = convertAgentMessagesToChat(ctx.messages as unknown[], header?.cwd ?? "");
 	return {
 		messages,
 		title: manager.getSessionName() ?? "",

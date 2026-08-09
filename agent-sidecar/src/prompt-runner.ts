@@ -8,6 +8,7 @@
  */
 
 import { send, log, logError, logDebug } from "./protocol.js";
+import { normalizeSessionToolEvent } from "./session-output-path.js";
 import { makeSessionDone, makeSessionError, makeSessionEvent } from "./session-protocol.js";
 import type { SessionRuntime } from "./session-runtime-manager.js";
 
@@ -21,7 +22,7 @@ const HIGH_FREQ_EVENTS = new Set([
 
 type PromptRuntime = Pick<
 	SessionRuntime,
-	"sessionFile" | "session" | "prompt" | "status" | "error"
+	"sessionFile" | "session" | "prompt" | "status" | "error" | "cwd"
 >;
 
 /**
@@ -47,7 +48,7 @@ export function subscribeSession(runtime: PromptRuntime): () => void {
 		if (eventType && !HIGH_FREQ_EVENTS.has(eventType)) {
 			logDebug("event[%s]: %s", runtime.sessionFile, eventType);
 		}
-		send(makeSessionEvent(runtime.sessionFile, event));
+		send(makeSessionEvent(runtime.sessionFile, normalizeSessionToolEvent(event, runtime.cwd)));
 	});
 }
 

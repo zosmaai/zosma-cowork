@@ -90,7 +90,7 @@ export function snapshotRuntime(
 		sessionFile: runtime.sessionFile,
 		mode,
 		cwd: runtime.cwd,
-		messages: convertAgentMessagesToChat(runtime.session.messages as unknown[]),
+		messages: convertAgentMessagesToChat(runtime.session.messages as unknown[], runtime.cwd),
 		isRunning:
 			runtime.session.isStreaming ||
 			runtime.status === "thinking" ||

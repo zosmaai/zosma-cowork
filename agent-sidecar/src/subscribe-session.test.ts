@@ -51,6 +51,50 @@ describe("subscribeSession", () => {
 		vi.resetModules();
 	});
 
+	it("derives output path from the emitting runtime cwd, not active/global state", async () => {
+		const send = vi.fn();
+		vi.doMock("./protocol.js", () => ({
+			send,
+			log: vi.fn(),
+			logDebug: vi.fn(),
+			logWarn: vi.fn(),
+			logError: vi.fn(),
+		}));
+		const { subscribeSession } = await import("./prompt-runner.js");
+		const callbacks = new Map<string, (event: unknown) => void>();
+		const runtime = (sessionFile: string, cwd: string) => ({
+			sessionFile,
+			cwd,
+			status: "thinking",
+			error: undefined,
+			prompt: { activePromptId: "p", startedAt: 1, hasEmitted: false },
+			session: {
+				subscribe: (callback: (event: unknown) => void) => {
+					callbacks.set(sessionFile, callback);
+					return vi.fn();
+				},
+			},
+		});
+		const a = runtime("/tmp/a.jsonl", "/work/a");
+		const b = runtime("/tmp/b.jsonl", "/work/b");
+		subscribeSession(a as never);
+		subscribeSession(b as never);
+		const toolcall = (path: string) => ({
+			type: "message_update",
+			assistantMessageEvent: {
+				type: "toolcall_end",
+				toolCall: { id: "w1", name: "write", arguments: { path } },
+			},
+		});
+		callbacks.get("/tmp/a.jsonl")?.(toolcall("out.md"));
+		const sentA = send.mock.calls.at(-1)?.[0] as { event?: { assistantMessageEvent?: { toolCall?: { outputPath?: { path: string } } } } };
+		expect(sentA.event?.assistantMessageEvent?.toolCall?.outputPath?.path).toBe("/work/a/out.md");
+		callbacks.get("/tmp/b.jsonl")?.(toolcall("out.md"));
+		const sentB = send.mock.calls.at(-1)?.[0] as { event?: { assistantMessageEvent?: { toolCall?: { outputPath?: { path: string } } } } };
+		expect(sentB.event?.assistantMessageEvent?.toolCall?.outputPath?.path).toBe("/work/b/out.md");
+		vi.resetModules();
+	});
+
 	// Regression guard: no session may be subscribed with a bare event-forward
 	// that skips the watchdog heartbeat. All subscriptions live in
 	// session-runtime-factory.ts and call subscribeSession(runtime).

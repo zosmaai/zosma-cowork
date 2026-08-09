@@ -1,10 +1,15 @@
+import { outputPathForToolCall } from "./session-output-path.js";
+
 /**
  * Extract chat messages from the pi-agent AgentMessage format into the
  * ChatMessage format used for persistence (JSONL session files).
  * Handles user, assistant, and toolCall/toolResult pairs.
+ * When `cwd` is non-empty, completed write/edit tool calls also derive an
+ * immutable canonical `outputPath` so live and reloaded records match.
  */
 export function extractChatMessages(
 	agentMessages: unknown[],
+	cwd = "",
 ): Array<Record<string, unknown>> {
 	const chatMessages: Array<Record<string, unknown>> = [];
 	const pendingToolCalls: Map<string, Array<Record<string, unknown>>> =
@@ -40,13 +45,26 @@ export function extractChatMessages(
 					(c) =>
 						c.type === "toolCall" || c.type === "tool_use",
 				)
-				.map((tc) => ({
-					id: tc.id || tc.toolCallId,
-					name: tc.name || tc.toolName,
-					args: tc.arguments || tc.input || {},
-					status: "pending" as const,
-					result: "",
-				}));
+				.map((tc) => {
+					const name = String(tc.name || tc.toolName || "");
+					const args = tc.arguments || tc.input || {};
+					const record: Record<string, unknown> = {
+						id: tc.id || tc.toolCallId,
+						name,
+						args,
+						status: "pending" as const,
+						result: "",
+					};
+					if (cwd) {
+						const outputPath = outputPathForToolCall(
+							name,
+							args as Record<string, unknown>,
+							cwd,
+						);
+						if (outputPath) record.outputPath = outputPath;
+					}
+					return record;
+				});
 			if (toolCalls && toolCalls.length > 0) {
 				pendingToolCalls.set(
 					String(timestamp ?? Math.random()),
@@ -85,6 +103,12 @@ export function extractChatMessages(
 								? ("error" as const)
 								: ("completed" as const);
 							tc.result = resultText || "";
+							if (
+								msg.details &&
+								typeof msg.details === "object"
+							) {
+								tc.details = msg.details;
+							}
 							break;
 						}
 					}

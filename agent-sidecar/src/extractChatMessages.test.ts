@@ -226,6 +226,32 @@ describe("extractChatMessages", () => {
 		});
 	});
 
+	it("preserves canonical output path and result details on reload", () => {
+		const result = extractChatMessages(
+			[
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: "w1", name: "write", arguments: { path: "out/report.md" } }],
+					timestamp: 1,
+				},
+				{
+					role: "toolResult",
+					toolCallId: "w1",
+					content: [{ type: "text", text: "Written to out/report.md" }],
+					details: { tool: "write", bytes: 12 },
+					isError: false,
+				},
+			],
+			"/work/acme",
+		);
+		const call = (result[0].toolCalls as Array<Record<string, unknown>>)[0];
+		expect(call.outputPath).toEqual({
+			path: "/work/acme/out/report.md",
+			displayPath: "out/report.md",
+		});
+		expect(call.details).toEqual({ tool: "write", bytes: 12 });
+	});
+
 	it("handles input with null/undefined values gracefully", () => {
 		const result = extractChatMessages([
 			null,

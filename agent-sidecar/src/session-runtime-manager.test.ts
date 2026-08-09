@@ -114,5 +114,28 @@ describe("SessionRuntimeManager", () => {
 			expect(snapshotRuntime(runtime).mode).toBe("chat");
 			expect(snapshotRuntime(runtime, "work").mode).toBe("work");
 		});
+
+		it("snapshots the same absolute output path as the live normalizer", () => {
+			const runtime = fakeRuntime("/tmp/a.jsonl", "/work/acme");
+			(runtime.session as unknown as { messages: unknown[] }).messages = [
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: "w1", name: "write", arguments: { path: "out/report.md" } }],
+					timestamp: 1,
+				},
+				{
+					role: "toolResult",
+					toolCallId: "w1",
+					content: [{ type: "text", text: "Written to out/report.md" }],
+					isError: false,
+				},
+			];
+			const snapshot = snapshotRuntime(runtime);
+			const tc = (snapshot.messages[0] as { toolCalls?: Array<Record<string, unknown>> }).toolCalls?.[0];
+			expect(tc?.outputPath).toEqual({
+				path: "/work/acme/out/report.md",
+				displayPath: "out/report.md",
+			});
+		});
 	});
 });
