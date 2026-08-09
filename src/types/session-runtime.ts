@@ -4,6 +4,15 @@ import type { PiEvent } from "@/types/pi-events";
 /** Mirror of agent-sidecar SessionStatus — the single active stream status. */
 export type SessionStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
 
+/** Model metadata carried on snapshots and session state. */
+export interface SessionModel {
+	provider?: string;
+	id?: string;
+	name?: string;
+}
+
+export type SessionLoadStatus = "loaded" | "loading" | "error";
+
 /** Structured wire error carried on every session-bound error envelope. */
 export interface SessionWireError {
 	code: string;
@@ -21,7 +30,7 @@ export interface SessionSnapshot {
 	isRunning: boolean;
 	status: SessionStatus;
 	queue: { steering: string[]; followUp: string[] };
-	model?: { provider?: string; id?: string; name?: string };
+	model?: SessionModel;
 	error?: SessionWireError;
 }
 

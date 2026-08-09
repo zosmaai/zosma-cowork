@@ -7,7 +7,13 @@ import type {
 	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
-import type { SessionEventEnvelope, SessionSnapshot, SessionWireError } from "@/types/session-runtime";
+import type {
+	SessionEventEnvelope,
+	SessionModel,
+	SessionSnapshot,
+	SessionLoadStatus,
+	SessionWireError,
+} from "@/types/session-runtime";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
@@ -39,6 +45,19 @@ export interface StreamState {
 	error: string | null;
 	/** Structured form of the terminal error (hydration + ErrorBanner). */
 	sessionError: SessionWireError | null;
+	/** Session identity this state belongs to (canonical absolute file). */
+	sessionFile: string | null;
+	/** The addressed runtime's workspace. */
+	cwd: string | null;
+	/** Model metadata for this session (set on load and MODEL_INFO). */
+	model?: SessionModel;
+	/** True after hydration/load; false after sidecar_loss or load failure. */
+	runtimeLoaded: boolean;
+	loadStatus: SessionLoadStatus;
+	/** True after START_STREAM until the correlated terminal done is reduced. */
+	awaitingDone: boolean;
+	/** Monotonic done count; survives React batching and duplicate render states. */
+	settledVersion: number;
 	/** Pending steer + follow-up messages — see {@link QueueSnapshot}. */
 	queue: QueueSnapshot;
 	/**
@@ -100,7 +119,7 @@ export type StreamAction =
 	| { type: "TURN_RESET" }
 	| { type: "MESSAGE_END" }
 	| { type: "STREAM_COMPLETE" }
-	| { type: "STREAM_ERROR"; error: string }
+	| { type: "STREAM_ERROR"; error: string; sessionError?: SessionWireError }
 	| { type: "ABORT_STREAM" }
 	| { type: "RESET" }
 	| { type: "CLEAR_MESSAGES" }
@@ -109,6 +128,9 @@ export type StreamAction =
 	 * transcript, queue, status, running state, and structured error.
 	 */
 	| { type: "HYDRATE_SESSION"; snapshot: SessionSnapshot }
+	| { type: "BEGIN_LOAD" }
+	| { type: "LOAD_FAILED"; error: SessionWireError }
+	| { type: "SET_SESSION_MODEL"; model: SessionModel }
 	/**
 	 * Reconciling action — dispatched on every `queue_update` event from
 	 * the sidecar. Replaces the entire queue snapshot (no merge: the
@@ -159,11 +181,32 @@ export const INITIAL_STATE: StreamState = {
 	status: "idle",
 	error: null,
 	sessionError: null,
+	sessionFile: null,
+	cwd: null,
+	model: undefined,
+	runtimeLoaded: false,
+	loadStatus: "loaded",
+	awaitingDone: false,
+	settledVersion: 0,
 	queue: { steering: [], followUp: [] },
 	streamSegments: [],
 	queuedKinds: {},
 	promptEchoConsumed: false,
 };
+
+/**
+ * Fresh per-key state. Uses a factory so nested arrays/objects (queue,
+ * streamSegments, queuedKinds) are never shared between map entries.
+ */
+export function createStreamState(sessionFile: string): StreamState {
+	return {
+		...INITIAL_STATE,
+		sessionFile,
+		queue: { steering: [], followUp: [] },
+		streamSegments: [],
+		queuedKinds: {},
+	};
+}
 
 /** Join non-empty sub-turn segments into the bubble's rendered content. */
 function joinSegments(segments: string[]): string {
@@ -201,6 +244,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				status: "thinking",
 				error: null,
 				sessionError: null,
+				awaitingDone: true,
 				streamingMessage: {
 					id: crypto.randomUUID(),
 					role: "assistant",
@@ -224,16 +268,39 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			};
 
 		case "HYDRATE_SESSION":
-			// Adopt a full sidecar snapshot into the single active reducer.
+			// Adopt a full sidecar snapshot into the keyed reducer entry.
 			return {
 				...INITIAL_STATE,
+				sessionFile: action.snapshot.sessionFile,
+				cwd: action.snapshot.cwd,
+				model: action.snapshot.model,
 				messages: action.snapshot.messages,
 				isRunning: action.snapshot.isRunning,
 				status: action.snapshot.status,
 				error: action.snapshot.error?.message ?? null,
 				sessionError: action.snapshot.error ?? null,
 				queue: action.snapshot.queue,
+				runtimeLoaded: true,
+				loadStatus: "loaded",
+				awaitingDone: action.snapshot.isRunning,
 			};
+
+		case "BEGIN_LOAD":
+			return { ...state, loadStatus: "loading" };
+
+		case "LOAD_FAILED":
+			return {
+				...state,
+				isRunning: false,
+				status: "error",
+				error: action.error.message,
+				sessionError: action.error,
+				runtimeLoaded: false,
+				loadStatus: "error",
+			};
+
+		case "SET_SESSION_MODEL":
+			return { ...state, model: action.model };
 
 		/**
 		 * TURN_RESET — Soft boundary at the start of each assistant sub-message
@@ -330,9 +397,10 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "MODEL_INFO": {
 			const msg = state.streamingMessage;
-			if (!msg) return state;
+			if (!msg) return { ...state, model: { provider: action.provider, id: action.model } };
 			return {
 				...state,
+				model: { provider: action.provider, id: action.model },
 				streamingMessage: {
 					...msg,
 					model: action.model,
@@ -422,8 +490,25 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "STREAM_COMPLETE": {
 			const msg = state.streamingMessage;
+			const settledVersion = state.settledVersion + (state.awaitingDone ? 1 : 0);
 			if (!msg) {
-				return { ...state, isRunning: false, status: "idle", streamingMessage: null };
+				return state.error
+					? {
+							...state,
+							isRunning: false,
+							status: "error",
+							streamingMessage: null,
+							awaitingDone: false,
+							settledVersion,
+						}
+					: {
+							...state,
+							isRunning: false,
+							status: "idle",
+							streamingMessage: null,
+							awaitingDone: false,
+							settledVersion,
+						};
 			}
 			// Skip empty streaming messages — MESSAGE_END creates a fresh
 			// blank streaming message after finalizing the real content,
@@ -436,6 +521,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					isRunning: false,
 					status: "idle",
 					streamingMessage: null,
+					awaitingDone: false,
+					settledVersion,
 				};
 			}
 			return {
@@ -444,6 +531,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				status: "idle",
 				messages: [...state.messages, { ...msg, isStreaming: false }],
 				streamingMessage: null,
+				awaitingDone: false,
+				settledVersion,
 			};
 		}
 
@@ -460,6 +549,9 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				isRunning: false,
 				status: "error",
 				error: action.error,
+				// Structured error (if provided) surfaces in session introspection;
+				// the unchanged awaitingDone keeps the guaranteed `done` terminal.
+				sessionError: action.sessionError ?? state.sessionError,
 				messages: hasContent
 					? [...state.messages, { ...(msg as ChatMessage), isStreaming: false }]
 					: state.messages,
@@ -580,6 +672,61 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 		default:
 			return state;
 	}
+}
+
+export type SessionStreamsState = Map<string, StreamState>;
+
+export type SessionStreamsAction =
+	| { type: "APPLY"; sessionFile: string; action: StreamAction }
+	| { type: "REMOVE_SESSION"; sessionFile: string }
+	| { type: "SIDECAR_LOST" };
+
+export const INITIAL_SESSION_STREAMS: SessionStreamsState = new Map();
+
+export function sessionStreamsReducer(
+	states: SessionStreamsState,
+	action: SessionStreamsAction,
+): SessionStreamsState {
+	if (action.type === "REMOVE_SESSION") {
+		if (!states.has(action.sessionFile)) return states;
+		const next = new Map(states);
+		next.delete(action.sessionFile);
+		return next;
+	}
+
+	if (action.type === "SIDECAR_LOST") {
+		const next = new Map(states);
+		const error: SessionWireError = {
+			code: "session_interrupted",
+			message: "Session stopped because the sidecar restarted",
+			retryable: true,
+		};
+		for (const [sessionFile, state] of states) {
+			const interrupted =
+				state.loadStatus === "loading"
+					? streamReducer(state, { type: "LOAD_FAILED", error })
+					: state.isRunning
+						? streamReducer(state, {
+								type: "STREAM_ERROR",
+								error: error.message,
+								sessionError: error,
+							})
+						: state;
+			next.set(sessionFile, {
+				...interrupted,
+				runtimeLoaded: false,
+				awaitingDone: false,
+			});
+		}
+		return next;
+	}
+
+	const current = states.get(action.sessionFile) ?? createStreamState(action.sessionFile);
+	const updated = streamReducer(current, action.action);
+	if (updated === current && states.has(action.sessionFile)) return states;
+	const next = new Map(states);
+	next.set(action.sessionFile, updated);
+	return next;
 }
 
 function extractToolCallInfo(tc: {

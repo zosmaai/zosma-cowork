@@ -25,6 +25,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { usePiStream } from "./usePiStream";
+import {
+	INITIAL_SESSION_STREAMS,
+	sessionStreamsReducer,
+	type SessionStreamsAction,
+} from "./usePiStream";
 
 describe("usePiStream session identity", () => {
 	beforeEach(() => {
@@ -102,6 +107,20 @@ describe("usePiStream session identity", () => {
 		});
 	});
 
+	it("hydration carries session/cwd/model and runtime-loaded metadata", () => {
+		const { result } = renderHook(() => usePiStream("/sessions/a.jsonl"));
+		act(() => result.current.hydrateSession(snapshot("/sessions/a.jsonl", "A history")));
+		expect(result.current.state).toMatchObject({
+			sessionFile: "/sessions/a.jsonl",
+			cwd: `/work/${'/sessions/a.jsonl'.at(-6)}`,
+			model: { provider: "test", id: "model", name: "Model" },
+			runtimeLoaded: true,
+			loadStatus: "loaded",
+			awaitingDone: false,
+			settledVersion: 0,
+		});
+	});
+
 	it("session_event listener only mutates the active session reducer", async () => {
 		const { result } = renderHook(() => usePiStream("/sessions/a.jsonl"));
 		act(() => result.current.hydrateSession(snapshot("/sessions/a.jsonl", "A history")));
@@ -129,20 +148,64 @@ describe("usePiStream session identity", () => {
 		expect(result.current.state.queue.steering).toEqual(["A"]);
 	});
 
-	it("ignores late A events after hydrating B", async () => {
-		const { result } = renderHook(() => usePiStream("/sessions/a.jsonl"));
-		act(() => result.current.hydrateSession(snapshot("/sessions/a.jsonl", "A history")));
-		await act(async () => result.current.startStream("/sessions/a.jsonl", "A prompt"));
-		const aChannel = mocks.channels[0];
-		act(() => result.current.hydrateSession(snapshot("/sessions/b.jsonl", "B history")));
-		act(() => {
-			aChannel.onmessage?.({
-				type: "event",
-				sessionFile: "/sessions/a.jsonl",
-				event: { type: "done" },
-			});
+	describe("keyed session stream cache", () => {
+		function reduceSessions(actions: SessionStreamsAction[]) {
+			return actions.reduce(sessionStreamsReducer, INITIAL_SESSION_STREAMS);
+		}
+
+		it("updates only the addressed stream entry", () => {
+			const states = reduceSessions([
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "START_STREAM", prompt: "A" } },
+				{ type: "APPLY", sessionFile: "/b.jsonl", action: { type: "START_STREAM", prompt: "B" } },
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "TEXT_DELTA", delta: "alpha" } },
+			]);
+			expect(states.get("/a.jsonl")?.streamingMessage?.content).toBe("alpha");
+			expect(states.get("/b.jsonl")?.streamingMessage?.content).toBe("");
+			expect(states.get("/a.jsonl")?.isRunning).toBe(true);
+			expect(states.get("/b.jsonl")?.isRunning).toBe(true);
 		});
-		expect(result.current.state.messages.map((message) => message.content)).toEqual(["B history"]);
-		expect(result.current.state.error).toBe("failed");
+
+		it("retains hidden completion after another key becomes active", () => {
+			const states = reduceSessions([
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "START_STREAM", prompt: "A" } },
+				{ type: "APPLY", sessionFile: "/b.jsonl", action: { type: "START_STREAM", prompt: "B" } },
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "TEXT_DELTA", delta: "done A" } },
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "STREAM_COMPLETE" } },
+			]);
+			expect(states.get("/a.jsonl")?.messages.at(-1)?.content).toBe("done A");
+			expect(states.get("/a.jsonl")?.isRunning).toBe(false);
+			expect(states.get("/a.jsonl")?.settledVersion).toBe(1);
+			expect(states.get("/b.jsonl")?.isRunning).toBe(true);
+			expect(states.get("/b.jsonl")?.settledVersion).toBe(0);
+		});
+
+		it("marks only running streams interrupted when the runtime process is lost", () => {
+			const states = reduceSessions([
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "START_STREAM", prompt: "A" } },
+				{ type: "APPLY", sessionFile: "/b.jsonl", action: { type: "HYDRATE_SESSION", snapshot: snapshot("/b.jsonl", "B") } },
+				{ type: "SIDECAR_LOST" },
+			]);
+			expect(states.get("/a.jsonl")).toMatchObject({
+				isRunning: false,
+				status: "error",
+				runtimeLoaded: false,
+				sessionError: { code: "session_interrupted", retryable: true },
+			});
+			expect(states.get("/b.jsonl")).toMatchObject({
+				status: "error",
+				runtimeLoaded: false,
+			});
+			expect(states.get("/b.jsonl")?.sessionError?.code).toBe("provider_error");
+		});
+
+		it("removes only the deleted session cache entry", () => {
+			const states = reduceSessions([
+				{ type: "APPLY", sessionFile: "/a.jsonl", action: { type: "START_STREAM", prompt: "A" } },
+				{ type: "APPLY", sessionFile: "/b.jsonl", action: { type: "START_STREAM", prompt: "B" } },
+				{ type: "REMOVE_SESSION", sessionFile: "/a.jsonl" },
+			]);
+			expect(states.has("/a.jsonl")).toBe(false);
+			expect(states.has("/b.jsonl")).toBe(true);
+		});
 	});
 });
