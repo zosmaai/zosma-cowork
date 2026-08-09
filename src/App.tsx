@@ -30,7 +30,9 @@ import type { Command } from "@/types/commands";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from "react";
+
+type OpenDrawer = null | "sidebar" | "work-panel";
 
 interface SessionEntry {
 	file: string;
@@ -130,6 +132,28 @@ function App() {
 	const [, setSidebarView] = useState("chats");
 	// Manual sidebar rail collapse (Phase 2). Default stays expanded.
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	const [openDrawer, setOpenDrawer] = useState<OpenDrawer>(null);
+	const sidebarDrawerTriggerRef = useRef<HTMLButtonElement>(null);
+	const workPanelTriggerRef = useRef<HTMLButtonElement>(null);
+	const closeDrawer = useCallback(() => {
+		const trigger = openDrawer === "sidebar" ? sidebarDrawerTriggerRef : workPanelTriggerRef;
+		setOpenDrawer(null);
+		queueMicrotask(() => trigger.current?.focus());
+	}, [openDrawer]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: close overlays on session identity change
+	useEffect(() => {
+		setOpenDrawer(null);
+	}, [activeSessionFile]);
+
+	useEffect(() => {
+		if (!openDrawer) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") closeDrawer();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [openDrawer, closeDrawer]);
 	// Persisted font scaling (zoom preset) restored once at startup.
 	const [fontScale] = useState(getFontScale);
 	const handleChangeView = useCallback((view: string) => {
@@ -274,7 +298,9 @@ function App() {
 	const initializing =
 		!showNewUserConnect &&
 		!showKeyEntry &&
-		(telemetryUndecided || waitingForStartupClassification || (!sidecarReady && (authLoading || hasCredentials !== true)));
+		(telemetryUndecided ||
+			waitingForStartupClassification ||
+			(!sidecarReady && (authLoading || hasCredentials !== true)));
 
 	// Whether to render the legacy Connect / API-key modal. It remains reachable
 	// from Settings, but is not part of Zosma first-run onboarding.
@@ -531,23 +557,26 @@ function App() {
 		}
 	}, [streamStates]);
 
-	const handleModeChange = useCallback(async (mode: SessionMode) => {
-		if (modeLocked) return;
-		// Synchronous ref closes the click→immediate-Enter gap before the keyed
-		// reducer rerender lands. First send always uses the visibly chosen mode.
-		selectedModeRef.current = mode;
-		setModeError(null);
-		if (!activeSessionFile) {
-			setUnboundMode(mode);
-			return;
-		}
-		try {
-			await setSessionMode(activeSessionFile, mode);
-		} catch (error) {
-			log.error("[cowork] set_session_mode failed:", error);
-			setModeError("Couldn’t save this session’s mode. Try again.");
-		}
-	}, [activeSessionFile, modeLocked, setSessionMode]);
+	const handleModeChange = useCallback(
+		async (mode: SessionMode) => {
+			if (modeLocked) return;
+			// Synchronous ref closes the click→immediate-Enter gap before the keyed
+			// reducer rerender lands. First send always uses the visibly chosen mode.
+			selectedModeRef.current = mode;
+			setModeError(null);
+			if (!activeSessionFile) {
+				setUnboundMode(mode);
+				return;
+			}
+			try {
+				await setSessionMode(activeSessionFile, mode);
+			} catch (error) {
+				log.error("[cowork] set_session_mode failed:", error);
+				setModeError("Couldn’t save this session’s mode. Try again.");
+			}
+		},
+		[activeSessionFile, modeLocked, setSessionMode],
+	);
 
 	// ── Send a new prompt ──
 	// The visible model is the ACTIVE session's runtime model when known;
@@ -713,9 +742,13 @@ function App() {
 	// running; no abort is sent.
 	const handleNewSession = useCallback(
 		async (cwd?: string) => {
+			setOpenDrawer(null);
 			let resolvedCwd: string | undefined;
 			try {
-				const snapshot = (await invoke<SessionSnapshot>("new_session", cwd ? { cwd } : {})) as SessionSnapshot | null;
+				const snapshot = (await invoke<SessionSnapshot>(
+					"new_session",
+					cwd ? { cwd } : {},
+				)) as SessionSnapshot | null;
 				if (!snapshot?.sessionFile) {
 					log.error("[cowork] new_session returned no session file");
 					return undefined;
@@ -758,6 +791,7 @@ function App() {
 	// create a session in an unintended folder, and the active session is left
 	// untouched.
 	const handleNewSessionPrompt = useCallback(async () => {
+		setOpenDrawer(null);
 		let selected: string | null = null;
 		try {
 			const picked = await openDialog({
@@ -806,6 +840,7 @@ function App() {
 
 	const handleDeleteSession = useCallback(
 		(file: string) => {
+			setOpenDrawer(null);
 			const entry = sessionEntries.find((s) => s.file === file);
 			setPendingDelete({
 				file,
@@ -906,6 +941,7 @@ function App() {
 
 	const handleSessionSelect = useCallback(
 		(file: string) => {
+			setOpenDrawer(null);
 			if (file === activeSessionFile) return;
 			// Switching only changes the active render key. Cached states (hidden
 			// sessions) keep running independently; if the target was never
@@ -943,6 +979,35 @@ function App() {
 			runtimeError: live?.error ?? undefined,
 		};
 	});
+
+	const sidebarProps: ComponentProps<typeof Sidebar> = {
+		sessions: sidebarSessions,
+		activeSessionId: activeSessionFile || undefined,
+		onSessionSelect: (id) => {
+			setSidebarView("chats");
+			handleSessionSelect(id);
+		},
+		onNewSession: () => {
+			setSidebarView("chats");
+			void handleNewSession();
+		},
+		onOpenSession: () => {
+			setSidebarView("chats");
+			void handleNewSessionPrompt();
+		},
+		homeDir: homeDir ?? undefined,
+		onDeleteSession: handleDeleteSession,
+		onRequestRename: handleRequestRename,
+		onPinSession: handlePinSession,
+		onDeepSearch: handleDeepSearch,
+		allFolders,
+		onToggleAllFolders: () => setAllFolders((value) => !value),
+		onChangeView: handleChangeView,
+		collapsed: sidebarCollapsed,
+		onCollapsedChange: setSidebarCollapsed,
+	};
+	const activeSessionTitle =
+		sessionEntries.find((entry) => entry.file === activeSessionFile)?.title ?? "Untitled task";
 
 	// Hide the app chrome (sidebar, mobile bars, share button) whenever the
 	// main pane is showing a full-screen state: onboarding, settings, or the
@@ -1009,48 +1074,24 @@ function App() {
 
 			{/* Sidebar — desktop: visible, mobile: slide-over */}
 			{!hideChrome && (
-				<>
-					{/* Desktop sidebar — floating glass panel */}
-					<div className="hidden md:block panel-sidebar overflow-hidden shrink-0">
-						<Sidebar
-							sessions={sidebarSessions}
-							activeSessionId={activeSessionFile || undefined}
-							onSessionSelect={(id) => {
-								setSidebarView("chats");
-								handleSessionSelect(id);
-							}}
-							onNewSession={() => {
-								setSidebarView("chats");
-								// "New" starts a session in the configured Zosma Cowork folder — no folder prompt.
-								handleNewSession();
-							}}
-							onOpenSession={() => {
-								setSidebarView("chats");
-								// "Open" picks a folder for the agent to work in.
-								handleNewSessionPrompt();
-							}}
-							homeDir={homeDir ?? undefined}
-							onDeleteSession={handleDeleteSession}
-							onRequestRename={handleRequestRename}
-							onPinSession={handlePinSession}
-							onDeepSearch={handleDeepSearch}
-							allFolders={allFolders}
-							onToggleAllFolders={() => setAllFolders((v) => !v)}
-							onChangeView={handleChangeView}
-							collapsed={sidebarCollapsed}
-							onCollapsedChange={setSidebarCollapsed}
-						/>
-					</div>
-				</>
+				<div
+					className="hidden md:block panel-sidebar overflow-hidden shrink-0"
+					inert={openDrawer === "work-panel" ? true : undefined}
+				>
+					<Sidebar {...sidebarProps} />
+				</div>
 			)}
 
 			{/* Main content — raised glass panel */}
-			<div className="relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
+			<div className="session-work-container relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
 				{/* In-app update banner (issue #271) */}
 				<UpdateBanner update={appUpdate} />
 
 				{/* Content with view transition key */}
-				<main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+				<main
+					className="flex-1 flex flex-col min-h-0 overflow-hidden"
+					inert={openDrawer === "sidebar" ? true : undefined}
+				>
 					<div
 						key={
 							initializing
@@ -1123,7 +1164,9 @@ function App() {
 								onEditQueue={handleEditQueue}
 								sessionKey={activeSessionFile ?? "new"}
 								onRetry={() => {
-									const lastUser = [...streamState.messages].reverse().find((m) => m.role === "user");
+									const lastUser = [...streamState.messages]
+										.reverse()
+										.find((m) => m.role === "user");
 									if (lastUser?.content) handleSend(lastUser.content);
 								}}
 								models={models}
@@ -1131,9 +1174,7 @@ function App() {
 								onModelSelect={handleModelSelect}
 								modelSelectorOpen={showModelSelector}
 								onModelSelectorOpenChange={setShowModelSelector}
-								draft={
-									composerDraft?.sessionFile === draftSessionKey ? composerDraft : undefined
-								}
+								draft={composerDraft?.sessionFile === draftSessionKey ? composerDraft : undefined}
 								commands={BUILTIN_COMMANDS}
 								onRunCommand={handleRunCommand}
 								mode={activeMode}
@@ -1141,6 +1182,13 @@ function App() {
 								modeError={modeError}
 								onModeChange={(mode) => void handleModeChange(mode)}
 								workspaceCwd={workspaceCwd}
+								taskTitle={activeSessionTitle}
+								drawer={openDrawer}
+								onDrawerChange={(drawer) =>
+									drawer === null ? closeDrawer() : setOpenDrawer(drawer)
+								}
+								sidebarButtonRef={sidebarDrawerTriggerRef}
+								panelButtonRef={workPanelTriggerRef}
 								onStarterSelect={(text) => {
 									setComposerDraft((previous) => ({
 										sessionFile: draftSessionKey,
@@ -1152,6 +1200,24 @@ function App() {
 						)}
 					</div>
 				</main>
+				{openDrawer === "sidebar" && (
+					<div className="mobile-sidebar-layer md:hidden">
+						<button
+							type="button"
+							className="drawer-backdrop"
+							aria-label="Close session sidebar"
+							onClick={closeDrawer}
+						/>
+						<div
+							role="dialog"
+							aria-modal="true"
+							aria-label="Sessions"
+							className="mobile-sidebar-drawer"
+						>
+							<Sidebar {...sidebarProps} collapsed={false} onCollapsedChange={closeDrawer} />
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

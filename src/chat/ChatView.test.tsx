@@ -305,6 +305,29 @@ describe("ChatView mode-specific empty shell", () => {
 		expect(screen.getByRole("heading", { name: "Task title" })).toBeInTheDocument();
 	});
 
+	it("routes active Work drawer controls and backdrop through one owner", () => {
+		const onDrawerChange = vi.fn();
+		const { container } = render(
+			<ChatView
+				sessionFile="/work.jsonl"
+				messages={[{ id: "a", role: "assistant", content: "Result", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning={false}
+				error={null}
+				onSend={vi.fn()}
+				onAbort={vi.fn()}
+				mode="work"
+				taskTitle="Task"
+				drawer="work-panel"
+				onDrawerChange={onDrawerChange}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Open Outputs and Sources" }));
+		expect(onDrawerChange).toHaveBeenCalledWith("work-panel");
+		fireEvent.click(container.querySelector(".work-panel-backdrop") as HTMLButtonElement);
+		expect(onDrawerChange).toHaveBeenCalledWith(null);
+	});
+
 	it("keeps active Chat on the existing bubble renderer", () => {
 		const { container } = render(
 			<ChatView

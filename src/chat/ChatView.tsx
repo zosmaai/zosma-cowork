@@ -5,14 +5,16 @@ import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
 import { SessionEmptyIntro, SessionStarterPrompts } from "@/components/SessionEmptyState";
 import { QueuedMessages } from "@/chat/QueuedMessages";
+import { WorkPanel } from "@/components/WorkPanel";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { deriveWorkProjection } from "@/lib/work-projections";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
 import { WorkHeader } from "@/work/WorkHeader";
 import { WorkSessionView } from "@/work/WorkSessionView";
 import { motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
 
@@ -65,6 +67,10 @@ interface ChatViewProps {
 	onStarterSelect?: (text: string) => void;
 	/** Stable task identity shown above an active Work document. */
 	taskTitle?: string;
+	drawer?: null | "sidebar" | "work-panel";
+	onDrawerChange?: (drawer: null | "sidebar" | "work-panel") => void;
+	sidebarButtonRef?: RefObject<HTMLButtonElement | null>;
+	panelButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 export function ChatView({
@@ -97,6 +103,10 @@ export function ChatView({
 	workspaceCwd,
 	onStarterSelect,
 	taskTitle,
+	drawer,
+	onDrawerChange,
+	sidebarButtonRef,
+	panelButtonRef,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -282,14 +292,33 @@ export function ChatView({
 	const allMessages = streamingMessage ? [...messages, streamingMessage] : messages;
 	const isEmpty = messages.length === 0 && !streamingMessage;
 	const activeWork = mode === "work" && !isEmpty;
+	const projection = useMemo(
+		() =>
+			activeWork
+				? deriveWorkProjection(
+						streamingMessage ? [...messages, streamingMessage] : messages,
+						workspaceCwd ?? "",
+					)
+				: { outputs: [], sources: [] },
+		[activeWork, messages, streamingMessage, workspaceCwd],
+	);
 
 	return (
 		<div
 			className="chat-font session-shell session-layout relative flex-1 min-h-0"
 			data-session-mode={mode}
+			data-active-work={activeWork ? "true" : "false"}
 		>
-			<div className="session-center">
-				{activeWork && <WorkHeader title={taskTitle ?? "Untitled task"} />}
+			<div className="session-center" inert={drawer === "work-panel" ? true : undefined}>
+				{activeWork && (
+					<WorkHeader
+						title={taskTitle ?? "Untitled task"}
+						onOpenSidebar={() => onDrawerChange?.("sidebar")}
+						onOpenPanel={() => onDrawerChange?.("work-panel")}
+						sidebarButtonRef={sidebarButtonRef}
+						panelButtonRef={panelButtonRef}
+					/>
+				)}
 				<InThreadFind
 					open={findOpen}
 					query={findQuery}
@@ -413,6 +442,25 @@ export function ChatView({
 					</div>
 				)}
 			</div>
+			{activeWork && (
+				<>
+					{drawer === "work-panel" && (
+						<button
+							type="button"
+							className="drawer-backdrop work-panel-backdrop"
+							aria-label="Close Work panel"
+							onClick={() => onDrawerChange?.(null)}
+						/>
+					)}
+					<WorkPanel
+						outputs={projection.outputs}
+						sources={projection.sources}
+						workspace={workspaceCwd ?? ""}
+						open={drawer === "work-panel"}
+						onClose={() => onDrawerChange?.(null)}
+					/>
+				</>
+			)}
 		</div>
 	);
 }

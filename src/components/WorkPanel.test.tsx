@@ -97,8 +97,42 @@ describe("WorkPanel", () => {
 		expect(screen.queryByTestId("artifact-filename")).toBeNull();
 	});
 
+	it("uses modal semantics, traps focus, and closes on Escape", async () => {
+		render(
+			<WorkPanel
+				outputs={[output]}
+				sources={[urlSource]}
+				workspace="/work"
+				open
+				onClose={invoke}
+			/>,
+		);
+		const dialog = screen.getByRole("dialog", { name: "Work outputs and sources" });
+		expect(dialog).toHaveAttribute("aria-modal", "true");
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Close Work panel" })).toHaveFocus(),
+		);
+		fireEvent.keyDown(dialog, { key: "Tab" });
+		expect(dialog).toContainElement(document.activeElement as HTMLElement);
+		fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+		expect(dialog).toContainElement(document.activeElement as HTMLElement);
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(invoke).toHaveBeenCalled();
+	});
+
+	it("marks a closed panel for the CSS visibility contract", () => {
+		render(
+			<WorkPanel outputs={[]} sources={[]} workspace="/work" open={false} onClose={vi.fn()} />,
+		);
+		const panel = screen.getByRole("region", { name: "Work outputs and sources" });
+		expect(panel).toHaveAttribute("data-open", "false");
+		expect(panel).not.toHaveAttribute("aria-modal");
+	});
+
 	it("opens a URL source by normalized identity", () => {
-		render(<WorkPanel outputs={[]} sources={[urlSource]} workspace="/work" open onClose={vi.fn()} />);
+		render(
+			<WorkPanel outputs={[]} sources={[urlSource]} workspace="/work" open onClose={vi.fn()} />,
+		);
 		fireEvent.click(screen.getByRole("button", { name: /Reference report/i }));
 		expect(openExternalUrl).toHaveBeenCalledWith("https://example.com/report");
 		expect(openExternalUrl).not.toHaveBeenCalledWith(urlSource.displayValue);

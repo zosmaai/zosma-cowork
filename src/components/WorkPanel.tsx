@@ -16,6 +16,8 @@ interface WorkPanelProps {
 
 export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPanelProps) {
 	const panelRef = useRef<HTMLElement>(null);
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
 	const [selectedIdentity, setSelectedIdentity] = useState<string | null>(null);
 	const selected = outputs.find((output) => output.identity === selectedIdentity) ?? null;
 	const load = useArtifactLoader(selected?.path ?? null, workspace);
@@ -25,6 +27,36 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 			setSelectedIdentity(null);
 		}
 	}, [outputs, selectedIdentity]);
+
+	useEffect(() => {
+		if (!open) return;
+		const panel = panelRef.current;
+		const focusable = () => [
+			...(panel?.querySelectorAll<HTMLElement>(
+				'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+			) ?? []),
+		];
+		focusable()[0]?.focus();
+
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				onCloseRef.current();
+				return;
+			}
+			if (event.key !== "Tab") return;
+			const elements = focusable();
+			if (elements.length === 0) return;
+			event.preventDefault();
+			const current = elements.indexOf(document.activeElement as HTMLElement);
+			const next = event.shiftKey
+				? (current - 1 + elements.length) % elements.length
+				: (current + 1) % elements.length;
+			elements[next].focus();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [open]);
 
 	return (
 		<aside

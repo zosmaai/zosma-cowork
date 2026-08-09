@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Ref } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
@@ -63,7 +64,7 @@ EMPTY.runtimeLoaded = false;
 
 vi.mock("@/hooks/usePiStream", () => ({
 	usePiStream: (activeFile: string | null) => ({
-		state: activeFile ? controller.states.get(activeFile) ?? streamState(activeFile, "") : EMPTY,
+		state: activeFile ? (controller.states.get(activeFile) ?? streamState(activeFile, "")) : EMPTY,
 		states: controller.states,
 		getSessionState: controller.getSessionState,
 		hydrateSession: controller.hydrateSession,
@@ -85,7 +86,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@/components/Sidebar", () => ({
-	Sidebar: ({ sessions, onSessionSelect, onNewSession, onDeleteSession, collapsed, onCollapsedChange }: {
+	Sidebar: ({
+		sessions,
+		onSessionSelect,
+		onNewSession,
+		onDeleteSession,
+		collapsed,
+		onCollapsedChange,
+	}: {
 		sessions: Array<{ id: string; title: string; lastMessage: string; runtimeStatus?: string }>;
 		onSessionSelect: (id: string) => void;
 		onNewSession: () => void;
@@ -95,7 +103,9 @@ vi.mock("@/components/Sidebar", () => ({
 	}) => (
 		<div>
 			<span>{`sidebar:${collapsed ? "collapsed" : "expanded"}`}</span>
-			<button type="button" onClick={() => onCollapsedChange?.(false)}>expand-sidebar</button>
+			<button type="button" onClick={() => onCollapsedChange?.(false)}>
+				expand-sidebar
+			</button>
 			{sessions.map((session) => (
 				<div key={session.id}>
 					<button
@@ -132,6 +142,11 @@ vi.mock("@/chat/ChatView", () => ({
 		modeChangeDisabled,
 		modeError,
 		draft,
+		taskTitle,
+		drawer,
+		onDrawerChange,
+		sidebarButtonRef,
+		panelButtonRef,
 	}: {
 		messages: Array<{ content: string }>;
 		currentModelId?: string;
@@ -142,6 +157,11 @@ vi.mock("@/chat/ChatView", () => ({
 		modeChangeDisabled?: boolean;
 		modeError?: string | null;
 		draft?: { text: string; nonce: number };
+		taskTitle?: string;
+		drawer?: null | "sidebar" | "work-panel";
+		onDrawerChange?: (drawer: null | "sidebar" | "work-panel") => void;
+		sidebarButtonRef?: Ref<HTMLButtonElement>;
+		panelButtonRef?: Ref<HTMLButtonElement>;
 	}) => (
 		<div>
 			{modeError && <div>{modeError}</div>}
@@ -149,15 +169,37 @@ vi.mock("@/chat/ChatView", () => ({
 				{messages.map((message) => message.content).join("|")}:{currentModelId}:{mode}
 			</div>
 			<div data-testid="composer-draft">{draft?.text ?? ""}</div>
-			<button type="button" disabled={modeChangeDisabled} onClick={() => onModeChange("work")}>choose-work</button>
-			<button type="button" onClick={() => onStarterSelect("Help me write")}>choose-starter</button>
-			<button type="button" onClick={() => onSend("first task")}>send-first</button>
+			<div data-testid="task-title">{taskTitle}</div>
+			<div data-testid="drawer-state">{drawer ?? "closed"}</div>
+			<button type="button" disabled={modeChangeDisabled} onClick={() => onModeChange("work")}>
+				choose-work
+			</button>
+			<button type="button" onClick={() => onStarterSelect("Help me write")}>
+				choose-starter
+			</button>
+			<button type="button" onClick={() => onSend("first task")}>
+				send-first
+			</button>
+			<button ref={sidebarButtonRef} type="button" onClick={() => onDrawerChange?.("sidebar")}>
+				open-sidebar-drawer
+			</button>
+			<button ref={panelButtonRef} type="button" onClick={() => onDrawerChange?.("work-panel")}>
+				open-work-panel
+			</button>
+			<button type="button" onClick={() => onDrawerChange?.(null)}>
+				close-drawer
+			</button>
 		</div>
 	),
 }));
 
 vi.mock("@/components/ui/confirm-dialog", () => ({
-	ConfirmDialog: ({ open, title, confirmLabel, onConfirm }: {
+	ConfirmDialog: ({
+		open,
+		title,
+		confirmLabel,
+		onConfirm,
+	}: {
 		open: boolean;
 		title: string;
 		confirmLabel: string;
@@ -364,8 +406,14 @@ describe("App cached session switching", () => {
 
 	it("keeps each cached session model visible when switching", async () => {
 		controller.states = new Map([
-			["/a.jsonl", streamState("/a.jsonl", "A", { model: { provider: "provider-a", id: "model-a" } })],
-			["/b.jsonl", streamState("/b.jsonl", "B", { model: { provider: "provider-b", id: "model-b" } })],
+			[
+				"/a.jsonl",
+				streamState("/a.jsonl", "A", { model: { provider: "provider-a", id: "model-a" } }),
+			],
+			[
+				"/b.jsonl",
+				streamState("/b.jsonl", "B", { model: { provider: "provider-b", id: "model-b" } }),
+			],
 		]);
 		controller.entries = [
 			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
@@ -374,9 +422,13 @@ describe("App cached session switching", () => {
 		render(<App />);
 		await screen.findByRole("button", { name: "select /a.jsonl" });
 		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
-		await waitFor(() => expect(screen.getByTestId("chat-state")).toHaveTextContent("provider-a/model-a"));
+		await waitFor(() =>
+			expect(screen.getByTestId("chat-state")).toHaveTextContent("provider-a/model-a"),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "select /b.jsonl" }));
-		await waitFor(() => expect(screen.getByTestId("chat-state")).toHaveTextContent("provider-b/model-b"));
+		await waitFor(() =>
+			expect(screen.getByTestId("chat-state")).toHaveTextContent("provider-b/model-b"),
+		);
 	});
 
 	it("creates a new session without aborting the previous running session", async () => {
@@ -431,7 +483,14 @@ describe("App cached session switching", () => {
 			["/b.jsonl", idleB],
 		]);
 		controller.entries = [
-			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2, preview: "A completed result" },
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 1,
+				createdAt: 1,
+				lastActivity: 2,
+				preview: "A completed result",
+			},
 			{ file: "/b.jsonl", title: "B", messageCount: 1, createdAt: 1, lastActivity: 2 },
 		];
 		view.rerender(<App />);
@@ -488,9 +547,7 @@ describe("App cached session switching", () => {
 	});
 
 	it("deletes an idle session without sending abort", async () => {
-		controller.states = new Map([
-			["/a.jsonl", streamState("/a.jsonl", "A idle")],
-		]);
+		controller.states = new Map([["/a.jsonl", streamState("/a.jsonl", "A idle")]]);
 		controller.entries = [
 			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
 		];
@@ -511,13 +568,22 @@ describe("App cached session switching", () => {
 			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
 		]);
 		controller.entries = [
-			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
 		];
 		render(<App />);
 		await screen.findByRole("button", { name: "select /a.jsonl" });
 		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
 		fireEvent.click(screen.getByText("send-first"));
-		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"));
+		await waitFor(() =>
+			expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"),
+		);
 		expect(controller.setSessionMode).toHaveBeenCalledWith("/a.jsonl", "work");
 		expect(controller.setSessionMode.mock.invocationCallOrder[0]).toBeLessThan(
 			controller.startStream.mock.invocationCallOrder[0],
@@ -529,7 +595,14 @@ describe("App cached session switching", () => {
 			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
 		]);
 		controller.entries = [
-			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
 		];
 		controller.setSessionMode.mockRejectedValueOnce(new Error("metadata unavailable"));
 		render(<App />);
@@ -566,7 +639,9 @@ describe("App cached session switching", () => {
 		render(<App />);
 		fireEvent.click(screen.getByText("choose-work"));
 		fireEvent.click(screen.getByText("send-first"));
-		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/new.jsonl", "first task"));
+		await waitFor(() =>
+			expect(controller.startStream).toHaveBeenCalledWith("/new.jsonl", "first task"),
+		);
 		expect(controller.setSessionMode).toHaveBeenCalledWith("/new.jsonl", "work");
 	});
 
@@ -576,8 +651,22 @@ describe("App cached session switching", () => {
 			["/work.jsonl", { ...streamState("/work.jsonl", "", { mode: "work" }), messages: [] }],
 		]);
 		controller.entries = [
-			{ file: "/chat.jsonl", title: "Chat", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "chat" },
-			{ file: "/work.jsonl", title: "Work", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+			{
+				file: "/chat.jsonl",
+				title: "Chat",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "chat",
+			},
+			{
+				file: "/work.jsonl",
+				title: "Work",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
 		];
 		render(<App />);
 		await screen.findByRole("button", { name: "select /chat.jsonl" });
@@ -612,11 +701,23 @@ describe("App cached session switching", () => {
 			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "chat" }), messages: [] }],
 		]);
 		controller.entries = [
-			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "chat" },
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "chat",
+			},
 		];
 		let release!: () => void;
 		controller.setSessionMode
-			.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }))
+			.mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						release = resolve;
+					}),
+			)
 			.mockResolvedValueOnce(undefined);
 		render(<App />);
 		await screen.findByRole("button", { name: "select /a.jsonl" });
@@ -625,7 +726,9 @@ describe("App cached session switching", () => {
 		fireEvent.click(screen.getByText("send-first"));
 		expect(controller.setSessionMode.mock.calls.map(([, mode]) => mode)).toEqual(["work", "work"]);
 		release();
-		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"));
+		await waitFor(() =>
+			expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"),
+		);
 	});
 
 	it("re-enables empty mode controls when first stream startup rejects", async () => {
@@ -633,7 +736,14 @@ describe("App cached session switching", () => {
 			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
 		]);
 		controller.entries = [
-			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 0,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
 		];
 		controller.startStream.mockRejectedValueOnce(new Error("runtime lost"));
 		render(<App />);
@@ -642,5 +752,104 @@ describe("App cached session switching", () => {
 		fireEvent.click(screen.getByText("send-first"));
 		await screen.findByText("Couldn’t start this session. Try again.");
 		expect(screen.getByText("choose-work")).toBeEnabled();
+	});
+
+	it("passes the active Work title to the session shell", async () => {
+		controller.states = new Map([
+			["/w.jsonl", streamState("/w.jsonl", "Result", { mode: "work" })],
+		]);
+		controller.entries = [
+			{
+				file: "/w.jsonl",
+				title: "Market report",
+				messageCount: 2,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /w.jsonl" }));
+		expect(screen.getByTestId("task-title")).toHaveTextContent("Market report");
+	});
+
+	it("uses one mutually exclusive sidebar or Work-panel drawer state", async () => {
+		controller.states = new Map([
+			["/w.jsonl", streamState("/w.jsonl", "Result", { mode: "work" })],
+		]);
+		controller.entries = [
+			{
+				file: "/w.jsonl",
+				title: "Work",
+				messageCount: 2,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /w.jsonl" }));
+		fireEvent.click(screen.getByText("open-sidebar-drawer"));
+		expect(screen.getByTestId("drawer-state")).toHaveTextContent("sidebar");
+		fireEvent.click(screen.getByText("open-work-panel"));
+		expect(screen.getByTestId("drawer-state")).toHaveTextContent("work-panel");
+	});
+
+	it("closes drawers when switching sessions", async () => {
+		controller.states = new Map([
+			["/a.jsonl", streamState("/a.jsonl", "A", { mode: "work" })],
+			["/b.jsonl", streamState("/b.jsonl", "B", { mode: "chat" })],
+		]);
+		controller.entries = [
+			{
+				file: "/a.jsonl",
+				title: "A",
+				messageCount: 2,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
+			{
+				file: "/b.jsonl",
+				title: "B",
+				messageCount: 2,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "chat",
+			},
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("open-work-panel"));
+		fireEvent.click(screen.getByRole("button", { name: "select /b.jsonl" }));
+		expect(screen.getByTestId("drawer-state")).toHaveTextContent("closed");
+	});
+
+	it("returns focus to each drawer trigger and labels the mobile sidebar dialog", async () => {
+		controller.states = new Map([
+			["/w.jsonl", streamState("/w.jsonl", "Result", { mode: "work" })],
+		]);
+		controller.entries = [
+			{
+				file: "/w.jsonl",
+				title: "Work",
+				messageCount: 2,
+				createdAt: 1,
+				lastActivity: 2,
+				mode: "work",
+			},
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /w.jsonl" }));
+		const panelTrigger = screen.getByText("open-work-panel");
+		fireEvent.click(panelTrigger);
+		fireEvent.click(screen.getByText("close-drawer"));
+		await waitFor(() => expect(panelTrigger).toHaveFocus());
+
+		const sidebarTrigger = screen.getByText("open-sidebar-drawer");
+		fireEvent.click(sidebarTrigger);
+		expect(screen.getByRole("dialog", { name: "Sessions" })).toHaveAttribute("aria-modal", "true");
+		fireEvent.keyDown(window, { key: "Escape" });
+		await waitFor(() => expect(sidebarTrigger).toHaveFocus());
 	});
 });
