@@ -365,4 +365,104 @@ describe("App cached session switching", () => {
 		);
 		expect(controller.abortStream).not.toHaveBeenCalled();
 	});
+
+	it("updates a hidden session row when it completes", async () => {
+		const runningA = streamState("/a.jsonl", "A started", { running: true });
+		const idleB = streamState("/b.jsonl", "B history");
+		controller.states = new Map([
+			["/a.jsonl", runningA],
+			["/b.jsonl", idleB],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+			{ file: "/b.jsonl", title: "B", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		const view = render(<App />);
+		await screen.findByRole("button", { name: "select /b.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /b.jsonl" }));
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "select /a.jsonl" })).toHaveTextContent("running"),
+		);
+
+		// A completed and persisted while hidden: live cache + disk both reflect it.
+		const completedA = streamState("/a.jsonl", "A completed result", { settledVersion: 1 });
+		controller.states = new Map([
+			["/a.jsonl", completedA],
+			["/b.jsonl", idleB],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2, preview: "A completed result" },
+			{ file: "/b.jsonl", title: "B", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		view.rerender(<App />);
+
+		await waitFor(() => {
+			const row = screen.getByRole("button", { name: "select /a.jsonl" });
+			expect(row).toHaveTextContent("idle");
+			expect(row).toHaveTextContent("A completed result");
+		});
+		expect(screen.getByTestId("chat-state")).toHaveTextContent("B history");
+	});
+
+	it("stops a running session before deleting it", async () => {
+		controller.states = new Map([
+			["/a.jsonl", streamState("/a.jsonl", "A live", { running: true })],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "delete /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "delete /a.jsonl" }));
+		expect(screen.getByText("Stop and delete chat?")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Stop and delete" }));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("delete_session", {
+				sessionFile: "/a.jsonl",
+			}),
+		);
+		const deleteIndex = mockInvoke.mock.calls.findIndex(
+			([command]) => command === "delete_session",
+		);
+		expect(controller.abortStream.mock.invocationCallOrder[0]).toBeLessThan(
+			mockInvoke.mock.invocationCallOrder[deleteIndex],
+		);
+		expect(controller.removeSession).toHaveBeenCalledWith("/a.jsonl");
+	});
+
+	it("does not delete when stopping the running session fails", async () => {
+		controller.states = new Map([
+			["/a.jsonl", streamState("/a.jsonl", "A live", { running: true })],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		controller.abortStream.mockResolvedValue(false);
+		render(<App />);
+		await screen.findByRole("button", { name: "delete /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "delete /a.jsonl" }));
+		fireEvent.click(screen.getByRole("button", { name: "Stop and delete" }));
+		await waitFor(() => expect(controller.abortStream).toHaveBeenCalledWith("/a.jsonl"));
+		expect(mockInvoke.mock.calls.some(([command]) => command === "delete_session")).toBe(false);
+		expect(controller.removeSession).not.toHaveBeenCalled();
+	});
+
+	it("deletes an idle session without sending abort", async () => {
+		controller.states = new Map([
+			["/a.jsonl", streamState("/a.jsonl", "A idle")],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "delete /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "delete /a.jsonl" }));
+		fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("delete_session", {
+				sessionFile: "/a.jsonl",
+			}),
+		);
+		expect(controller.abortStream).not.toHaveBeenCalled();
+	});
 });

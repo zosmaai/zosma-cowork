@@ -109,6 +109,26 @@ describe("usePiStream keyed session controller", () => {
 		});
 	});
 
+	it("aborting and removing A leaves B running and unchanged", async () => {
+		const { result } = renderHook(() => usePiStream("/a.jsonl"));
+		act(() => {
+			result.current.hydrateSession(snapshot("/a.jsonl", "A history"));
+			result.current.hydrateSession(snapshot("/b.jsonl", "B history"));
+		});
+		await act(async () =>
+			Promise.all([
+				result.current.startStream("/a.jsonl", "A prompt"),
+				result.current.startStream("/b.jsonl", "B prompt"),
+			]),
+		);
+		const bBefore = result.current.states.get("/b.jsonl");
+		await act(async () => result.current.abortStream("/a.jsonl"));
+		act(() => result.current.removeSession("/a.jsonl"));
+		expect(result.current.states.has("/a.jsonl")).toBe(false);
+		expect(result.current.states.get("/b.jsonl")).toEqual(bBefore);
+		expect(result.current.states.get("/b.jsonl")?.isRunning).toBe(true);
+	});
+
 	it("deduplicates rapid cold loads", async () => {
 		let release!: (value: ReturnType<typeof snapshot>) => void;
 		const pending = new Promise<ReturnType<typeof snapshot>>((resolve) => {

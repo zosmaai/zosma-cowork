@@ -71,7 +71,7 @@ function App() {
 		followUpStream,
 		clearQueue,
 		setSessionModel,
-		dispatch,
+		removeSession,
 	} = usePiStream(activeSessionFile);
 
 	// Custom instructions are no longer prepended to messages here. They live in
@@ -405,17 +405,45 @@ function App() {
 	}, []);
 
 	async function loadSessionList() {
+		const request = ++sessionListRequestRef.current;
 		try {
 			const result = await invoke("list_sessions", {
 				allFolders,
 				cwd: workspaceCwd ?? undefined,
 			});
+			if (request !== sessionListRequestRef.current) return;
 			const data = result as { sessions?: SessionEntry[] };
-			setSessionEntries(data.sessions || []);
+			setSessionEntries((current) => {
+				const disk = data.sessions || [];
+				const currentByFile = new Map(current.map((entry) => [entry.file, entry]));
+				const diskFiles = new Set(disk.map((entry) => entry.file));
+				const reconciled = disk.map((entry) => {
+					const live = streamStatesRef.current.get(entry.file);
+					const optimistic = currentByFile.get(entry.file);
+					return live?.isRunning && optimistic
+						? { ...entry, ...optimistic, pinned: entry.pinned, titleLocked: entry.titleLocked }
+						: entry;
+				});
+				for (const entry of current) {
+					if (!diskFiles.has(entry.file) && streamStatesRef.current.get(entry.file)?.isRunning) {
+						reconciled.push(entry);
+					}
+				}
+				return reconciled;
+			});
 		} catch (err) {
 			log.error("Failed to load sessions:", err);
 		}
 	}
+
+	// Reconcile live cache keys with disk metadata. `streamStatesRef` is always
+	// current synchronously; the plain `streamStates` effect keeps it in sync.
+	const streamStatesRef = useRef(streamStates);
+	const sessionListRequestRef = useRef(0);
+	useEffect(() => {
+		streamStatesRef.current = streamStates;
+	}, [streamStates]);
+	const previousSettledRef = useRef(new Map<string, number>());
 
 	// Re-list when the active folder switches (new_session / load_session pick a
 	// different cwd) or the all-folders toggle flips.
@@ -424,55 +452,39 @@ function App() {
 		loadSessionList().catch(() => {});
 	}, [workspaceCwd, allFolders]);
 
-	// ── When stream completes, reconcile sidebar metadata ──
-	// The stream reducer is now the single owner of the active session's
-	// complete message history (hydrated snapshot + new turns). This effect
-	// only reconciles the sidebar entry with disk truth.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: Only trigger when stream finishes, not on every dep change
+	// ── Reconcile sidebar metadata on every terminal `done` ──
+	// Keyed on `streamStates` + a per-key monotonic `settledVersion` (the
+	// done latch). Hidden sessions — not just the active one — get their row
+	// metadata updated here, and a refresh pulls disk truth after pi persists.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reconcile every keyed done
 	useEffect(() => {
-		if (!streamState.isRunning && streamState.messages.length > 0) {
-			const sid = activeSessionFile;
-			if (!sid) return;
-
-			const merged = streamState.messages;
-			if (merged.length === 0) return;
-
-			const firstMsg = merged[0];
-			const title = typeof firstMsg.content === "string" ? firstMsg.content.slice(0, 80) : "Chat";
-
-			// pi auto-persists during the agent loop — no manual save. Just
-			// reconcile the sidebar with disk truth (title/preview/count).
-			loadSessionList().catch((err) => log.error("Failed to refresh sessions:", err));
-
-			// Optimistic sidebar entry (folder = active workspace). A user-renamed
-			// (locked) title must not be clobbered by the auto-derived one, and the
-			// pin state is preserved across the optimistic update.
-			setSessionEntries((prev) => {
-				const existing = prev.find((s) => s.file === sid);
-				const filtered = prev.filter((s) => s.file !== sid);
-				return [
-					{
-						file: sid,
-						title: existing?.titleLocked ? existing.title : title,
-						cwd: workspaceCwd ?? undefined,
-						messageCount: merged.length,
-						createdAt: existing?.createdAt || Date.now(),
-						lastActivity: Date.now(),
-						pinned: existing?.pinned,
-						titleLocked: existing?.titleLocked,
-						preview:
-							typeof merged[merged.length - 1]?.content === "string"
-								? (merged[merged.length - 1].content as string)
-										.replace(/\s+/g, " ")
-										.trim()
-										.slice(0, 120)
-								: existing?.preview,
-					},
-					...filtered,
-				];
-			});
+		let settled = false;
+		for (const [sessionFile, state] of streamStates) {
+			const previous = previousSettledRef.current.get(sessionFile) ?? 0;
+			previousSettledRef.current.set(sessionFile, state.settledVersion);
+			if (state.settledVersion <= previous) continue;
+			settled = true;
+			const latest = state.messages.at(-1);
+			setSessionEntries((entries) =>
+				entries.map((entry) =>
+					entry.file === sessionFile
+						? {
+								...entry,
+								messageCount: state.messages.length,
+								lastActivity: Date.now(),
+								preview:
+									typeof latest?.content === "string"
+										? latest.content.replace(/\s+/g, " ").trim().slice(0, 120)
+										: entry.preview,
+							}
+						: entry,
+				),
+			);
 		}
-	}, [streamState.isRunning]);
+		if (settled) {
+			loadSessionList().catch((error) => log.error("Failed to refresh sessions:", error));
+		}
+	}, [streamStates]);
 
 	// ── Send a new prompt ──
 	// The visible model is the ACTIVE session's runtime model when known;
@@ -686,31 +698,48 @@ function App() {
 		[handleNewSessionPrompt],
 	);
 
-	const [pendingDelete, setPendingDelete] = useState<{ file: string; title: string } | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{
+		file: string;
+		title: string;
+		running: boolean;
+	} | null>(null);
 	const [pendingRename, setPendingRename] = useState<{ file: string; title: string } | null>(null);
 
 	const handleDeleteSession = useCallback(
 		(file: string) => {
 			const entry = sessionEntries.find((s) => s.file === file);
-			setPendingDelete({ file, title: entry?.title ?? "this chat" });
+			setPendingDelete({
+				file,
+				title: entry?.title ?? "this chat",
+				running: getSessionState(file)?.isRunning === true,
+			});
 		},
-		[sessionEntries],
+		[sessionEntries, getSessionState],
 	);
 
 	const handleConfirmDelete = useCallback(async () => {
 		if (!pendingDelete) return;
-		const file = pendingDelete.file;
+		const { file, running } = pendingDelete;
+		// A running runtime must stop successfully before persistent deletion,
+		// so no hidden work continues and the sidecar's running-delete guard is
+		// never the fallback for the normal user path.
+		if (running) {
+			const stopped = await abortStream(file);
+			if (!stopped) {
+				log.error("Failed to stop running session; deletion cancelled");
+				return;
+			}
+		}
 		try {
 			await invoke("delete_session", { sessionFile: file });
-		} catch {
-			// ignore
+		} catch (error) {
+			log.error("Failed to delete session:", error);
+			return;
 		}
+		removeSession(file);
 		setSessionEntries((prev) => prev.filter((s) => s.file !== file));
-		if (activeSessionFile === file) {
-			setActiveSessionFile(null);
-			dispatch({ type: "RESET" });
-		}
-	}, [pendingDelete, activeSessionFile, dispatch]);
+		if (activeSessionFile === file) setActiveSessionFile(null);
+	}, [pendingDelete, abortStream, removeSession, activeSessionFile]);
 
 	// Open the rename popup for a session (mirrors the delete confirm flow).
 	const handleRequestRename = useCallback(
@@ -833,14 +862,16 @@ function App() {
 				open={pendingDelete !== null}
 				onClose={() => setPendingDelete(null)}
 				onConfirm={handleConfirmDelete}
-				title="Delete chat?"
+				title={pendingDelete?.running ? "Stop and delete chat?" : "Delete chat?"}
 				description={
 					<>
-						<span className="text-foreground font-medium">“{pendingDelete?.title}”</span> will be
-						permanently removed. This can’t be undone.
+						<span className="text-foreground font-medium">“{pendingDelete?.title}”</span>{" "}
+						{pendingDelete?.running
+							? "is still running. Current work will stop before this chat is permanently deleted. This can’t be undone."
+							: "will be permanently removed. This can’t be undone."}
 					</>
 				}
-				confirmLabel="Delete"
+				confirmLabel={pendingDelete?.running ? "Stop and delete" : "Delete"}
 				cancelLabel="Cancel"
 				variant="destructive"
 			/>
