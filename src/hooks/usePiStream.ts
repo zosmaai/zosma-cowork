@@ -4,7 +4,6 @@ import type {
 	PiErrorEvent,
 	PiMessageUpdateEvent,
 	PiToolExecutionEndEvent,
-	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
 import type {
@@ -14,9 +13,9 @@ import type {
 	SessionLoadStatus,
 	SessionWireError,
 } from "@/types/session-runtime";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 
 /**
  * Snapshot of the agent session's pending message queue (#201 PR 3).
@@ -743,238 +742,111 @@ function extractToolCallInfo(tc: {
 }
 
 export function usePiStream(activeSessionFile: string | null) {
-	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
-	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
+	const [states, dispatchSessions] = useReducer(
+		sessionStreamsReducer,
+		INITIAL_SESSION_STREAMS,
+	);
+	const statesRef = useRef(states);
+	const loadedRef = useRef(new Set<string>());
+	const loadingRef = useRef(new Map<string, Promise<SessionSnapshot>>());
+	const deletedRef = useRef(new Set<string>());
+	const sidecarEpochRef = useRef(0);
+	const listenerReadyRef = useRef<Promise<void> | null>(null);
+	const resolveListenerReadyRef = useRef<(() => void) | null>(null);
+	if (!listenerReadyRef.current) {
+		listenerReadyRef.current = new Promise<void>((resolve) => {
+			resolveListenerReadyRef.current = resolve;
+		});
+	}
 
-	// Current-session + generation guards: an aborted A channel can never
-	// mutate the reducer after B is hydrated, even though the late envelope
-	// correctly says A.
-	const activeSessionRef = useRef(activeSessionFile);
-	const generationRef = useRef(0);
-
-	// Keep the ref in sync for active-session deletion/reset paths.
 	useLayoutEffect(() => {
-		activeSessionRef.current = activeSessionFile;
-	}, [activeSessionFile]);
+		statesRef.current = states;
+	}, [states]);
+
+	const state = activeSessionFile
+		? states.get(activeSessionFile) ?? createStreamState(activeSessionFile)
+		: INITIAL_STATE;
+
+	const dispatchTo = useCallback((sessionFile: string, action: StreamAction) => {
+		dispatchSessions({ type: "APPLY", sessionFile, action });
+	}, []);
 
 	const hydrateSession = useCallback((snapshot: SessionSnapshot) => {
-		activeSessionRef.current = snapshot.sessionFile;
-		generationRef.current += 1;
-		setToolPhase(null);
-		dispatch({ type: "HYDRATE_SESSION", snapshot });
-	}, []);
+		if (deletedRef.current.has(snapshot.sessionFile)) return;
+		loadedRef.current.add(snapshot.sessionFile);
+		dispatchTo(snapshot.sessionFile, { type: "HYDRATE_SESSION", snapshot });
+	}, [dispatchTo]);
+
+	const ensureSession = useCallback(async (sessionFile: string): Promise<SessionSnapshot | null> => {
+		await listenerReadyRef.current;
+		if (deletedRef.current.has(sessionFile)) throw new Error("Session was deleted");
+		if (loadedRef.current.has(sessionFile)) return null;
+		const pending = loadingRef.current.get(sessionFile);
+		if (pending) return pending;
+
+		const epoch = sidecarEpochRef.current;
+		dispatchTo(sessionFile, { type: "BEGIN_LOAD" });
+		let load!: Promise<SessionSnapshot>;
+		load = invoke<SessionSnapshot>("load_session", { sessionFile })
+			.then((snapshot) => {
+				if (deletedRef.current.has(sessionFile) || epoch !== sidecarEpochRef.current) {
+					throw new Error("Session load was invalidated");
+				}
+				hydrateSession(snapshot);
+				return snapshot;
+			})
+			.catch((error) => {
+				if (!deletedRef.current.has(sessionFile) && epoch === sidecarEpochRef.current) {
+					const wireError: SessionWireError = {
+						code: "session_load_failed",
+						message: error instanceof Error ? error.message : String(error),
+						retryable: true,
+					};
+					dispatchTo(sessionFile, { type: "LOAD_FAILED", error: wireError });
+				}
+				throw error;
+			})
+			.finally(() => {
+				if (loadingRef.current.get(sessionFile) === load) loadingRef.current.delete(sessionFile);
+			});
+		loadingRef.current.set(sessionFile, load);
+		return load;
+	}, [dispatchTo, hydrateSession]);
+
+	// ponytail: process epoch is enough for the current non-replay relay; add
+	// envelope sequence cursors only if transport replay/reconnect is introduced.
 
 	const startStream = useCallback(async (sessionFile: string, text: string) => {
-		activeSessionRef.current = sessionFile;
-		const generation = ++generationRef.current;
-		dispatch({ type: "START_STREAM", prompt: text });
-
-		const channel = new Channel<SessionEventEnvelope>();
-
-		channel.onmessage = (envelope: SessionEventEnvelope) => {
-			if (
-				envelope.sessionFile !== sessionFile ||
-				activeSessionRef.current !== sessionFile ||
-				generationRef.current !== generation
-			) {
-				return;
-			}
-			const event = envelope.event;
-			try {
-				switch (event.type) {
-					case "message_update": {
-						const msgEvent = event as PiMessageUpdateEvent;
-						const ame = msgEvent.assistantMessageEvent;
-
-						if (msgEvent.message?.model || msgEvent.message?.provider) {
-							dispatch({
-								type: "MODEL_INFO",
-								model: msgEvent.message.model || "",
-								provider: msgEvent.message.provider || "",
-							});
-						}
-
-						switch (ame.type) {
-							case "thinking_delta":
-								dispatch({ type: "THINKING_DELTA", delta: ame.delta });
-								break;
-							case "text_delta":
-								dispatch({ type: "TEXT_DELTA", delta: ame.delta });
-								break;
-							/**
-							 * text_end — pi emits this when a streaming content block
-							 * completes. The `content` field has the authoritative final
-							 * text, correcting any delta accumulation errors (#307).
-							 */
-							case "text_end":
-								if (ame.content) {
-									dispatch({ type: "TEXT_END", content: ame.content });
-								}
-								break;
-							case "toolcall_end": {
-								const tc = ame.toolCall;
-								dispatch({
-									type: "TOOL_CALL_START",
-									toolCall: extractToolCallInfo(tc),
-								});
-								break;
-							}
-							case "error":
-								// Forward the actual error reason or message, not
-								// a generic placeholder. Provider 400/500 errors
-								// carry the API response in `reason` or `message`,
-								// not just "aborted".
-								dispatch({
-									type: "STREAM_ERROR",
-									error:
-										(ame as unknown as { message?: string }).message || ame.reason || "API error",
-								});
-								break;
-						}
-						break;
-					}
-
-					case "message_start": {
-						if (event.message?.role === "assistant") {
-							dispatch({ type: "TURN_RESET" });
-						} else if (event.message?.role === "user") {
-							// SDK-injected user message: the prompt echo (skipped once)
-							// or a delivered steer/follow-up. Extract its text.
-							const content = (event.message.content || [])
-								.filter((c) => c.type === "text")
-								.map((c) => (c as { text: string }).text)
-								.join("");
-							dispatch({ type: "USER_MESSAGE_STARTED", content });
-						}
-						break;
-					}
-
-					case "tool_execution_start": {
-						const te = event as PiToolExecutionStartEvent;
-						setToolPhase({
-							type: "calling",
-							toolName: te.toolName,
-							args: te.args as Record<string, unknown>,
-						});
-						break;
-					}
-
-					case "tool_execution_update": {
-						const te = event as PiToolExecutionUpdateEvent;
-						const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
-						dispatch({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: partialText,
-							status: "running",
-						});
-						dispatch({
-							type: "TOOL_PARTIAL_OUTPUT",
-							id: te.toolCallId,
-							partialOutput: partialText,
-						});
-						setToolPhase({
-							type: "executing",
-							toolName: te.toolName,
-							partialOutput: partialText,
-						});
-						break;
-					}
-
-					case "tool_execution_end": {
-						const te = event as PiToolExecutionEndEvent;
-						dispatch({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: (te.result?.content || []).map((c) => c.text).join(""),
-							status: te.isError ? "error" : "completed",
-							isError: te.isError,
-							details: te.result?.details as Record<string, unknown> | undefined,
-						});
-						setToolPhase(
-							te.isError
-								? { type: "error", toolName: te.toolName, message: "Tool failed" }
-								: { type: "done", toolName: te.toolName },
-						);
-						break;
-					}
-
-					case "message_end": {
-						const error = errorFromFinalMessage(event.message);
-						dispatch(error ? { type: "STREAM_ERROR", error } : { type: "MESSAGE_END" });
-						break;
-					}
-
-					case "agent_end":
-					case "done":
-						dispatch({ type: "STREAM_COMPLETE" });
-						break;
-
-					// Pi SDK session-level queue snapshot (#201 PR 3). Also flows
-					// via the global session_event listener; kept here for
-					// active-stream reconciliation (already session-filtered).
-					case "queue_update": {
-						const qe = event as unknown as {
-							steering?: string[];
-							followUp?: string[];
-						};
-						dispatch({
-							type: "QUEUE_UPDATE",
-							steering: qe.steering ?? [],
-							followUp: qe.followUp ?? [],
-						});
-						break;
-					}
-
-					case "error": {
-						const errEvent = event as PiErrorEvent;
-						// Prefer pi's structured payload (v0.3.0+) over the bare
-						// message: surface the provider and a retry hint so the
-						// ErrorBanner is actionable instead of a generic string.
-						const base = errEvent.message || errEvent.details || "Unknown error";
-						const where = errEvent.provider
-							? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
-							: "";
-						const hint = errEvent.retryable ? " — retrying may help" : "";
-						dispatch({
-							type: "STREAM_ERROR",
-							error: `${base}${where}${hint}`,
-						});
-						break;
-					}
-					default:
-						break;
-				}
-			} catch (err) {
-				log.error("[cowork] Error processing event:", err, event);
-			}
-		};
-
+		await ensureSession(sessionFile);
+		dispatchTo(sessionFile, { type: "START_STREAM", prompt: text });
 		try {
-			await invoke("send_prompt", { sessionFile, text, ch: channel });
-		} catch (err) {
-			dispatch({
+			await invoke("send_prompt", { sessionFile, text });
+		} catch (error) {
+			dispatchTo(sessionFile, {
 				type: "STREAM_ERROR",
-				error: err instanceof Error ? err.message : String(err),
+				error: error instanceof Error ? error.message : String(error),
 			});
+			dispatchTo(sessionFile, { type: "STREAM_COMPLETE" });
 		}
-	}, []);
+	}, [dispatchTo, ensureSession]);
 
-	const abortStream = useCallback(async (sessionFile: string) => {
-		dispatch({ type: "ABORT_STREAM" });
+	const abortStream = useCallback(async (sessionFile: string): Promise<boolean> => {
 		try {
 			await invoke("abort_prompt", { sessionFile });
-		} catch {
-			// ignore
+			dispatchTo(sessionFile, { type: "ABORT_STREAM" });
+			return true;
+		} catch (error) {
+			log.warn("[cowork] abort_prompt rejected:", error);
+			return false;
 		}
-	}, []);
+	}, [dispatchTo]);
 
 	/**
 	 * Queue a steering message on the running session (issue #201, PR 1).
 	 * Mid-turn course correction — the agent picks it up after its current
 	 * tool batch finishes, before the next LLM call. Errors from the sidecar
 	 * (extension command, empty text, etc.) are logged but not re-thrown:
-	 * the composer’s textarea is already cleared on submit so we don’t want
+	 * the composer's textarea is already cleared on submit so we don't want
 	 * to surface a stack trace mid-conversation. Future PR may surface them
 	 * as a transient toast.
 	 */
@@ -982,13 +854,13 @@ export function usePiStream(activeSessionFile: string | null) {
 		// Optimistic: surface the user bubble immediately so the UI doesn't
 		// feel like the message vanished. The next queue_update event will
 		// reconcile (no-op if it matches; visible if SDK rejected text).
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text });
+		dispatchTo(sessionFile, { type: "QUEUE_OPTIMISTIC", kind: "steer", text });
 		try {
 			await invoke("steer_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] steer_prompt rejected:", err);
 		}
-	}, []);
+	}, [dispatchTo]);
 
 	/**
 	 * Queue a follow-up message on the running session (issue #201, PR 1).
@@ -996,13 +868,13 @@ export function usePiStream(activeSessionFile: string | null) {
 	 * handling rationale as {@link steerStream}.
 	 */
 	const followUpStream = useCallback(async (sessionFile: string, text: string) => {
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
+		dispatchTo(sessionFile, { type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
 		try {
 			await invoke("follow_up_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] follow_up_prompt rejected:", err);
 		}
-	}, []);
+	}, [dispatchTo]);
 
 	/**
 	 * Atomically drain the SDK queue and return its contents. Issue #201
@@ -1028,43 +900,241 @@ export function usePiStream(activeSessionFile: string | null) {
 		}
 	}, []);
 
+	const setSessionModel = useCallback((sessionFile: string, model: SessionModel) => {
+		dispatchTo(sessionFile, { type: "SET_SESSION_MODEL", model });
+	}, [dispatchTo]);
+
+	const removeSession = useCallback((sessionFile: string) => {
+		deletedRef.current.add(sessionFile);
+		loadedRef.current.delete(sessionFile);
+		loadingRef.current.delete(sessionFile);
+		dispatchSessions({ type: "REMOVE_SESSION", sessionFile });
+	}, []);
+
 	/**
-	 * Global session_event listener. The Rust router emits every full session
-	 * envelope as `session_event`; we dispatch queue updates only when the
-	 * envelope belongs to the ACTIVE session (single-active Phase 1).
+	 * Route ONE global `session_event` envelope to its keyed reducer entry.
+	 * `agent_end` intentionally dispatches nothing: the normalized terminal
+	 * `done` is the authoritative completion (Phase 1 prompt contract), and
+	 * dispatching STREAM_COMPLETE on both would double-finalize one prompt.
+	 */
+	const handleEnvelope = useCallback((envelope: SessionEventEnvelope) => {
+		const sessionFile = envelope.sessionFile;
+		if (!sessionFile || deletedRef.current.has(sessionFile)) return;
+		const event = envelope.event;
+		try {
+			switch (event.type) {
+				case "message_update": {
+					const msgEvent = event as PiMessageUpdateEvent;
+					const ame = msgEvent.assistantMessageEvent;
+
+					if (msgEvent.message?.model || msgEvent.message?.provider) {
+						dispatchTo(sessionFile, {
+							type: "MODEL_INFO",
+							model: msgEvent.message.model || "",
+							provider: msgEvent.message.provider || "",
+						});
+					}
+
+					switch (ame.type) {
+						case "thinking_delta":
+							dispatchTo(sessionFile, { type: "THINKING_DELTA", delta: ame.delta });
+							break;
+						case "text_delta":
+							dispatchTo(sessionFile, { type: "TEXT_DELTA", delta: ame.delta });
+							break;
+						/**
+						 * text_end — pi emits this when a streaming content block
+						 * completes. The `content` field has the authoritative final
+						 * text, correcting any delta accumulation errors (#307).
+						 */
+						case "text_end":
+							if (ame.content) {
+								dispatchTo(sessionFile, { type: "TEXT_END", content: ame.content });
+							}
+							break;
+						case "toolcall_end": {
+							const tc = ame.toolCall;
+							dispatchTo(sessionFile, {
+								type: "TOOL_CALL_START",
+								toolCall: extractToolCallInfo(tc),
+							});
+							break;
+						}
+						case "error":
+							// Forward the actual error reason or message, not
+							// a generic placeholder. Provider 400/500 errors
+							// carry the API response in `reason` or `message`,
+							// not just "aborted".
+							dispatchTo(sessionFile, {
+								type: "STREAM_ERROR",
+								error:
+									(ame as unknown as { message?: string }).message || ame.reason || "API error",
+							});
+							break;
+					}
+					break;
+				}
+
+				case "message_start": {
+					if (event.message?.role === "assistant") {
+						dispatchTo(sessionFile, { type: "TURN_RESET" });
+					} else if (event.message?.role === "user") {
+						// SDK-injected user message: the prompt echo (skipped once)
+						// or a delivered steer/follow-up. Extract its text.
+						const content = (event.message.content || [])
+							.filter((c) => c.type === "text")
+							.map((c) => (c as { text: string }).text)
+							.join("");
+						dispatchTo(sessionFile, { type: "USER_MESSAGE_STARTED", content });
+					}
+					break;
+				}
+
+				// No separate state: status is already driven by tool-call events.
+				case "tool_execution_start":
+					break;
+
+				case "tool_execution_update": {
+					const te = event as PiToolExecutionUpdateEvent;
+					const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
+					dispatchTo(sessionFile, {
+						type: "TOOL_CALL_UPDATE",
+						id: te.toolCallId,
+						result: partialText,
+						status: "running",
+					});
+					dispatchTo(sessionFile, {
+						type: "TOOL_PARTIAL_OUTPUT",
+						id: te.toolCallId,
+						partialOutput: partialText,
+					});
+					break;
+				}
+
+				case "tool_execution_end": {
+					const te = event as PiToolExecutionEndEvent;
+					dispatchTo(sessionFile, {
+						type: "TOOL_CALL_UPDATE",
+						id: te.toolCallId,
+						result: (te.result?.content || []).map((c) => c.text).join(""),
+						status: te.isError ? "error" : "completed",
+						isError: te.isError,
+						details: te.result?.details as Record<string, unknown> | undefined,
+					});
+					break;
+				}
+
+				case "message_end": {
+					const error = errorFromFinalMessage(event.message);
+					dispatchTo(
+						sessionFile,
+						error ? { type: "STREAM_ERROR", error } : { type: "MESSAGE_END" },
+					);
+					break;
+				}
+
+				case "agent_end":
+					// No reducer terminal — the guaranteed normalized `done` settles.
+					break;
+
+				case "done":
+					dispatchTo(sessionFile, { type: "STREAM_COMPLETE" });
+					break;
+
+				// Pi SDK session-level queue snapshot (#201 PR 3).
+				case "queue_update": {
+					const qe = event as unknown as {
+						steering?: string[];
+						followUp?: string[];
+					};
+					dispatchTo(sessionFile, {
+						type: "QUEUE_UPDATE",
+						steering: qe.steering ?? [],
+						followUp: qe.followUp ?? [],
+					});
+					break;
+				}
+
+				case "error": {
+					const errEvent = event as PiErrorEvent;
+					const wireError: SessionWireError = {
+						code: errEvent.code ?? "provider_error",
+						message: errEvent.message || errEvent.details || "Unknown error",
+						retryable: errEvent.retryable ?? false,
+						details: errEvent.details,
+					};
+					dispatchTo(sessionFile, {
+						type: "STREAM_ERROR",
+						error: wireError.message,
+						sessionError: wireError,
+					});
+					break;
+				}
+				default:
+					break;
+			}
+		} catch (err) {
+			log.error("[cowork] Error processing event:", err, event);
+		}
+	}, [dispatchTo]);
+
+	/**
+	 * Subscribe once to the canonical relay streams. The listener gate
+	 * resolves only after BOTH subscriptions exist, so no prompt/load can
+	 * precede a registered listener (startStream/ensureSession await it).
+	 * Sidecar loss bumps the process epoch so old loads cannot hydrate.
 	 */
 	useEffect(() => {
-		let unlisten: (() => void) | undefined;
-		listen<SessionEventEnvelope>("session_event", (evt) => {
-			const envelope = evt.payload;
-			if (!envelope || envelope.sessionFile !== activeSessionRef.current) return;
-			if (envelope.event.type !== "queue_update") return;
-			const qe = envelope.event as unknown as {
-				steering?: string[];
-				followUp?: string[];
-			};
-			dispatch({
-				type: "QUEUE_UPDATE",
-				steering: qe.steering ?? [],
-				followUp: qe.followUp ?? [],
-			});
-		}).then((fn) => {
-			unlisten = fn;
+		let disposed = false;
+		let unlistenSession: (() => void) | undefined;
+		let unlistenLost: (() => void) | undefined;
+
+		void Promise.all([
+			listen<SessionEventEnvelope>("session_event", ({ payload }) => {
+				if (!payload?.sessionFile || deletedRef.current.has(payload.sessionFile)) return;
+				handleEnvelope(payload);
+			}),
+			listen("sidecar_lost", () => {
+				sidecarEpochRef.current += 1;
+				loadedRef.current.clear();
+				loadingRef.current.clear();
+				dispatchSessions({ type: "SIDECAR_LOST" });
+			}),
+		]).then(([sessionUnlisten, lostUnlisten]) => {
+			if (disposed) {
+				sessionUnlisten();
+				lostUnlisten();
+				return;
+			}
+			unlistenSession = sessionUnlisten;
+			unlistenLost = lostUnlisten;
+			resolveListenerReadyRef.current?.();
 		});
+
 		return () => {
-			unlisten?.();
+			disposed = true;
+			unlistenSession?.();
+			unlistenLost?.();
 		};
-	}, []);
+	}, [handleEnvelope]);
 
 	return {
 		state,
+		states,
+		getSessionState: (sessionFile: string) => statesRef.current.get(sessionFile),
 		hydrateSession,
+		ensureSession,
 		startStream,
 		abortStream,
 		steerStream,
 		followUpStream,
 		clearQueue,
-		dispatch,
-		toolPhase,
+		setSessionModel,
+		removeSession,
+		// Compatibility dispatch for App reset/error paths — mutates only the
+		// active key (or nothing when no session is active).
+		dispatch: (action: StreamAction) => {
+			if (activeSessionFile) dispatchTo(activeSessionFile, action);
+		},
 	};
 }
