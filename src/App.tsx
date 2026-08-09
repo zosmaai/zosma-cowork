@@ -61,12 +61,15 @@ function App() {
 
 	const {
 		state: streamState,
+		getSessionState,
 		hydrateSession,
+		ensureSession,
 		startStream,
 		abortStream,
 		steerStream,
 		followUpStream,
 		clearQueue,
+		setSessionModel,
 		dispatch,
 	} = usePiStream(activeSessionFile);
 
@@ -137,23 +140,28 @@ function App() {
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
 	const [composerDraft, setComposerDraft] = useState<{ text: string; nonce: number }>();
 	// The agent's current workspace folder (where file/bash tools read & write).
-	const [workspaceCwd, setWorkspaceCwd] = useState<string | null>(null);
+	// The agent's current workspace folder (where file/bash tools read & write).
+	// Derived from the ACTIVE cached session — each runtime owns its cwd.
+	const workspaceCwd = streamState.cwd;
 	// The user's home dir (sidecar's default workspace) — used to label the
 	// "Home" folder group in the sidebar.
 	const [homeDir, setHomeDir] = useState<string | null>(null);
-	const [loadingSession, setLoadingSession] = useState(false);
 
-	// ── Adopt a sidecar snapshot into the app + single stream reducer ──
-	const adoptSnapshot = useCallback(
+	// ── Cache a sidecar snapshot into the keyed stream map ──
+	const cacheSnapshot = useCallback(
 		(snapshot: SessionSnapshot) => {
-			setActiveSessionFile(snapshot.sessionFile);
-			setWorkspaceCwd(snapshot.cwd);
 			hydrateSession(snapshot);
-			if (snapshot.model?.id) {
-				setActiveModelId(modelKey(snapshot.model.provider, snapshot.model.id));
-			}
 		},
 		[hydrateSession],
+	);
+
+	// Cache AND switch the active render key to that session.
+	const activateSnapshot = useCallback(
+		(snapshot: SessionSnapshot) => {
+			cacheSnapshot(snapshot);
+			setActiveSessionFile(snapshot.sessionFile);
+		},
+		[cacheSnapshot],
 	);
 
 	// ── Sidecar readiness: drives the startup splash (#169) ──
@@ -176,16 +184,11 @@ function App() {
 				// 2. Ignore the spawn-level ready payload with no session.
 				if (!payload.session) return;
 				// 3. Fresh startup: adopt the initial runtime's snapshot.
-				// 4. A new sidecar process after loss: keep the file the app
-				//    already targets by reloading it; fall back to the ready
-				//    session only if that file no longer exists.
-				if (activeSessionFileRef.current === null || activeSessionFileRef.current === payload.session.sessionFile) {
-					adoptSnapshot(payload.session);
-					return;
+				// 4. After a sidecar restart the cache stays visible; selecting or
+				//    sending lazily reloads the runtime through ensureSession.
+				if (activeSessionFileRef.current === null) {
+					activateSnapshot(payload.session);
 				}
-				// App targets a different file — a sidecar was lost/restarted.
-				const target = activeSessionFileRef.current;
-				reloadAfterSidecarLoss(target, payload.session);
 			});
 			if (!mounted) {
 				u();
@@ -202,27 +205,13 @@ function App() {
 			clearTimeout(timeout);
 			unlisten?.();
 		};
-	}, [adoptSnapshot]);
+	}, [activateSnapshot]);
 
 	// Latest active file for the ready listener (avoids stale closures).
 	const activeSessionFileRef = useRef(activeSessionFile);
 	useEffect(() => {
 		activeSessionFileRef.current = activeSessionFile;
 	}, [activeSessionFile]);
-
-	// Reload the app's target file after a sidecar loss; if it no longer
-	// exists, adopt the replacement session so we never target a dead runtime.
-	const reloadAfterSidecarLoss = useCallback(
-		async (target: string, fallback: SessionSnapshot) => {
-			try {
-				const result = (await invoke("load_session", { sessionFile: target })) as SessionSnapshot;
-				adoptSnapshot(result);
-			} catch {
-				adoptSnapshot(fallback);
-			}
-		},
-		[adoptSnapshot],
-	);
 
 	const needsOnboarding = authLoading === false && !hasCredentials;
 
@@ -318,11 +307,12 @@ function App() {
 			}
 			try {
 				await invoke("set_active_model", { sessionFile: sid, provider, model: modelId });
+				setSessionModel(sid, { provider, id: modelId });
 			} catch (err) {
 				log.warn("[settings] set_active_model failed:", err);
 			}
 		},
-		[],
+		[setSessionModel],
 	);
 
 	useEffect(() => {
@@ -482,6 +472,13 @@ function App() {
 	}, [streamState.isRunning]);
 
 	// ── Send a new prompt ──
+	// The visible model is the ACTIVE session's runtime model when known;
+	// otherwise fall back to the saved default for future sessions.
+	const sessionModelId = streamState.model?.id
+		? modelKey(streamState.model.provider, streamState.model.id)
+		: undefined;
+	const visibleModelId = sessionModelId ?? activeModelId;
+
 	const handleSend = useCallback(
 		async (text: string) => {
 			let sessionFile = activeSessionFile;
@@ -496,7 +493,7 @@ function App() {
 						log.error("[cowork] new_session returned no session file");
 						return;
 					}
-					adoptSnapshot(snapshot);
+					activateSnapshot(snapshot);
 					sessionFile = snapshot.sessionFile;
 				} catch (err) {
 					log.error("[cowork] new_session failed:", err);
@@ -522,7 +519,7 @@ function App() {
 			}
 
 			// Track message with provider/model info
-			const activeModel = findModel(models, activeModelId);
+			const activeModel = findModel(models, visibleModelId);
 			trackEvent("message_sent", {
 				provider: activeModel?.provider?.split("-")[0] ?? "unknown",
 				model: activeModel?.id ?? "unknown",
@@ -530,7 +527,7 @@ function App() {
 
 			await startStream(sessionFile, text);
 		},
-		[activeSessionFile, startStream, models, activeModelId, workspaceCwd, adoptSnapshot],
+		[activeSessionFile, startStream, models, visibleModelId, workspaceCwd, activateSnapshot],
 	);
 
 	/**
@@ -567,11 +564,12 @@ function App() {
 				const sid = activeSessionFile;
 				if (!sid) return;
 				await invoke("set_active_model", { sessionFile: sid, provider, model: modelId });
+				setSessionModel(sid, { provider, id: modelId });
 			} catch (err) {
 				log.warn("[settings] save failed:", err);
 			}
 		},
-		[activeSessionFile],
+		[activeSessionFile, setSessionModel],
 	);
 
 	// ── Connect-modal handlers (passed to <HomeView>) ──
@@ -596,18 +594,11 @@ function App() {
 	}, []);
 
 	// Create a fresh session bound to `cwd` (a chosen folder). The sidecar
-	// returns a full snapshot — we adopt it (cwd, model, messages) and never
-	// invent a fallback identity. If a prompt is running we await abort FIRST
-	// so no hidden work continues after the switch.
+	// returns a full snapshot — we cache it (cwd, model, messages) and switch
+	// to it without ever inventing a fallback identity. Other sessions keep
+	// running; no abort is sent.
 	const handleNewSession = useCallback(
 		async (cwd?: string) => {
-			if (activeSessionFile && streamState.isRunning) {
-				try {
-					await abortStream(activeSessionFile);
-				} catch {
-					// best-effort — the snapshot adoption below invalidates late events
-				}
-			}
 			let resolvedCwd: string | undefined;
 			try {
 				const snapshot = (await invoke<SessionSnapshot>("new_session", cwd ? { cwd } : {})) as SessionSnapshot | null;
@@ -616,7 +607,7 @@ function App() {
 					return undefined;
 				}
 				resolvedCwd = snapshot.cwd;
-				adoptSnapshot(snapshot);
+				activateSnapshot(snapshot);
 				// Apply the user's selected model to THIS exact new session before
 				// the first prompt.
 				if (activeModelId) {
@@ -627,6 +618,10 @@ function App() {
 								sessionFile: snapshot.sessionFile,
 								provider: model.provider,
 								model: model.id,
+							});
+							setSessionModel(snapshot.sessionFile, {
+								provider: model.provider,
+								id: model.id,
 							});
 						} catch {
 							// model push is best-effort
@@ -639,7 +634,7 @@ function App() {
 				return undefined;
 			}
 		},
-		[adoptSnapshot, activeSessionFile, streamState.isRunning, abortStream, activeModelId, models],
+		[activateSnapshot, activeModelId, models, setSessionModel],
 	);
 
 	// "New session" ALWAYS asks for a folder first (native picker), then starts
@@ -779,30 +774,20 @@ function App() {
 	);
 
 	const handleSessionSelect = useCallback(
-		async (file: string) => {
+		(file: string) => {
 			if (file === activeSessionFile) return;
-			setLoadingSession(true);
-			// Stop the current run before switching files — Phase 1 keeps the
-			// frontend single-active; no hidden work continues after the switch.
-			try {
-				if (activeSessionFile && streamState.isRunning) {
-					await abortStream(activeSessionFile);
-				}
-				const result = (await invoke("load_session", { sessionFile: file })) as SessionSnapshot | null;
-				if (!result?.sessionFile) {
-					log.error("[cowork] load_session returned no snapshot");
-					return;
-				}
-				// Full snapshot hydration: messages, queue, status, running state,
-				// structured error + cwd/model. No second global model mutation.
-				adoptSnapshot(result);
-			} catch (err) {
-				log.error("Failed to load session:", err);
-			} finally {
-				setLoadingSession(false);
+			// Switching only changes the active render key. Cached states (hidden
+			// sessions) keep running independently; if the target was never
+			// hydrated/loaded, lazily load its runtime WITHOUT aborting anything.
+			setActiveSessionFile(file);
+			const cached = getSessionState(file);
+			if (!cached?.runtimeLoaded) {
+				void ensureSession(file).catch((error) => {
+					log.error("Failed to load session:", error);
+				});
 			}
 		},
-		[activeSessionFile, streamState.isRunning, abortStream, adoptSnapshot],
+		[activeSessionFile, ensureSession, getSessionState],
 	);
 
 	const sidebarSessions = sessionEntries.map((s) => ({
@@ -930,9 +915,7 @@ function App() {
 										? "connect"
 										: showSettings
 											? "settings"
-											: loadingSession
-												? "loading"
-												: "chat"
+											: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -966,7 +949,7 @@ function App() {
 							/>
 						) : models.length === 0 ? (
 							<SplashScreen />
-						) : loadingSession ? (
+						) : streamState.loadStatus === "loading" && streamState.messages.length === 0 ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
 								<div className="text-sm text-muted-foreground">Loading session...</div>
@@ -998,7 +981,7 @@ function App() {
 									if (lastUser?.content) handleSend(lastUser.content);
 								}}
 								models={models}
-								currentModelId={activeModelId}
+								currentModelId={visibleModelId}
 								onModelSelect={handleModelSelect}
 								modelSelectorOpen={showModelSelector}
 								onModelSelectorOpenChange={setShowModelSelector}
