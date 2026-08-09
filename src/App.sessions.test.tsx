@@ -18,6 +18,7 @@ const controller = vi.hoisted(() => ({
 	steerStream: vi.fn(),
 	followUpStream: vi.fn(),
 	clearQueue: vi.fn(),
+	setSessionMode: vi.fn(),
 	getSessionState: vi.fn(),
 }));
 
@@ -28,12 +29,14 @@ function streamState(
 		running?: boolean;
 		model?: { provider: string; id: string };
 		settledVersion?: number;
+		mode?: "chat" | "work";
 	} = {},
 ) {
 	return {
 		sessionFile,
 		cwd: `/work/${sessionFile.slice(1, 2)}`,
 		model: options.model,
+		mode: options.mode ?? "chat",
 		runtimeLoaded: true,
 		loadStatus: "loaded",
 		messages: [{ id: content, role: "assistant", content, timestamp: 1 }],
@@ -71,6 +74,7 @@ vi.mock("@/hooks/usePiStream", () => ({
 		followUpStream: controller.followUpStream,
 		clearQueue: controller.clearQueue,
 		setSessionModel: controller.setSessionModel,
+		setSessionMode: controller.setSessionMode,
 		removeSession: controller.removeSession,
 	}),
 }));
@@ -81,13 +85,17 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@/components/Sidebar", () => ({
-	Sidebar: ({ sessions, onSessionSelect, onNewSession, onDeleteSession }: {
+	Sidebar: ({ sessions, onSessionSelect, onNewSession, onDeleteSession, collapsed, onCollapsedChange }: {
 		sessions: Array<{ id: string; title: string; lastMessage: string; runtimeStatus?: string }>;
 		onSessionSelect: (id: string) => void;
 		onNewSession: () => void;
 		onDeleteSession: (id: string) => void;
+		collapsed?: boolean;
+		onCollapsedChange?: (collapsed: boolean) => void;
 	}) => (
 		<div>
+			<span>{`sidebar:${collapsed ? "collapsed" : "expanded"}`}</span>
+			<button type="button" onClick={() => onCollapsedChange?.(false)}>expand-sidebar</button>
 			{sessions.map((session) => (
 				<div key={session.id}>
 					<button
@@ -114,12 +122,36 @@ vi.mock("@/components/Sidebar", () => ({
 }));
 
 vi.mock("@/chat/ChatView", () => ({
-	ChatView: ({ messages, currentModelId }: {
+	ChatView: ({
+		messages,
+		currentModelId,
+		mode,
+		onModeChange,
+		onSend,
+		onStarterSelect,
+		modeChangeDisabled,
+		modeError,
+		draft,
+	}: {
 		messages: Array<{ content: string }>;
 		currentModelId?: string;
+		mode: "chat" | "work";
+		onModeChange: (mode: "chat" | "work") => void;
+		onSend: (text: string) => void;
+		onStarterSelect: (text: string) => void;
+		modeChangeDisabled?: boolean;
+		modeError?: string | null;
+		draft?: { text: string; nonce: number };
 	}) => (
-		<div data-testid="chat-state">
-			{messages.map((message) => message.content).join("|")}:{currentModelId}
+		<div>
+			{modeError && <div>{modeError}</div>}
+			<div data-testid="chat-state">
+				{messages.map((message) => message.content).join("|")}:{currentModelId}:{mode}
+			</div>
+			<div data-testid="composer-draft">{draft?.text ?? ""}</div>
+			<button type="button" disabled={modeChangeDisabled} onClick={() => onModeChange("work")}>choose-work</button>
+			<button type="button" onClick={() => onStarterSelect("Help me write")}>choose-starter</button>
+			<button type="button" onClick={() => onSend("first task")}>send-first</button>
 		</div>
 	),
 }));
@@ -251,6 +283,7 @@ describe("App cached session switching", () => {
 			controller.hydrateSession,
 			controller.removeSession,
 			controller.setSessionModel,
+			controller.setSessionMode,
 			controller.startStream,
 			controller.steerStream,
 			controller.followUpStream,
@@ -268,12 +301,17 @@ describe("App cached session switching", () => {
 				snapshot.sessionFile,
 				streamState(snapshot.sessionFile, snapshot.messages.at(0)?.content ?? "", {
 					model: snapshot.model,
+					mode: snapshot.mode ?? "chat",
 				}),
 			);
 		});
 		controller.removeSession.mockImplementation((file: string) => {
 			controller.states = new Map(controller.states);
 			controller.states.delete(file);
+		});
+		controller.setSessionMode.mockImplementation(async (file: string, mode: "chat" | "work") => {
+			const current = controller.states.get(file);
+			if (current) controller.states = new Map(controller.states).set(file, { ...current, mode });
 		});
 		mockInvoke.mockReset().mockImplementation((command: string) => {
 			if (command === "list_sessions") return Promise.resolve({ sessions: controller.entries });
@@ -466,5 +504,143 @@ describe("App cached session switching", () => {
 			}),
 		);
 		expect(controller.abortStream).not.toHaveBeenCalled();
+	});
+
+	it("persists Work before dispatching the first prompt", async () => {
+		controller.states = new Map([
+			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "select /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("send-first"));
+		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"));
+		expect(controller.setSessionMode).toHaveBeenCalledWith("/a.jsonl", "work");
+		expect(controller.setSessionMode.mock.invocationCallOrder[0]).toBeLessThan(
+			controller.startStream.mock.invocationCallOrder[0],
+		);
+	});
+
+	it("does not start the first prompt when mode persistence fails", async () => {
+		controller.states = new Map([
+			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+		];
+		controller.setSessionMode.mockRejectedValueOnce(new Error("metadata unavailable"));
+		render(<App />);
+		await screen.findByRole("button", { name: "select /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("send-first"));
+		await screen.findByText("Couldn’t save this session’s mode. Try again.");
+		expect(controller.startStream).not.toHaveBeenCalled();
+	});
+
+	it("defaults legacy active sessions to chat", async () => {
+		controller.states = new Map([
+			["/legacy.jsonl", streamState("/legacy.jsonl", "history", { mode: "chat" })],
+		]);
+		controller.entries = [
+			{ file: "/legacy.jsonl", title: "Legacy", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "select /legacy.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /legacy.jsonl" }));
+		await waitFor(() => expect(screen.getByTestId("chat-state")).toHaveTextContent(":chat"));
+	});
+
+	it("carries an unbound Work choice into the canonical session created on send", async () => {
+		controller.newSnapshot = {
+			sessionFile: "/new.jsonl",
+			mode: "chat",
+			cwd: "/work/new",
+			messages: [],
+			isRunning: false,
+			status: "idle",
+			queue: { steering: [], followUp: [] },
+		};
+		render(<App />);
+		fireEvent.click(screen.getByText("choose-work"));
+		fireEvent.click(screen.getByText("send-first"));
+		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/new.jsonl", "first task"));
+		expect(controller.setSessionMode).toHaveBeenCalledWith("/new.jsonl", "work");
+	});
+
+	it("collapses only empty Chat by default and allows one-action expansion", async () => {
+		controller.states = new Map([
+			["/chat.jsonl", { ...streamState("/chat.jsonl", "", { mode: "chat" }), messages: [] }],
+			["/work.jsonl", { ...streamState("/work.jsonl", "", { mode: "work" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/chat.jsonl", title: "Chat", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "chat" },
+			{ file: "/work.jsonl", title: "Work", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "select /chat.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /chat.jsonl" }));
+		await screen.findByText("sidebar:collapsed");
+		fireEvent.click(screen.getByText("expand-sidebar"));
+		expect(screen.getByText("sidebar:expanded")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "select /work.jsonl" }));
+		await screen.findByText("sidebar:expanded");
+	});
+
+	it("targets starter drafts to one session so they do not bleed on switch", async () => {
+		controller.states = new Map([
+			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "chat" }), messages: [] }],
+			["/b.jsonl", { ...streamState("/b.jsonl", "", { mode: "chat" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2 },
+			{ file: "/b.jsonl", title: "B", messageCount: 0, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		await screen.findByRole("button", { name: "select /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("choose-starter"));
+		expect(screen.getByTestId("composer-draft")).toHaveTextContent("Help me write");
+		fireEvent.click(screen.getByRole("button", { name: "select /b.jsonl" }));
+		expect(screen.getByTestId("composer-draft")).toBeEmptyDOMElement();
+	});
+
+	it("uses the clicked mode when send happens before its reducer rerender", async () => {
+		controller.states = new Map([
+			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "chat" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "chat" },
+		];
+		let release!: () => void;
+		controller.setSessionMode
+			.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }))
+			.mockResolvedValueOnce(undefined);
+		render(<App />);
+		await screen.findByRole("button", { name: "select /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("choose-work"));
+		fireEvent.click(screen.getByText("send-first"));
+		expect(controller.setSessionMode.mock.calls.map(([, mode]) => mode)).toEqual(["work", "work"]);
+		release();
+		await waitFor(() => expect(controller.startStream).toHaveBeenCalledWith("/a.jsonl", "first task"));
+	});
+
+	it("re-enables empty mode controls when first stream startup rejects", async () => {
+		controller.states = new Map([
+			["/a.jsonl", { ...streamState("/a.jsonl", "", { mode: "work" }), messages: [] }],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 0, createdAt: 1, lastActivity: 2, mode: "work" },
+		];
+		controller.startStream.mockRejectedValueOnce(new Error("runtime lost"));
+		render(<App />);
+		await screen.findByRole("button", { name: "select /a.jsonl" });
+		fireEvent.click(screen.getByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("send-first"));
+		await screen.findByText("Couldn’t start this session. Try again.");
+		expect(screen.getByText("choose-work")).toBeEnabled();
 	});
 });

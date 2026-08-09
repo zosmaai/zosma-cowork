@@ -38,6 +38,7 @@ vi.mock("@/hooks/usePiStream", () => ({
 			queue: { steering: [], followUp: [] },
 			cwd: null,
 			model: undefined,
+			mode: "chat",
 			runtimeLoaded: false,
 			loadStatus: "loaded",
 			awaitingDone: false,
@@ -53,6 +54,7 @@ vi.mock("@/hooks/usePiStream", () => ({
 		followUpStream: vi.fn(),
 		clearQueue: vi.fn(),
 		setSessionModel: vi.fn(),
+		setSessionMode: vi.fn(),
 		removeSession: vi.fn(),
 	}),
 }));

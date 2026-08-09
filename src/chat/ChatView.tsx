@@ -6,6 +6,7 @@ import { MessageInput } from "@/components/MessageInput";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
+import type { SessionMode } from "@/types/session-runtime";
 import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -43,6 +44,18 @@ interface ChatViewProps {
 	onEditQueue?: () => void;
 	/** Called when files are dropped onto the chat area */
 	onFilesDrop?: (filePaths: string[]) => void;
+	/** Durable Chat/Work mode — optional-compatible until Task 5 renders controls. */
+	mode?: SessionMode;
+	/** Lock tabs + composer while the first-prompt mode commit is pending. */
+	modeChangeDisabled?: boolean;
+	/** Inline error from a failed mode save. */
+	modeError?: string | null;
+	/** User selected a Chat/Work tab on an empty session. */
+	onModeChange?: (mode: SessionMode) => void;
+	/** The agent's workspace folder (for the Work empty state). */
+	workspaceCwd?: string | null;
+	/** A starter prompt was clicked — fill the composer, never send. */
+	onStarterSelect?: (text: string) => void;
 }
 
 export function ChatView({

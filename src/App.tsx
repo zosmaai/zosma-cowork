@@ -24,7 +24,7 @@ import {
 } from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
-import type { SessionSnapshot, SidecarReadyPayload } from "@/types/session-runtime";
+import type { SessionMode, SessionSnapshot, SidecarReadyPayload } from "@/types/session-runtime";
 import type { Command } from "@/types/commands";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -47,6 +47,8 @@ interface SessionEntry {
 	titleLocked?: boolean;
 	/** One-line preview of the latest message (real content, for the sidebar). */
 	preview?: string;
+	/** Durable Chat/Work product mode for this session. */
+	mode?: SessionMode;
 }
 
 function App() {
@@ -71,6 +73,7 @@ function App() {
 		followUpStream,
 		clearQueue,
 		setSessionModel,
+		setSessionMode,
 		removeSession,
 	} = usePiStream(activeSessionFile);
 
@@ -141,7 +144,45 @@ function App() {
 
 	// Draft prompt pushed into the composer (e.g. when a template is clicked).
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
-	const [composerDraft, setComposerDraft] = useState<{ text: string; nonce: number }>();
+	// Targetted per-session so a starter on session A never bleeds into B.
+	interface ComposerDraft {
+		sessionFile: string;
+		text: string;
+		nonce: number;
+	}
+
+	const [composerDraft, setComposerDraft] = useState<ComposerDraft>();
+	const draftSessionKey = activeSessionFile ?? "__new__";
+
+	// Durable Chat/Work mode. Loaded sessions derive it from keyed state; an
+	// unbound choice (before a canonical snapshot exists) lives only until the
+	// new_session snapshot returns canonical identity.
+	const [unboundMode, setUnboundMode] = useState<SessionMode>("chat");
+	const activeMode: SessionMode = activeSessionFile ? streamState.mode : unboundMode;
+	const selectedModeRef = useRef<SessionMode>(activeMode);
+	useEffect(() => {
+		selectedModeRef.current = activeMode;
+	}, [activeSessionFile, activeMode]);
+	const isEmptySession =
+		streamState.messages.length === 0 &&
+		streamState.streamingMessage === null &&
+		!streamState.isRunning;
+	const [firstSendPending, setFirstSendPending] = useState(false);
+	const modeLocked = !isEmptySession || firstSendPending;
+	const [modeError, setModeError] = useState<string | null>(null);
+	// Clear the mode error when entering a different session.
+	useEffect(() => {
+		setModeError(null);
+	}, [activeSessionFile]);
+
+	// Default the sidebar rail per entered view: empty Chat collapses, empty
+	// Work and every active transcript expand. A manual expand/collapse does
+	// not retrigger until the user enters a different session/mode/empty state.
+	// No active session (splash/onboarding) has no sidebar view to default.
+	useEffect(() => {
+		if (!activeSessionFile) return;
+		setSidebarCollapsed(isEmptySession && activeMode === "chat");
+	}, [activeSessionFile, activeMode, isEmptySession]);
 	// The agent's current workspace folder (where file/bash tools read & write).
 	// The agent's current workspace folder (where file/bash tools read & write).
 	// Derived from the ACTIVE cached session — each runtime owns its cwd.
@@ -486,6 +527,24 @@ function App() {
 		}
 	}, [streamStates]);
 
+	const handleModeChange = useCallback(async (mode: SessionMode) => {
+		if (modeLocked) return;
+		// Synchronous ref closes the click→immediate-Enter gap before the keyed
+		// reducer rerender lands. First send always uses the visibly chosen mode.
+		selectedModeRef.current = mode;
+		setModeError(null);
+		if (!activeSessionFile) {
+			setUnboundMode(mode);
+			return;
+		}
+		try {
+			await setSessionMode(activeSessionFile, mode);
+		} catch (error) {
+			log.error("[cowork] set_session_mode failed:", error);
+			setModeError("Couldn’t save this session’s mode. Try again.");
+		}
+	}, [activeSessionFile, modeLocked, setSessionMode]);
+
 	// ── Send a new prompt ──
 	// The visible model is the ACTIVE session's runtime model when known;
 	// otherwise fall back to the saved default for future sessions.
@@ -496,6 +555,7 @@ function App() {
 
 	const handleSend = useCallback(
 		async (text: string) => {
+			const selectedMode = selectedModeRef.current;
 			let sessionFile = activeSessionFile;
 			const isNewSession = !sessionFile;
 			if (!sessionFile) {
@@ -516,6 +576,23 @@ function App() {
 				}
 			}
 
+			// Lock tabs + composer if this is the first prompt. Mode may change
+			// while empty, then locks. Persist BEFORE the optimistic first message
+			// (startStream) so optimistic insertion cannot race persistence.
+			const firstPrompt = isNewSession || streamState.messages.length === 0;
+			if (firstPrompt) {
+				setFirstSendPending(true);
+				setModeError(null);
+				try {
+					await setSessionMode(sessionFile, selectedMode);
+				} catch (error) {
+					log.error("[cowork] first-prompt mode save failed:", error);
+					setModeError("Couldn’t save this session’s mode. Try again.");
+					setFirstSendPending(false);
+					return;
+				}
+			}
+
 			// Immediately show session in sidebar with title from first message
 			if (isNewSession) {
 				const title = text.length > 80 ? `${text.slice(0, 77)}...` : text;
@@ -527,6 +604,7 @@ function App() {
 						messageCount: 1,
 						createdAt: Date.now(),
 						lastActivity: Date.now(),
+						mode: selectedMode,
 					},
 					...prev,
 				]);
@@ -540,9 +618,25 @@ function App() {
 				model: activeModel?.id ?? "unknown",
 			});
 
-			await startStream(sessionFile, text);
+			try {
+				await startStream(sessionFile, text);
+			} catch (error) {
+				log.error("[cowork] first prompt failed before stream start:", error);
+				setModeError("Couldn’t start this session. Try again.");
+			} finally {
+				if (firstPrompt) setFirstSendPending(false);
+			}
 		},
-		[activeSessionFile, startStream, models, visibleModelId, workspaceCwd, activateSnapshot],
+		[
+			activeSessionFile,
+			startStream,
+			models,
+			visibleModelId,
+			workspaceCwd,
+			activateSnapshot,
+			setSessionMode,
+			streamState.messages.length,
+		],
 	);
 
 	/**
@@ -559,10 +653,11 @@ function App() {
 		if (all.length === 0) return;
 		const joined = all.join("\n\n");
 		setComposerDraft((prev) => ({
+			sessionFile: draftSessionKey,
 			text: joined,
 			nonce: (prev?.nonce ?? 0) + 1,
 		}));
-	}, [clearQueue, activeSessionFile]);
+	}, [clearQueue, activeSessionFile, draftSessionKey]);
 
 	const handleModelSelect = useCallback(
 		async (provider: string, modelId: string) => {
@@ -839,6 +934,7 @@ function App() {
 			folder: s.cwd,
 			pinned: s.pinned,
 			titleLocked: s.titleLocked,
+			mode: live?.mode ?? s.mode ?? "chat",
 			runtimeStatus,
 			runtimeError: live?.error ?? undefined,
 		};
@@ -1031,9 +1127,23 @@ function App() {
 								onModelSelect={handleModelSelect}
 								modelSelectorOpen={showModelSelector}
 								onModelSelectorOpenChange={setShowModelSelector}
-								draft={composerDraft}
+								draft={
+									composerDraft?.sessionFile === draftSessionKey ? composerDraft : undefined
+								}
 								commands={BUILTIN_COMMANDS}
 								onRunCommand={handleRunCommand}
+								mode={activeMode}
+								modeChangeDisabled={firstSendPending}
+								modeError={modeError}
+								onModeChange={(mode) => void handleModeChange(mode)}
+								workspaceCwd={workspaceCwd}
+								onStarterSelect={(text) => {
+									setComposerDraft((previous) => ({
+										sessionFile: draftSessionKey,
+										text,
+										nonce: (previous?.nonce ?? 0) + 1,
+									}));
+								}}
 							/>
 						)}
 					</div>
