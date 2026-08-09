@@ -9,6 +9,8 @@
 
 export type SessionStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
 
+export type SessionMode = "chat" | "work";
+
 export type SessionErrorCode =
 	| "session_not_loaded"
 	| "session_load_failed"
@@ -26,7 +28,7 @@ export interface SessionWireError {
 
 export interface SessionSnapshot {
 	sessionFile: string;
-	mode: "chat";
+	mode: SessionMode;
 	cwd: string;
 	messages: Array<Record<string, unknown>>;
 	isRunning: boolean;

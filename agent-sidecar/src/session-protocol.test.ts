@@ -50,6 +50,11 @@ describe("session protocol envelopes", () => {
 		});
 	});
 
+	it("accepts both durable session modes", () => {
+		const modes: import("./session-protocol.js").SessionMode[] = ["chat", "work"];
+		expect(modes).toEqual(["chat", "work"]);
+	});
+
 	it("serializes an interrupted-session error without losing retryability", () => {
 		expect(makeSessionError("p-1", "/a.jsonl", {
 			code: "session_interrupted",
