@@ -243,4 +243,16 @@ describe("MessageInput image warning", () => {
 		await user.click(screen.getByLabelText("Attach files"));
 		expect(screen.queryByText(/does not support images/i)).not.toBeInTheDocument();
 	});
+
+	it("uses the compact Chat empty composer", () => {
+		render(<MessageInput sessionFile="/a.jsonl" onSend={vi.fn()} emptyMode="chat" />);
+		expect(screen.getByPlaceholderText("Ask Zosma…")).toHaveAttribute("rows", "1");
+	});
+
+	it("uses the larger multiline Work empty composer", () => {
+		render(<MessageInput sessionFile="/a.jsonl" onSend={vi.fn()} emptyMode="work" />);
+		const input = screen.getByPlaceholderText("Work on anything…");
+		expect(input).toHaveAttribute("rows", "3");
+		expect(input.className).toContain("min-h-24");
+	});
 });

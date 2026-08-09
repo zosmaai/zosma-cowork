@@ -228,3 +228,51 @@ describe("ChatView in-thread find (#267)", () => {
 		expect(screen.queryByPlaceholderText("Find in conversation…")).not.toBeInTheDocument();
 	});
 });
+
+describe("ChatView mode-specific empty shell", () => {
+	const emptyProps = {
+		messages: [],
+		streamingMessage: null,
+		isRunning: false,
+		error: null,
+		onSend: vi.fn(),
+		onAbort: vi.fn(),
+	};
+
+	it("shows only Empty Chat controls before the first prompt", () => {
+		render(<ChatView sessionFile="/a.jsonl" {...emptyProps} mode="chat" onModeChange={vi.fn()} />);
+		expect(screen.getByText("What’s on your mind today?")).toBeInTheDocument();
+		expect(screen.queryByText("What should we work on?")).not.toBeInTheDocument();
+		expect(screen.getByPlaceholderText("Ask Zosma…")).toBeInTheDocument();
+	});
+
+	it("shows Empty Work with a multiline task composer and workspace", () => {
+		render(
+			<ChatView
+				sessionFile="/a.jsonl"
+				{...emptyProps}
+				mode="work"
+				workspaceCwd="/work/acme"
+				onModeChange={vi.fn()}
+			/>,
+		);
+		expect(screen.getByText("What should we work on?")).toBeInTheDocument();
+		const input = screen.getByPlaceholderText("Work on anything…");
+		expect(input).toHaveAttribute("rows", "3");
+		expect(screen.getByText("/work/acme")).toBeInTheDocument();
+	});
+
+	it("hides the mode switch and empty starters after conversation starts", () => {
+		render(
+			<ChatView
+				sessionFile="/a.jsonl"
+				{...emptyProps}
+				mode="work"
+				messages={[{ id: "u", role: "user", content: "Run it", timestamp: 1 }]}
+				onModeChange={vi.fn()}
+			/>,
+		);
+		expect(screen.queryByRole("tablist", { name: "Session mode" })).not.toBeInTheDocument();
+		expect(screen.queryByText("Research and produce a report")).not.toBeInTheDocument();
+	});
+});

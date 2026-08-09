@@ -4,6 +4,7 @@ import { trackEvent } from "@/lib/telemetry";
 import { findModel } from "@/lib/model-key";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
+import type { SessionMode } from "@/types/session-runtime";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
 import {
 	forwardRef,
@@ -103,6 +104,8 @@ interface MessageInputProps {
 	pendingDropFiles?: FileAttachment[];
 	/** Incrementing counter to trigger re-processing of pendingDropFiles */
 	pendingDropNonce?: number;
+	/** Chat/Work empty-state composer variant (rows/placeholder/width). */
+	emptyMode?: SessionMode;
 }
 
 export interface MessageInputHandle {
@@ -132,6 +135,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			onEditQueue,
 			pendingDropFiles,
 			pendingDropNonce,
+			emptyMode,
 		},
 		ref,
 	) => {
@@ -486,7 +490,11 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				? queueCount > 0
 					? `Steer with Enter · Alt+Enter for follow-up · ${queueCount} queued (Ctrl+↑ to edit)`
 					: "Steer with Enter · Alt+Enter to queue follow-up"
-				: "Message (Enter to send, Shift+Enter for newline)";
+				: emptyMode === "work"
+					? "Work on anything…"
+					: emptyMode === "chat"
+						? "Ask Zosma…"
+						: "Message (Enter to send, Shift+Enter for newline)";
 
 		const hasContent = !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
 
@@ -506,8 +514,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		return (
 			<form
 				onSubmit={(e) => handleSubmit(streaming ? "steer" : "send", e)}
-				className="px-4 pb-2 mx-auto w-full"
-				style={{ maxWidth: "var(--chat-composer-max-width, 852px)" }}
+				className={`px-4 pb-2 mx-auto w-full ${
+					emptyMode === "chat"
+						? "max-w-[700px]"
+						: emptyMode === "work"
+							? "max-w-[780px]"
+							: "max-w-[852px]"
+				}`}
 			>
 				{/* Outer shell */}
 				<div ref={shellRef} className="composer-glass relative rounded-2xl">
@@ -569,11 +582,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						onKeyDown={handleKeyDown}
 						onPaste={(e) => pasteHandler(e.nativeEvent)}
 						placeholder={placeholder}
-						rows={1}
+						rows={emptyMode === "work" ? 3 : 1}
 						disabled={disabled}
 						enterKeyHint="send"
 						inputMode="text"
-						className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+						className={`session-composer w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 ${
+							emptyMode === "work" ? "min-h-24" : ""
+						}`}
 					/>
 
 					{/* PR3 follow-up: the standalone steer/follow-up hint row and

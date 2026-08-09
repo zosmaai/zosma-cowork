@@ -3,6 +3,7 @@ import { DropZoneOverlay } from "@/components/DropZoneOverlay";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
+import { SessionEmptyIntro, SessionStarterPrompts } from "@/components/SessionEmptyState";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
@@ -11,6 +12,9 @@ import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
+
+/** Safe no-op for direct/test renderers that omit the mode handler. */
+const NOOP_MODE_CHANGE = () => {};
 
 interface ChatViewProps {
 	/** Canonical session file of the active session (threaded to composer). */
@@ -81,6 +85,12 @@ export function ChatView({
 	queue,
 	onEditQueue,
 	onFilesDrop,
+	mode = "chat",
+	modeChangeDisabled = false,
+	modeError,
+	onModeChange,
+	workspaceCwd,
+	onStarterSelect,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -279,7 +289,7 @@ export function ChatView({
 	];
 
 	return (
-		<div className="chat-font relative flex flex-col flex-1 min-h-0">
+		<div className="chat-font session-shell relative flex flex-col flex-1 min-h-0" data-session-mode={mode}>
 			<InThreadFind
 				open={findOpen}
 				query={findQuery}
@@ -294,7 +304,7 @@ export function ChatView({
 			<div
 				ref={scrollContainerRef}
 				onScroll={handleScroll}
-				className="flex-1 overflow-y-auto relative"
+				className={`flex-1 overflow-y-auto relative ${isEmpty ? "flex flex-col" : ""}`}
 				style={{ scrollbarGutter: "stable" }}
 				onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
 				onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
@@ -302,6 +312,16 @@ export function ChatView({
 				onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
 			>
 				<DropZoneOverlay isVisible={isDragging} />
+				{isEmpty && (
+					<div className="flex flex-1 items-end justify-center pb-5">
+						<SessionEmptyIntro
+							mode={mode}
+							onModeChange={onModeChange ?? NOOP_MODE_CHANGE}
+							disabled={modeChangeDisabled}
+							error={modeError}
+						/>
+					</div>
+				)}
 				{!isEmpty && (
 					<div className="pt-1 pb-6">
 						{allMessages.map((msg) => {
@@ -404,13 +424,22 @@ export function ChatView({
 					draft={draft}
 					commands={commands}
 					onRunCommand={onRunCommand}
+					emptyMode={isEmpty ? mode : undefined}
+					disabled={modeChangeDisabled}
 				/>
 			</motion.div>
 
-			{/* Bottom spacer balances the empty scroll area so the input sits
-			    vertically centered on an empty session. Removed on first message,
-			    letting the input settle at the bottom. */}
-			{isEmpty && <div className="flex-1" aria-hidden="true" />}
+			{/* Top and bottom flex regions center the composer while empty, keeping
+			    exactly one mounted MessageInput across empty↔active transitions. */}
+			{isEmpty && (
+				<div className="flex flex-1 justify-center pt-4" aria-label={`${mode} starters`}>
+					<SessionStarterPrompts
+						mode={mode}
+						workspaceCwd={workspaceCwd}
+						onSelect={(text) => onStarterSelect?.(text)}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }
