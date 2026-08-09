@@ -135,10 +135,15 @@ function App() {
 	const [openDrawer, setOpenDrawer] = useState<OpenDrawer>(null);
 	const sidebarDrawerTriggerRef = useRef<HTMLButtonElement>(null);
 	const workPanelTriggerRef = useRef<HTMLButtonElement>(null);
+	const mainContentRef = useRef<HTMLElement>(null);
 	const closeDrawer = useCallback(() => {
 		const trigger = openDrawer === "sidebar" ? sidebarDrawerTriggerRef : workPanelTriggerRef;
 		setOpenDrawer(null);
-		queueMicrotask(() => trigger.current?.focus());
+		queueMicrotask(() => {
+			const button = trigger.current;
+			if (button && window.getComputedStyle(button).display !== "none") button.focus();
+			else mainContentRef.current?.focus();
+		});
 	}, [openDrawer]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: close overlays on session identity change
@@ -1089,6 +1094,8 @@ function App() {
 
 				{/* Content with view transition key */}
 				<main
+					ref={mainContentRef}
+					tabIndex={-1}
 					className="flex-1 flex flex-col min-h-0 overflow-hidden"
 					inert={openDrawer === "sidebar" ? true : undefined}
 				>
@@ -1201,7 +1208,7 @@ function App() {
 					</div>
 				</main>
 				{openDrawer === "sidebar" && (
-					<div className="mobile-sidebar-layer md:hidden">
+					<div className="mobile-sidebar-layer">
 						<button
 							type="button"
 							className="drawer-backdrop"

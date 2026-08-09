@@ -18,6 +18,12 @@ describe("Work responsive layout contract", () => {
 		expect(css).toContain("@media (max-width: 767px)");
 	});
 
+	it("keeps an open drawer modal across breakpoint changes", () => {
+		expect(css).toContain(':has(.work-panel[data-open="false"])');
+		expect(css).toContain('.work-panel[data-open="false"]');
+		expect(app).not.toContain('className="mobile-sidebar-layer md:hidden"');
+	});
+
 	it("does not branch layout from JavaScript viewport APIs", () => {
 		expect(app).not.toMatch(/innerWidth|matchMedia|ResizeObserver/);
 	});

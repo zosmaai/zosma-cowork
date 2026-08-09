@@ -182,6 +182,38 @@ describe("deriveWorkProjection", () => {
 		expect(sources.map((s) => s.title)).toEqual(["New", "Other"]);
 	});
 
+	it("produces equal projections for live and reloaded tool records", () => {
+		const liveMessages = [
+			message({
+				toolCalls: [
+					tc({
+						outputPath: { path: "/work/acme/out.md", displayPath: "out.md" },
+						details: { diff: "+result" },
+						result: "Written to out.md",
+					}),
+				],
+			}),
+		];
+		const reloadedMessages = [
+			message({
+				toolCalls: [
+					{
+						id: "t1",
+						name: "write",
+						args: { path: "out.md" },
+						status: "completed",
+						result: "Written to out.md",
+						details: { diff: "+result" },
+						outputPath: { path: "/work/acme/out.md", displayPath: "out.md" },
+					},
+				],
+			}),
+		];
+		expect(deriveWorkProjection(liveMessages, "/work/acme")).toEqual(
+			deriveWorkProjection(reloadedMessages, "/work/acme"),
+		);
+	});
+
 	it("returns empty sections rather than throwing on malformed records", () => {
 		expect(() =>
 			deriveWorkProjection([message({ toolCalls: [{ broken: true } as never] })], "/work"),
