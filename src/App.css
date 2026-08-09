@@ -44,7 +44,8 @@
 	--font-space-grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
 		sans-serif;
 	--font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, monospace;
-	--font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	--font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+		sans-serif;
 	--font-response: 17px;
 	--font-user-message: 16px;
 	--font-composer: 16px;
@@ -1369,6 +1370,51 @@ body[data-wallpaper]::before {
 	border-color: hsl(var(--border));
 	background: hsl(var(--muted) / 0.5);
 	color: hsl(var(--muted-foreground));
+}
+
+/* ── Active Work document shell ── */
+.session-work-container {
+	container-name: work-session;
+	container-type: inline-size;
+}
+.session-layout,
+.session-center {
+	min-width: 0;
+	min-height: 0;
+}
+.session-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	height: 100%;
+}
+.session-center {
+	display: flex;
+	flex-direction: column;
+}
+.work-header {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 56px;
+	padding: 0.65rem 1rem;
+	border-bottom: 1px solid hsl(var(--border) / 0.65);
+}
+.work-result-stack {
+	width: min(100%, 760px);
+	margin-inline: auto;
+	padding: 1.5rem 1.25rem 3rem;
+}
+.work-result-document {
+	border: 0;
+	background: transparent;
+	padding: 0;
+}
+.work-direction-row {
+	margin: 1rem 0;
+	padding: 0.55rem 0.8rem;
+	border-left: 2px solid hsl(var(--border));
+	color: hsl(var(--muted-foreground));
+	font-size: var(--font-user-message);
 }
 
 /* ── Reduced motion ── */

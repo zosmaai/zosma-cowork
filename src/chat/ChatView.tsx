@@ -4,10 +4,13 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
 import { SessionEmptyIntro, SessionStarterPrompts } from "@/components/SessionEmptyState";
+import { QueuedMessages } from "@/chat/QueuedMessages";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
+import { WorkHeader } from "@/work/WorkHeader";
+import { WorkSessionView } from "@/work/WorkSessionView";
 import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -60,6 +63,8 @@ interface ChatViewProps {
 	workspaceCwd?: string | null;
 	/** A starter prompt was clicked — fill the composer, never send. */
 	onStarterSelect?: (text: string) => void;
+	/** Stable task identity shown above an active Work document. */
+	taskTitle?: string;
 }
 
 export function ChatView({
@@ -91,6 +96,7 @@ export function ChatView({
 	onModeChange,
 	workspaceCwd,
 	onStarterSelect,
+	taskTitle,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -275,172 +281,138 @@ export function ChatView({
 
 	const allMessages = streamingMessage ? [...messages, streamingMessage] : messages;
 	const isEmpty = messages.length === 0 && !streamingMessage;
-	const queuedItems = [
-		...(queue?.steering ?? []).map((text, i) => ({
-			key: `s:${i}:${text}`,
-			kind: "steer" as const,
-			text,
-		})),
-		...(queue?.followUp ?? []).map((text, i) => ({
-			key: `f:${i}:${text}`,
-			kind: "follow_up" as const,
-			text,
-		})),
-	];
+	const activeWork = mode === "work" && !isEmpty;
 
 	return (
-		<div className="chat-font session-shell relative flex flex-col flex-1 min-h-0" data-session-mode={mode}>
-			<InThreadFind
-				open={findOpen}
-				query={findQuery}
-				current={findMatches.length === 0 ? 0 : safeActive + 1}
-				total={findMatches.length}
-				onQueryChange={setFindQuery}
-				onNext={goNextMatch}
-				onPrev={goPrevMatch}
-				onClose={closeFind}
-			/>
+		<div
+			className="chat-font session-shell session-layout relative flex-1 min-h-0"
+			data-session-mode={mode}
+		>
+			<div className="session-center">
+				{activeWork && <WorkHeader title={taskTitle ?? "Untitled task"} />}
+				<InThreadFind
+					open={findOpen}
+					query={findQuery}
+					current={findMatches.length === 0 ? 0 : safeActive + 1}
+					total={findMatches.length}
+					onQueryChange={setFindQuery}
+					onNext={goNextMatch}
+					onPrev={goPrevMatch}
+					onClose={closeFind}
+				/>
 
-			<div
-				ref={scrollContainerRef}
-				onScroll={handleScroll}
-				className={`flex-1 overflow-y-auto relative ${isEmpty ? "flex flex-col" : ""}`}
-				style={{ scrollbarGutter: "stable" }}
-				onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
-				onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
-				onDragLeave={dropHandlers.onDragLeave as unknown as React.DragEventHandler}
-				onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
-			>
-				<DropZoneOverlay isVisible={isDragging} />
-				{isEmpty && (
-					<div className="flex flex-1 items-end justify-center pb-5">
-						<SessionEmptyIntro
-							mode={mode}
-							onModeChange={onModeChange ?? NOOP_MODE_CHANGE}
-							disabled={modeChangeDisabled}
-							error={modeError}
-						/>
-					</div>
-				)}
-				{!isEmpty && (
-					<div className="pt-1 pb-6">
-						{allMessages.map((msg) => {
-							const isStreaming = msg.id === streamingMessage?.id;
-							return (
-								<ChatMessageItem
-									key={msg.id}
-									message={msg}
-									detailsExpanded={detailsExpanded}
+				<div
+					ref={scrollContainerRef}
+					onScroll={handleScroll}
+					className={`flex-1 overflow-y-auto relative ${isEmpty ? "flex flex-col" : ""}`}
+					style={{ scrollbarGutter: "stable" }}
+					onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
+					onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
+					onDragLeave={dropHandlers.onDragLeave as unknown as React.DragEventHandler}
+					onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
+				>
+					<DropZoneOverlay isVisible={isDragging} />
+					{isEmpty && (
+						<div className="flex flex-1 items-end justify-center pb-5">
+							<SessionEmptyIntro
+								mode={mode}
+								onModeChange={onModeChange ?? NOOP_MODE_CHANGE}
+								disabled={modeChangeDisabled}
+								error={modeError}
+							/>
+						</div>
+					)}
+					{!isEmpty && (
+						<>
+							{activeWork ? (
+								<WorkSessionView
+									messages={messages}
+									streamingMessage={streamingMessage}
+									isRunning={isRunning}
 									models={models}
-									workspaceCwd={workspaceCwd}
-									findTerm={isStreaming ? undefined : findTerm}
-									activeFindIndex={
-										activeEntry && activeEntry.messageId === msg.id
-											? activeEntry.localIndex
-											: undefined
-									}
+									detailsExpanded={detailsExpanded}
+									workspaceCwd={workspaceCwd ?? ""}
 								/>
-							);
-						})}
-						{/* Issue #201 PR3 follow-up: queued messages render AFTER
-						    streamingMessage — they are work the agent will do NEXT,
-						    so chronologically they belong below the current bubble.
-						    Threaded visual: a left vertical line ties the queued
-						    items to the in-progress bubble above (pi-TUI inspired).
-						    Source of truth is the `queue` prop — NOT state.messages
-						    — so clearQueue() drops every bubble atomically. */}
-						{queuedItems.length > 0 && (
-							<div
-								data-testid="queued-section"
-								className="mx-auto w-full px-4 mt-1 mb-3"
-								style={{ maxWidth: "var(--chat-max-width, 820px)" }}
-							>
-								<div
-									data-testid="queued-thread"
-									className="ml-11 border-l-2 pl-4 py-1 space-y-1.5 text-sm border-border"
-								>
-									{queuedItems.map((item) => (
-										<div
-											key={item.key}
-											className="relative text-muted-foreground/90 leading-relaxed"
-										>
-											{/* Tiny node-dot connecting each item to the thread line. */}
-											<span
-												className="absolute -left-[1.30rem] top-2 h-1.5 w-1.5 rounded-full bg-border"
-												aria-hidden="true"
+							) : (
+								<div className="pt-1 pb-6">
+									{allMessages.map((msg) => {
+										const isStreaming = msg.id === streamingMessage?.id;
+										return (
+											<ChatMessageItem
+												key={msg.id}
+												message={msg}
+												detailsExpanded={detailsExpanded}
+												models={models}
+												workspaceCwd={workspaceCwd}
+												findTerm={isStreaming ? undefined : findTerm}
+												activeFindIndex={
+													activeEntry && activeEntry.messageId === msg.id
+														? activeEntry.localIndex
+														: undefined
+												}
 											/>
-											<span className="font-medium text-muted-foreground">
-												{item.kind === "steer" ? "Steering " : "Follow-up "}
-											</span>
-											<span className="text-muted-foreground/60">· </span>
-											<span className="whitespace-pre-wrap">{item.text}</span>
-										</div>
-									))}
-									<div className="text-xs text-muted-foreground/60">
-										Ctrl+↑ to edit all queued messages
-									</div>
+										);
+									})}
 								</div>
-							</div>
-						)}
-						<div ref={messagesEndRef} />
-					</div>
-				)}
-			</div>
+							)}
+							<QueuedMessages queue={queue} />
+							<div ref={messagesEndRef} />
+						</>
+					)}
+				</div>
 
-			{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
+				{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
 
-			{/* Single persistent MessageInput. Flex positions it: centered (empty,
-			    via the bottom spacer) or pinned to the bottom (active). `layout=
-			    "position"` smoothly slides it between the two over 500ms — position
-			    only, so the composer's own height changes while typing are NOT
-			    animated. Never remounted (key=sessionKey) so focus/draft survive. */}
-			<motion.div
-				layout={reducedScroll ? false : "position"}
-				transition={{ layout: { duration: 0.5, ease: "easeInOut" } }}
-				className="overflow-hidden"
-			>
-				<MessageInput
-					key={sessionKey}
-					sessionFile={sessionFile}
-					ref={inputRef}
-					onSend={onSend}
-					/* Issue #201: while streaming, the input stays enabled and
+				{/* One keyed composer under one stable parent. Empty Work -> Active Work changes
+			    only the scroll surface; draft/files/focus/voice/model/queue state do not remount. */}
+				<motion.div
+					layout={reducedScroll ? false : "position"}
+					transition={{ layout: { duration: 0.5, ease: "easeInOut" } }}
+					className="overflow-hidden"
+				>
+					<MessageInput
+						key={sessionKey}
+						sessionFile={sessionFile}
+						ref={inputRef}
+						onSend={onSend}
+						/* Issue #201: while streaming, the input stays enabled and
 					   Enter/Alt+Enter route to steer/follow-up instead of starting
 					   a fresh prompt. `disabled` is reserved for hard-blocks like
 					   "no model selected" or "sidecar not ready". */
-					streaming={isRunning}
-					/* Stop now lives in the composer (replaces the old StatusBar). */
-					onAbort={onAbort}
-					onSteer={onSteer}
-					onFollowUp={onFollowUp}
-					queue={queue}
-					onEditQueue={onEditQueue}
-					models={models}
-					currentModelId={currentModelId}
-					onModelSelect={onModelSelect}
-					modelSelectorOpen={modelSelectorOpen}
-					onModelSelectorOpenChange={onModelSelectorOpenChange}
-					pendingDropFiles={pendingDrop.files}
-					pendingDropNonce={pendingDrop.nonce}
-					draft={draft}
-					commands={commands}
-					onRunCommand={onRunCommand}
-					emptyMode={isEmpty ? mode : undefined}
-					disabled={modeChangeDisabled}
-				/>
-			</motion.div>
-
-			{/* Top and bottom flex regions center the composer while empty, keeping
-			    exactly one mounted MessageInput across empty↔active transitions. */}
-			{isEmpty && (
-				<div className="flex flex-1 justify-center pt-4" aria-label={`${mode} starters`}>
-					<SessionStarterPrompts
-						mode={mode}
-						workspaceCwd={workspaceCwd}
-						onSelect={(text) => onStarterSelect?.(text)}
+						streaming={isRunning}
+						/* Stop now lives in the composer (replaces the old StatusBar). */
+						onAbort={onAbort}
+						onSteer={onSteer}
+						onFollowUp={onFollowUp}
+						queue={queue}
+						onEditQueue={onEditQueue}
+						models={models}
+						currentModelId={currentModelId}
+						onModelSelect={onModelSelect}
+						modelSelectorOpen={modelSelectorOpen}
+						onModelSelectorOpenChange={onModelSelectorOpenChange}
+						pendingDropFiles={pendingDrop.files}
+						pendingDropNonce={pendingDrop.nonce}
+						draft={draft}
+						commands={commands}
+						onRunCommand={onRunCommand}
+						emptyMode={isEmpty ? mode : undefined}
+						disabled={modeChangeDisabled}
 					/>
-				</div>
-			)}
+				</motion.div>
+
+				{/* Top and bottom flex regions center the composer while empty, keeping
+			    exactly one mounted MessageInput across empty↔active transitions. */}
+				{isEmpty && (
+					<div className="flex flex-1 justify-center pt-4" aria-label={`${mode} starters`}>
+						<SessionStarterPrompts
+							mode={mode}
+							workspaceCwd={workspaceCwd}
+							onSelect={(text) => onStarterSelect?.(text)}
+						/>
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }

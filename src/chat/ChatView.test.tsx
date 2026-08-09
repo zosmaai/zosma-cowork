@@ -1,5 +1,5 @@
 import { cleanupMocks } from "@/test/mocks";
-import { render, screen, waitForElementToBeRemoved } from "@testing-library/react";
+import { fireEvent, render, screen, waitForElementToBeRemoved } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -274,5 +274,52 @@ describe("ChatView mode-specific empty shell", () => {
 		);
 		expect(screen.queryByRole("tablist", { name: "Session mode" })).not.toBeInTheDocument();
 		expect(screen.queryByText("Research and produce a report")).not.toBeInTheDocument();
+	});
+
+	it("keeps one composer node from Empty Work into Active Work", () => {
+		const props = {
+			sessionFile: "/work.jsonl",
+			streamingMessage: null,
+			isRunning: false,
+			error: null,
+			onSend: vi.fn(),
+			onAbort: vi.fn(),
+			mode: "work" as const,
+			taskTitle: "Task title",
+		};
+		const { rerender } = render(<ChatView {...props} messages={[]} />);
+		const before = screen.getByRole("textbox") as HTMLTextAreaElement;
+		fireEvent.change(before, { target: { value: "draft survives" } });
+		rerender(
+			<ChatView
+				{...props}
+				messages={[
+					{ id: "u", role: "user", content: "Start", timestamp: 1 },
+					{ id: "a", role: "assistant", content: "Result", timestamp: 2 },
+				]}
+			/>,
+		);
+		const after = screen.getByRole("textbox") as HTMLTextAreaElement;
+		expect(after).toBe(before);
+		expect(after.value).toBe("draft survives");
+		expect(screen.getByRole("heading", { name: "Task title" })).toBeInTheDocument();
+	});
+
+	it("keeps active Chat on the existing bubble renderer", () => {
+		const { container } = render(
+			<ChatView
+				sessionFile="/chat.jsonl"
+				messages={[{ id: "a", role: "assistant", content: "Hello", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning={false}
+				error={null}
+				onSend={vi.fn()}
+				onAbort={vi.fn()}
+				mode="chat"
+				taskTitle="Chat title"
+			/>,
+		);
+		expect(container.querySelector(".chat-bubble")).toBeInTheDocument();
+		expect(container.querySelector(".work-result-document")).toBeNull();
 	});
 });
