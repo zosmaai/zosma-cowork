@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
 const controller = vi.hoisted(() => ({
+	// biome-ignore lint/suspicious/noExplicitAny: test harness holds loose cached state
 	states: new Map<string, any>(),
+	// biome-ignore lint/suspicious/noExplicitAny: sidebar disk entries
 	entries: [] as Array<any>,
+	// biome-ignore lint/suspicious/noExplicitAny: new_session result
 	newSnapshot: null as any,
 	ensureSession: vi.fn(),
 	abortStream: vi.fn(),
@@ -49,6 +52,7 @@ function streamState(
 	};
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: empty initial render state
 const EMPTY: any = streamState("", "");
 EMPTY.messages = [];
 EMPTY.sessionFile = null;
@@ -261,6 +265,7 @@ describe("App cached session switching", () => {
 		controller.getSessionState.mockImplementation((file: string) => controller.states.get(file));
 		controller.abortStream.mockResolvedValue(true);
 		controller.ensureSession.mockResolvedValue(null);
+		// biome-ignore lint/suspicious/noExplicitAny: test harness snapshot is untyped by design
 		controller.hydrateSession.mockImplementation((snapshot: any) => {
 			controller.states = new Map(controller.states).set(
 				snapshot.sessionFile,

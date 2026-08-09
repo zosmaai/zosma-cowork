@@ -786,6 +786,7 @@ export function usePiStream(activeSessionFile: string | null) {
 
 		const epoch = sidecarEpochRef.current;
 		dispatchTo(sessionFile, { type: "BEGIN_LOAD" });
+		// biome-ignore lint/style/useConst: self-referential promise (finally compares against `load` to avoid clearing a replacement's entry)
 		let load!: Promise<SessionSnapshot>;
 		load = invoke<SessionSnapshot>("load_session", { sessionFile })
 			.then((snapshot) => {
