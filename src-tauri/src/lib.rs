@@ -713,9 +713,13 @@ async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<V
 
 #[tauri::command]
 async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
+    // Unique id per call — see get_auth_status: a hardcoded id collides in
+    // `pending_requests`, so a concurrent get_models resolves "closed" and
+    // models never load (leaving the splash up forever).
+    let id = format!("gm-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"get_models","id":"gm"}),
+        &serde_json::json!({"type":"get_models","id":id}),
         std::time::Duration::from_secs(30),
     )
     .await
@@ -3090,6 +3094,31 @@ mod tests {
         fail_pending_requests(&pending, "sidecar lost").await;
         assert_eq!(receiver.await.unwrap(), Err("sidecar lost".to_string()));
         assert!(pending.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn duplicate_request_id_drops_the_earlier_caller() {
+        // Regression for `get_models` (previously hardcoded id "gm"): a
+        // duplicate id in `pending_requests` overwrites the first sender, so
+        // the first caller's oneshot resolves Err and the relay surfaces it as
+        // "closed" — while models are mandatory for startup, the splash stays
+        // up forever when get_models never returns. Every request must mint a
+        // unique id so each concurrent caller keeps its own pending entry.
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let (tx_first, rx_first) = tokio::sync::oneshot::channel();
+        let (tx_second, _rx_second) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .await
+            .insert("gm".to_string(), PendingRequest { sender: tx_first });
+        pending
+            .lock()
+            .await
+            .insert("gm".to_string(), PendingRequest { sender: tx_second });
+        // Only the last registration survives the id collision.
+        assert_eq!(pending.lock().await.len(), 1);
+        // The overwritten first caller's promise is dropped unfulfilled -> "closed".
+        assert!(rx_first.await.is_err());
     }
 
     #[cfg(unix)]
