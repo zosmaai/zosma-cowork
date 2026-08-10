@@ -2,6 +2,7 @@ import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage as ChatMessageType, FileAttachment, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Clipboard, Download, FolderOpen, User } from "lucide-react";
 import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
@@ -94,7 +95,7 @@ export function ChatMessageItem({
 
 	const saveToFile = useCallback(async (content: string) => {
 		try {
-			const { save } = await import("@tauri-apps/plugin-dialog");
+			// save imported statically
 			const path = await save({
 				defaultPath: "zosma-export.md",
 				filters: [

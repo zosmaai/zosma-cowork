@@ -7,6 +7,8 @@ import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
 import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
 	forwardRef,
 	useCallback,
@@ -254,14 +256,14 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 
 		const openFileDialog = useCallback(async () => {
 			try {
-				const { open } = await import("@tauri-apps/plugin-dialog");
+				// open imported statically
 				const result = await open({
 					multiple: true,
 					title: "Select files",
 				});
 				if (!result) return;
 				const paths = Array.isArray(result) ? result : [result];
-				const { invoke } = await import("@tauri-apps/api/core");
+				// invoke imported statically
 				const files: FileAttachment[] = [];
 				for (const p of paths) {
 					try {

@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "./ChatView";
 
 function selectRenderedText(element: Element) {
+	// biome-ignore lint/style/noNonNullAssertion: test helper
 	const node = element.firstChild!;
 	const range = document.createRange();
 	range.selectNodeContents(node);
 	Object.defineProperty(range, "getBoundingClientRect", {
 		value: () => ({ left: 80, top: 120, right: 180, bottom: 140, width: 100, height: 20 }),
 	});
+	// biome-ignore lint/style/noNonNullAssertion: test helper
 	const selection = window.getSelection()!;
 	selection.removeAllRanges();
 	selection.addRange(range);
@@ -60,6 +62,7 @@ describe("ChatView selection boundaries", () => {
 					mode={mode}
 				/>,
 			);
+			// biome-ignore lint/style/noNonNullAssertion: test helper
 			selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
 			await new Promise((r) => setTimeout(r, 0));
 			expect(screen.getByRole("toolbar", { name: "Selection actions" })).toBeInTheDocument();
@@ -79,6 +82,7 @@ describe("ChatView selection boundaries", () => {
 				mode="chat"
 			/>,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: test helper
 		selectRenderedText(container.querySelector("[data-message-id='u'] .chat-markdown")!);
 		await new Promise((r) => setTimeout(r, 0));
 		expect(screen.queryByRole("toolbar", { name: "Selection actions" })).not.toBeInTheDocument();

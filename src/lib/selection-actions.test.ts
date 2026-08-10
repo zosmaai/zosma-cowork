@@ -40,8 +40,8 @@ function select(start: Node, end: Node = start): Selection {
 			toJSON: () => ({}),
 		}),
 	});
-	const selection = window.getSelection();
-	if (!selection) throw new Error("Selection unavailable");
+	// biome-ignore lint/style/noNonNullAssertion: test helper
+	const selection = window.getSelection()!;
 	selection.removeAllRanges();
 	selection.addRange(range);
 	return selection;

@@ -11,6 +11,7 @@ import { useFileDrop } from "@/hooks/useFileDrop";
 import { useSelectionActions } from "@/hooks/useSelectionActions";
 import { formatSelectionPrompt, START_WRITING_INSTRUCTION } from "@/lib/selection-actions";
 import { deriveWorkProjection } from "@/lib/work-projections";
+import { invoke } from "@tauri-apps/api/core";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
@@ -167,7 +168,7 @@ export function ChatView({
 		onDrop: async (paths) => {
 			onFilesDrop?.(paths);
 			// Convert paths to FileAttachment with metadata
-			const { invoke } = await import("@tauri-apps/api/core");
+			// invoke imported statically
 			const files: FileAttachment[] = [];
 			for (const p of paths) {
 				try {

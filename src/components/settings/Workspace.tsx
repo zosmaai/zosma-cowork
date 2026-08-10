@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { FolderCog, FolderOpen, RotateCcw } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -66,7 +67,7 @@ export function Workspace() {
 
 	async function chooseFolder() {
 		try {
-			const { open } = await import("@tauri-apps/plugin-dialog");
+			// open imported statically
 			const picked = await open({
 				directory: true,
 				multiple: false,

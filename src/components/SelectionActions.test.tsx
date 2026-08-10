@@ -23,6 +23,7 @@ describe("SelectionActions", () => {
 
 	it("preserves the browser selection on pointer down and activates Ask AI", () => {
 		const onAsk = vi.fn();
+		// biome-ignore lint/style/noNonNullAssertion: test helper
 		const removeAllRanges = vi.spyOn(window.getSelection()!, "removeAllRanges");
 		render(<SelectionActions selection={selection} onAsk={onAsk} onStartWriting={vi.fn()} />);
 		const button = screen.getByRole("button", { name: "Ask AI" });
