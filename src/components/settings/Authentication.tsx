@@ -253,11 +253,11 @@ function AuthRow({
 			<div className="px-3.5 py-3">
 				<div className="flex items-center gap-3">
 					<Icon className="w-5 h-5 shrink-0 text-foreground/60" />
-					<span className="flex-1 text-[13px] text-foreground min-w-0 truncate">{label}</span>
+					<span className="flex-1 text-[0.8125rem] text-foreground min-w-0 truncate">{label}</span>
 
 					{isConnected && (
 						<span
-							className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+							className="flex items-center gap-1 text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full"
 							style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}
 						>
 							<span className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -269,7 +269,7 @@ function AuthRow({
 						<button
 							type="button"
 							onClick={handleSignOut}
-							className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+							className="text-[0.6875rem] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
 						>
 							Sign out
 						</button>
@@ -277,7 +277,7 @@ function AuthRow({
 						<button
 							type="button"
 							onClick={handleCancel}
-							className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+							className="text-[0.6875rem] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
 						>
 							Cancel
 						</button>
@@ -285,7 +285,7 @@ function AuthRow({
 						<button
 							type="button"
 							onClick={handleSignIn}
-							className="text-[11px] px-2.5 py-1 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+							className="text-[0.6875rem] px-2.5 py-1 rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
 						>
 							Sign in
 						</button>
@@ -500,9 +500,9 @@ function ApiKeyRow({
 				className="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-muted/20"
 			>
 				<Key className="w-4.5 h-4.5 shrink-0 text-foreground/50" />
-				<span className="flex-1 text-[13px] text-foreground">API key</span>
+				<span className="flex-1 text-[0.8125rem] text-foreground">API key</span>
 				{savedKeyProviders.length > 0 && (
-					<span className="text-[10px] font-medium mr-1.5" style={{ color: "hsl(var(--primary))" }}>
+					<span className="text-[0.625rem] font-medium mr-1.5" style={{ color: "hsl(var(--primary))" }}>
 						{savedKeyProviders.length} saved
 					</span>
 				)}
@@ -526,12 +526,12 @@ function ApiKeyRow({
 						return (
 							<li
 								key={entry.id}
-								className="flex items-center gap-2 text-[11px] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
+								className="flex items-center gap-2 text-[0.6875rem] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
 							>
 								<Key className="w-3 h-3 shrink-0 text-primary/60" />
 								<span className="flex-1 truncate">{displayName}</span>
 								<span
-									className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+									className="text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full"
 									style={{
 										background: "hsl(var(--primary) / 0.12)",
 										color: "hsl(var(--primary))",
@@ -544,7 +544,7 @@ function ApiKeyRow({
 									onClick={() => confirmDeleteKey(entry.id)}
 									disabled={deleting === entry.id}
 									aria-label={`Delete key for ${displayName}`}
-									className="text-[11px] px-2 py-0.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-50"
+									className="text-[0.6875rem] px-2 py-0.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-50"
 								>
 									{deleting === entry.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Delete"}
 								</button>
@@ -569,7 +569,7 @@ function ApiKeyRow({
 							className="px-3.5 pb-3.5 pt-0"
 							style={{ borderTop: "1px solid hsl(var(--border))" }}
 						>
-							<p className="text-[11px] text-muted-foreground pt-3 pb-2.5 leading-relaxed">
+							<p className="text-[0.6875rem] text-muted-foreground pt-3 pb-2.5 leading-relaxed">
 								Pick the provider this key belongs to. Keys are stored locally in your system
 								keychain.
 							</p>
@@ -578,7 +578,7 @@ function ApiKeyRow({
 							<div className="mb-2">
 								<label
 									htmlFor="api-key-provider"
-									className="block text-[11px] mb-1 text-muted-foreground"
+									className="block text-[0.6875rem] mb-1 text-muted-foreground"
 								>
 									Provider
 								</label>
@@ -587,7 +587,7 @@ function ApiKeyRow({
 									value={provider}
 									onChange={(e) => setProvider(e.target.value)}
 									disabled={apiKeyProviders.length === 0}
-									className="w-full text-[12px] px-3 py-2 rounded-md border focus:outline-none transition-colors bg-background border-border text-foreground"
+									className="w-full text-[0.75rem] px-3 py-2 rounded-md border focus:outline-none transition-colors bg-background border-border text-foreground"
 								>
 									{apiKeyProviders.length === 0 ? (
 										<option value="">Loading providers…</option>
@@ -617,7 +617,7 @@ function ApiKeyRow({
 											}
 										}}
 										placeholder="sk-… or api-key-…"
-										className="w-full text-[12px] font-mono px-3 py-2 pr-8 rounded-md border focus:outline-none transition-colors"
+										className="w-full text-[0.75rem] font-mono px-3 py-2 pr-8 rounded-md border focus:outline-none transition-colors"
 										style={{
 											background: "hsl(var(--background))",
 											borderColor: error
@@ -656,7 +656,7 @@ function ApiKeyRow({
 									type="button"
 									onClick={handleSave}
 									disabled={!key.trim() || saving || saved}
-									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium transition-colors disabled:opacity-50"
+									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] font-medium transition-colors disabled:opacity-50"
 									style={{
 										background: saved ? "hsl(var(--primary) / 0.15)" : "hsl(var(--primary))",
 										color: saved ? "hsl(var(--primary))" : "hsl(var(--primary-foreground))",
@@ -681,7 +681,7 @@ function ApiKeyRow({
 										className="w-3 h-3 shrink-0 mt-0.5"
 										style={{ color: "hsl(var(--warning))" }}
 									/>
-									<p className="text-[11px]" style={{ color: "hsl(var(--warning))" }}>
+									<p className="text-[0.6875rem]" style={{ color: "hsl(var(--warning))" }}>
 										{formatHint}
 										<br />
 										<span className="text-muted-foreground">
@@ -691,7 +691,7 @@ function ApiKeyRow({
 								</div>
 							)}
 
-							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
+							{error && <p className="text-[0.6875rem] mt-2 text-destructive">{error}</p>}
 						</div>
 					</motion.div>
 				)}

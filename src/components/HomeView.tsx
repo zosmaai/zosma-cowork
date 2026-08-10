@@ -279,7 +279,7 @@ export function HomeView({
 				</div>
 
 				{appVersion && (
-					<p className="text-[10px] mt-6" style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}>
+					<p className="text-[0.625rem] mt-6" style={{ color: "hsl(var(--muted-foreground) / 0.4)" }}>
 						v{appVersion}
 					</p>
 				)}
@@ -341,7 +341,7 @@ export function HomeView({
 							<div className="flex items-center gap-2">
 								<LogIn className="w-4 h-4 text-primary" />
 								<span className="text-sm font-medium text-foreground">Continue with Zosma</span>
-								<span className="text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto bg-primary/10 text-primary">
+								<span className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium ml-auto bg-primary/10 text-primary">
 									recommended
 								</span>
 							</div>
@@ -429,7 +429,7 @@ export function HomeView({
 									<Zap className="w-4 h-4 text-primary" />
 									<span className="text-sm font-medium text-foreground">API Key</span>
 									<span
-										className="text-[10px] px-1.5 py-0.5 rounded font-medium ml-auto"
+										className="text-[0.625rem] px-1.5 py-0.5 rounded font-medium ml-auto"
 										style={{
 											background: "hsl(var(--primary) / 0.1)",
 											color: "hsl(var(--primary))",
@@ -446,7 +446,7 @@ export function HomeView({
 								<div>
 									<label
 										htmlFor="connect-provider"
-										className="block text-[10px] uppercase tracking-wider mb-1"
+										className="block text-[0.625rem] uppercase tracking-wider mb-1"
 										style={{ color: "hsl(var(--muted-foreground) / 0.8)" }}
 									>
 										Provider
@@ -504,7 +504,7 @@ export function HomeView({
 											className="w-3 h-3 shrink-0 mt-0.5"
 											style={{ color: "hsl(var(--warning))" }}
 										/>
-										<p className="text-[11px]" style={{ color: "hsl(var(--warning))" }}>
+										<p className="text-[0.6875rem]" style={{ color: "hsl(var(--warning))" }}>
 											{formatHint}
 											<br />
 											<span className="text-muted-foreground">
@@ -522,7 +522,7 @@ export function HomeView({
 								{probeMessage && (
 									<div className="flex items-center gap-1.5">
 										<AlertTriangle className="w-3 h-3 shrink-0 text-warning" />
-										<p className="text-[11px]" style={{ color: "hsl(var(--warning))" }}>
+										<p className="text-[0.6875rem]" style={{ color: "hsl(var(--warning))" }}>
 											{probeMessage}
 										</p>
 									</div>
@@ -563,7 +563,7 @@ export function HomeView({
 							<div className="flex items-center gap-3">
 								<div className="flex-1 h-px bg-border" />
 								<span
-									className="text-[10px] uppercase tracking-wider shrink-0"
+									className="text-[0.625rem] uppercase tracking-wider shrink-0"
 									style={{ color: "hsl(var(--muted-foreground) / 0.7)" }}
 								>
 									or use a subscription

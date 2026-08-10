@@ -96,7 +96,7 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 				>
 					<ChevronLeft className="w-4 h-4" />
 				</button>
-				<span className="text-[13px] font-semibold text-foreground">Settings</span>
+				<span className="text-[0.8125rem] font-semibold text-foreground">Settings</span>
 			</div>
 
 			{/* ── Mobile-only horizontal tab strip ── */}
@@ -109,7 +109,7 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 								key={s.id}
 								type="button"
 								onClick={() => handleNavClick(s.id)}
-								className={`px-3 py-1.5 rounded-md text-[11px] whitespace-nowrap shrink-0 transition-colors ${
+								className={`px-3 py-1.5 rounded-md text-[0.6875rem] whitespace-nowrap shrink-0 transition-colors ${
 									isActive
 										? "border border-primary/25 bg-primary/12 text-foreground font-medium"
 										: "text-muted-foreground hover:text-foreground hover:bg-muted/40"
@@ -122,7 +122,7 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 					<button
 						type="button"
 						onClick={() => setShowFeedback(true)}
-						className="px-3 py-1.5 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap shrink-0"
+						className="px-3 py-1.5 rounded-md text-[0.6875rem] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap shrink-0"
 					>
 						Send Feedback
 					</button>
@@ -162,14 +162,14 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 						>
 							<ChevronLeft className="w-4 h-4" />
 						</motion.button>
-						<span className="text-[13px] font-semibold text-foreground">Settings</span>
+						<span className="text-[0.8125rem] font-semibold text-foreground">Settings</span>
 					</div>
 
 					{/* Nav items — grouped */}
 					<nav className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
 						{GROUPS.map((group) => (
 							<div key={group.label} className="space-y-px">
-								<p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/55">
+								<p className="px-3 pt-1 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/55">
 									{group.label}
 								</p>
 								{group.items.map((s) => {
@@ -196,7 +196,7 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 												<s.Icon
 													className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground/60"}`}
 												/>
-												<span className={`text-[12px] truncate ${isActive ? "font-medium" : ""}`}>
+												<span className={`text-[0.75rem] truncate ${isActive ? "font-medium" : ""}`}>
 													{s.label}
 												</span>
 											</button>
@@ -212,7 +212,7 @@ export function SettingsPage({ onClose, onShowKeyEntry }: SettingsPageProps) {
 						<motion.button
 							type="button"
 							onClick={() => setShowFeedback(true)}
-							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-muted-foreground"
+							className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.75rem] text-muted-foreground"
 							whileHover={
 								reduced
 									? {}

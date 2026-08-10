@@ -26,7 +26,7 @@ export function ArtifactPreview({
 
 	return (
 		<div className="mt-2 rounded-lg border overflow-hidden border-border bg-card">
-			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[13px] border-border bg-muted">
+			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[0.8125rem] border-border bg-muted">
 				<span className="font-mono truncate" data-testid="artifact-filename">
 					{fileName}
 				</span>
@@ -72,7 +72,7 @@ export function ArtifactPreview({
 					</div>
 				)}
 				{artifactType === "svg" && !safeSvg && (
-					<div className="p-3 text-[13px] text-muted-foreground text-center">
+					<div className="p-3 text-[0.8125rem] text-muted-foreground text-center">
 						File unavailable
 					</div>
 				)}
@@ -94,7 +94,7 @@ export function ArtifactPreview({
 					</pre>
 				)}
 				{artifactType === "unknown" && (
-					<div className="p-3 text-[13px] text-muted-foreground text-center">
+					<div className="p-3 text-[0.8125rem] text-muted-foreground text-center">
 						Unknown file type. File written to <code className="font-mono">{filePath}</code>
 					</div>
 				)}

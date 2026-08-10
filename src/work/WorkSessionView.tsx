@@ -33,7 +33,7 @@ export function WorkSessionView({
 						<div
 							key={message.id}
 							data-message-id={message.id}
-							className="py-2 text-center text-[13px] text-muted-foreground"
+							className="py-2 text-center text-[0.8125rem] text-muted-foreground"
 						>
 							{message.content}
 						</div>

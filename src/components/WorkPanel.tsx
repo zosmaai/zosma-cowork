@@ -79,7 +79,7 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 			<section className="p-3 border-b border-border">
 				<h2 className="text-sm font-semibold mb-2">Outputs</h2>
 				{outputs.length === 0 ? (
-					<p className="text-[13px] text-muted-foreground">No outputs yet</p>
+					<p className="text-[0.8125rem] text-muted-foreground">No outputs yet</p>
 				) : (
 					<div className="space-y-1">
 						{outputs.map((output) => (
@@ -92,7 +92,7 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 								<File className="h-4 w-4 mt-0.5 shrink-0" />
 								<span className="min-w-0">
 									<span className="block text-sm truncate">{output.title}</span>
-									<span className="block text-[13px] text-muted-foreground truncate">
+									<span className="block text-[0.8125rem] text-muted-foreground truncate">
 										{output.displayValue}
 									</span>
 								</span>
@@ -102,10 +102,10 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 				)}
 
 				{selected && load.status === "loading" && (
-					<p className="mt-2 text-[13px] text-muted-foreground">Loading preview…</p>
+					<p className="mt-2 text-[0.8125rem] text-muted-foreground">Loading preview…</p>
 				)}
 				{selected && load.status === "unavailable" && (
-					<p className="mt-2 text-[13px] text-muted-foreground">File unavailable</p>
+					<p className="mt-2 text-[0.8125rem] text-muted-foreground">File unavailable</p>
 				)}
 				{selected && load.artifact && (
 					<ArtifactPreview
@@ -128,7 +128,7 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 			<section className="p-3">
 				<h2 className="text-sm font-semibold mb-2">Sources</h2>
 				{sources.length === 0 ? (
-					<p className="text-[13px] text-muted-foreground">No sources yet</p>
+					<p className="text-[0.8125rem] text-muted-foreground">No sources yet</p>
 				) : (
 					<div className="space-y-1">
 						{sources.map((source) =>
@@ -148,7 +148,7 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 									<ExternalLink className="h-4 w-4 mt-0.5 shrink-0" />
 									<span className="min-w-0">
 										<span className="block text-sm truncate">{source.title}</span>
-										<span className="block text-[13px] text-muted-foreground truncate">
+										<span className="block text-[0.8125rem] text-muted-foreground truncate">
 											{source.displayValue}
 										</span>
 									</span>
@@ -161,7 +161,7 @@ export function WorkPanel({ outputs, sources, workspace, open, onClose }: WorkPa
 									<File className="h-4 w-4 mt-0.5 shrink-0" />
 									<span className="min-w-0 flex-1">
 										<span className="block text-sm truncate">{source.title}</span>
-										<span className="block text-[13px] text-muted-foreground truncate">
+										<span className="block text-[0.8125rem] text-muted-foreground truncate">
 											{source.displayValue}
 										</span>
 									</span>

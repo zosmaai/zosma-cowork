@@ -31,7 +31,7 @@ export function SessionEmptyIntro({
 			<h1 className="session-empty-heading font-semibold leading-tight tracking-[-0.02em] text-foreground">
 				{mode === "chat" ? "What’s on your mind today?" : "What should we work on?"}
 			</h1>
-			{error && <p role="alert" className="text-[13px] text-destructive">{error}</p>}
+			{error && <p role="alert" className="text-[0.8125rem] text-destructive">{error}</p>}
 		</div>
 	);
 }
@@ -61,7 +61,7 @@ export function SessionStarterPrompts({
 				))}
 			</div>
 			{mode === "work" && workspaceCwd && (
-				<div className="flex max-w-full items-center gap-2 text-[13px] text-muted-foreground">
+				<div className="flex max-w-full items-center gap-2 text-[0.8125rem] text-muted-foreground">
 					<FolderOpen className="h-4 w-4 shrink-0" aria-hidden />
 					<span>Workspace</span>
 					<span className="truncate font-mono text-foreground/70" title={workspaceCwd}>{workspaceCwd}</span>

@@ -643,7 +643,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					    and the placeholder reverts to the idle wording. */}
 					{queueCount > 0 && !streaming && !disabled && (
 						<div
-							className="px-4 pb-1 text-[13px] leading-tight"
+							className="px-4 pb-1 text-[0.8125rem] leading-tight"
 							style={{ color: "hsl(var(--muted-foreground) / 0.85)" }}
 							data-testid="composer-queue-summary"
 						>
@@ -699,7 +699,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					{!modelSupportsImages && hasImageAttachments && (
 						<div className="px-4 pb-1.5">
 							<p
-								className="text-[13px] leading-tight flex items-center gap-1.5"
+								className="text-[0.8125rem] leading-tight flex items-center gap-1.5"
 								style={{ color: "hsl(var(--warning))" }}
 							>
 								<span>⚠</span>

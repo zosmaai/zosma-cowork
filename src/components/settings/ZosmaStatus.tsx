@@ -140,11 +140,11 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 				<div className="px-3.5 py-3">
 					<div className="flex items-center gap-3">
 						<Signal className="w-5 h-5 shrink-0 text-foreground/60" />
-						<span className="flex-1 text-[13px] text-foreground min-w-0 truncate">
+						<span className="flex-1 text-[0.8125rem] text-foreground min-w-0 truncate">
 							Zosma AI Router
 						</span>
 						{phase === "starting" || phase === "waiting_browser" ? (
-							<span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground">
+							<span className="flex items-center gap-1 text-[0.625rem] px-1.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground">
 								<Loader2 className="w-3 h-3 animate-spin" />
 								Waiting for browser…
 							</span>
@@ -152,14 +152,14 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 							<button
 								type="button"
 								onClick={handleReconnect}
-								className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+								className="text-[0.6875rem] font-medium text-primary hover:text-primary/80 transition-colors"
 							>
 								Connect
 							</button>
 						)}
 					</div>
 					{phase === "error" && error && (
-						<p className="text-[11px] text-destructive mt-2">{error}</p>
+						<p className="text-[0.6875rem] text-destructive mt-2">{error}</p>
 					)}
 				</div>
 			</div>
@@ -172,10 +172,10 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 				{/* Header row */}
 				<div className="flex items-center gap-3 mb-2">
 					<SignalHigh className="w-5 h-5 shrink-0 text-foreground/60" />
-					<span className="flex-1 text-[13px] text-foreground min-w-0 truncate">
+					<span className="flex-1 text-[0.8125rem] text-foreground min-w-0 truncate">
 						Zosma AI Router
 					</span>
-					<span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+					<span className="flex items-center gap-1 text-[0.625rem] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
 						<span className="w-1.5 h-1.5 rounded-full bg-primary" />
 						Connected
 					</span>
@@ -183,7 +183,7 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 
 				{/* Model count */}
 				{modelCount !== null && (
-					<p className="text-[12px] text-muted-foreground">{modelCount} models</p>
+					<p className="text-[0.75rem] text-muted-foreground">{modelCount} models</p>
 				)}
 
 				{/* Usage summary */}
@@ -192,7 +192,7 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 						usage.providers?.length ||
 						usage.used !== undefined ||
 						usage.expiresAt) && (
-						<div className="text-[12px] text-muted-foreground mt-1 space-y-1">
+						<div className="text-[0.75rem] text-muted-foreground mt-1 space-y-1">
 							{usage.plan && <p>Plan: {usage.plan}</p>}
 							{usage.usageAvailable !== false &&
 								usage.providers?.map((provider) => (
@@ -223,10 +223,10 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 						</div>
 					)}
 				{usageError && (
-					<p className="text-[11px] text-muted-foreground mt-1">Usage data unavailable</p>
+					<p className="text-[0.6875rem] text-muted-foreground mt-1">Usage data unavailable</p>
 				)}
 				{!usage && !usageError && (
-					<p className="text-[11px] text-muted-foreground mt-1">No usage data</p>
+					<p className="text-[0.6875rem] text-muted-foreground mt-1">No usage data</p>
 				)}
 
 				{/* Action buttons */}
@@ -235,18 +235,18 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 						type="button"
 						onClick={handleRefresh}
 						disabled={refreshing}
-						className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+						className="flex items-center gap-1 text-[0.6875rem] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
 					>
 						<RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
 						Refresh
 					</button>
 					{showConfirmDisconnect ? (
 						<>
-							<span className="text-[11px] text-muted-foreground">Are you sure?</span>
+							<span className="text-[0.6875rem] text-muted-foreground">Are you sure?</span>
 							<button
 								type="button"
 								onClick={handleDisconnectConfirm}
-								className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+								className="flex items-center gap-1 text-[0.6875rem] font-medium px-2 py-1 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
 							>
 								<Check className="w-3 h-3" />
 								Confirm disconnect
@@ -254,7 +254,7 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 							<button
 								type="button"
 								onClick={() => setShowConfirmDisconnect(false)}
-								className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+								className="text-[0.6875rem] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
 							>
 								Cancel
 							</button>
@@ -263,7 +263,7 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 						<button
 							type="button"
 							onClick={() => setShowConfirmDisconnect(true)}
-							className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+							className="flex items-center gap-1 text-[0.6875rem] font-medium px-2 py-1 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
 						>
 							<Trash2 className="w-3 h-3" />
 							Disconnect
@@ -273,7 +273,7 @@ export function ZosmaStatus({ authStatus, onChange }: ZosmaStatusProps) {
 
 				{/* Refresh error */}
 				{refreshError && (
-					<p className="text-[11px] text-destructive mt-2 flex items-center gap-1">
+					<p className="text-[0.6875rem] text-destructive mt-2 flex items-center gap-1">
 						<AlertTriangle className="w-3 h-3" />
 						{refreshError}
 					</p>

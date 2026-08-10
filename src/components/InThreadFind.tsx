@@ -83,12 +83,12 @@ export function InThreadFind({
 									onClose();
 								}
 							}}
-							className="w-52 bg-transparent text-[13px] focus:outline-none text-foreground"
+							className="w-52 bg-transparent text-[0.8125rem] focus:outline-none text-foreground"
 						/>
 
 						{/* Match counter */}
 						<span
-							className="min-w-[3.2rem] text-center text-[13px] tabular-nums select-none"
+							className="min-w-[3.2rem] text-center text-[0.8125rem] tabular-nums select-none"
 							style={{
 								color: hasQuery
 									? total > 0

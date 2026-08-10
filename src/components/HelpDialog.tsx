@@ -79,7 +79,7 @@ export function HelpDialog({ open, commands, onClose }: HelpDialogProps) {
 								<span
 									role="heading"
 									aria-level={3}
-									className="text-[9px] font-bold uppercase tracking-widest text-primary/80"
+									className="text-[0.5625rem] font-bold uppercase tracking-widest text-primary/80"
 								>
 									{label}
 								</span>
@@ -98,14 +98,14 @@ export function HelpDialog({ open, commands, onClose }: HelpDialogProps) {
 											/{cmd.name}
 										</span>
 										{cmd.argHint && (
-											<span className="ml-1.5 text-[10px] font-mono text-primary/70 bg-primary/10 rounded px-1 py-px">
+											<span className="ml-1.5 text-[0.625rem] font-mono text-primary/70 bg-primary/10 rounded px-1 py-px">
 												{cmd.argHint}
 											</span>
 										)}
 										{cmd.aliases && cmd.aliases.length > 0 && (
 											<div className="mt-0.5 flex flex-wrap gap-1">
 												{cmd.aliases.map((a) => (
-													<span key={a} className="text-[10px] font-mono text-muted-foreground/60">
+													<span key={a} className="text-[0.625rem] font-mono text-muted-foreground/60">
 														/{a}
 													</span>
 												))}
@@ -125,7 +125,7 @@ export function HelpDialog({ open, commands, onClose }: HelpDialogProps) {
 
 				{/* Footer hint */}
 				<div className="px-4 py-2.5 border-t border-border">
-					<span className="text-[10px] text-muted-foreground/50">
+					<span className="text-[0.625rem] text-muted-foreground/50">
 						Type <kbd className="font-mono">/</kbd> in the composer to open the command palette
 					</span>
 				</div>

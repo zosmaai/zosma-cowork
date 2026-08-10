@@ -269,7 +269,7 @@ export function CommandPalette({
 														<span className="opacity-40">/</span>
 														{highlight(cmd.name, query)}
 													</span>
-													<span className="truncate text-[13px] text-muted-foreground">
+													<span className="truncate text-[0.8125rem] text-muted-foreground">
 														{cmd.description}
 													</span>
 													<span className="ml-auto flex shrink-0 items-center gap-2">

@@ -16,8 +16,8 @@ export function UpdateSettingsRow({ update }: UpdateSettingsRowProps) {
 
 	return (
 		<div className="flex items-center gap-3">
-			<span className="text-[11px] text-muted-foreground w-16 shrink-0">Updates</span>
-			<div className="text-[12px] flex items-center gap-2 flex-wrap">
+			<span className="text-[0.6875rem] text-muted-foreground w-16 shrink-0">Updates</span>
+			<div className="text-[0.75rem] flex items-center gap-2 flex-wrap">
 				{status === "idle" && (
 					<button
 						type="button"

@@ -243,10 +243,10 @@ export function CustomProviderRow({ onChange }: Props) {
 				className="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-muted/20"
 			>
 				<Server className="w-4.5 h-4.5 shrink-0 text-foreground/50" />
-				<span className="flex-1 text-[13px] text-foreground">
+				<span className="flex-1 text-[0.8125rem] text-foreground">
 					{PROVIDER_NAME}
 					{existing.length > 0 && (
-						<span className="ml-2 text-[10px] font-medium text-muted-foreground/70">
+						<span className="ml-2 text-[0.625rem] font-medium text-muted-foreground/70">
 							{existing.length} configured
 						</span>
 					)}
@@ -269,27 +269,27 @@ export function CustomProviderRow({ onChange }: Props) {
 					{existing.map((p) => (
 						<li
 							key={p.id}
-							className="flex items-center gap-2 text-[11px] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
+							className="flex items-center gap-2 text-[0.6875rem] rounded-md border border-border px-2 py-1.5 mt-3 bg-background"
 						>
 							<span className="font-mono truncate flex-1" title={p.baseUrl}>
 								{p.baseUrl}
 							</span>
 							{p.hasApiKey && p.apiKeyHint && (
 								<span
-									className="font-mono text-[10px] text-muted-foreground"
+									className="font-mono text-[0.625rem] text-muted-foreground"
 									title="API key (last 4 chars)"
 								>
 									{p.apiKeyHint}
 								</span>
 							)}
-							<span className="text-[10px] text-muted-foreground">
+							<span className="text-[0.625rem] text-muted-foreground">
 								{p.models.length} model{p.models.length === 1 ? "" : "s"}
 							</span>
 							<button
 								type="button"
 								onClick={() => handleDelete(p.id)}
 								aria-label={`Delete ${p.name}`}
-								className="text-[11px] px-2 py-0.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors"
+								className="text-[0.6875rem] px-2 py-0.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors"
 							>
 								Delete
 							</button>
@@ -312,14 +312,14 @@ export function CustomProviderRow({ onChange }: Props) {
 							className="px-3.5 pb-3.5 pt-0"
 							style={{ borderTop: "1px solid hsl(var(--border))" }}
 						>
-							<p className="text-[11px] text-muted-foreground pt-3 pb-2.5 leading-relaxed">
+							<p className="text-[0.6875rem] text-muted-foreground pt-3 pb-2.5 leading-relaxed">
 								Connect to any OpenAI-compatible endpoint — Ollama, LM Studio, vLLM, llama.cpp{" "}
 								<code>--server</code>, a private gateway, … We'll detect the available models for
 								you on save.
 							</p>
 
 							{/* Base URL */}
-							<label htmlFor={baseUrlId} className="block text-[11px] mb-1 text-muted-foreground">
+							<label htmlFor={baseUrlId} className="block text-[0.6875rem] mb-1 text-muted-foreground">
 								Base URL
 							</label>
 							<input
@@ -328,7 +328,7 @@ export function CustomProviderRow({ onChange }: Props) {
 								value={baseUrl}
 								onChange={(e) => setBaseUrl(e.target.value)}
 								placeholder="http://localhost:11434/v1"
-								className="w-full text-[12px] font-mono px-3 py-2 mb-2 rounded-md border focus:outline-none transition-colors"
+								className="w-full text-[0.75rem] font-mono px-3 py-2 mb-2 rounded-md border focus:outline-none transition-colors"
 								style={{
 									background: "hsl(var(--background))",
 									borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
@@ -342,7 +342,7 @@ export function CustomProviderRow({ onChange }: Props) {
 								<>
 									<label
 										htmlFor={manualModelsId}
-										className="block text-[11px] mb-1 text-muted-foreground"
+										className="block text-[0.6875rem] mb-1 text-muted-foreground"
 									>
 										Model IDs
 									</label>
@@ -352,14 +352,14 @@ export function CustomProviderRow({ onChange }: Props) {
 										value={manualModels}
 										onChange={(e) => setManualModels(e.target.value)}
 										placeholder="llama3.1:8b, mistral:7b"
-										className="w-full text-[12px] font-mono px-3 py-2 mb-1 rounded-md border focus:outline-none transition-colors"
+										className="w-full text-[0.75rem] font-mono px-3 py-2 mb-1 rounded-md border focus:outline-none transition-colors"
 										style={{
 											background: "hsl(var(--background))",
 											borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
 											color: "hsl(var(--foreground))",
 										}}
 									/>
-									<p className="text-[10px] text-muted-foreground/70 mb-2">
+									<p className="text-[0.625rem] text-muted-foreground/70 mb-2">
 										Comma- or space-separated. Used because this endpoint didn't expose a model
 										list.
 									</p>
@@ -367,7 +367,7 @@ export function CustomProviderRow({ onChange }: Props) {
 							)}
 
 							{/* API key (optional) */}
-							<label htmlFor={apiKeyId} className="block text-[11px] mb-1 text-muted-foreground">
+							<label htmlFor={apiKeyId} className="block text-[0.6875rem] mb-1 text-muted-foreground">
 								API key (optional)
 							</label>
 							<div className="relative mb-3">
@@ -381,7 +381,7 @@ export function CustomProviderRow({ onChange }: Props) {
 											? "leave blank to keep current key"
 											: "leave blank for Ollama / LM Studio"
 									}
-									className="w-full text-[12px] font-mono px-3 py-2 pr-8 rounded-md border focus:outline-none transition-colors"
+									className="w-full text-[0.75rem] font-mono px-3 py-2 pr-8 rounded-md border focus:outline-none transition-colors"
 									style={{
 										background: "hsl(var(--background))",
 										borderColor: error ? "hsl(var(--destructive))" : "hsl(var(--border))",
@@ -404,7 +404,7 @@ export function CustomProviderRow({ onChange }: Props) {
 									type="button"
 									onClick={handleSave}
 									disabled={!canSave || saved}
-									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium transition-colors disabled:opacity-50"
+									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] font-medium transition-colors disabled:opacity-50"
 									style={{
 										background: saved ? "hsl(var(--primary) / 0.15)" : "hsl(var(--primary))",
 										color: saved ? "hsl(var(--primary))" : "hsl(var(--primary-foreground))",
@@ -428,7 +428,7 @@ export function CustomProviderRow({ onChange }: Props) {
 									type="button"
 									onClick={handleTestConnection}
 									disabled={!baseUrl.trim() || testing || saving}
-									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+									className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-md text-[0.75rem] font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
 									whileTap={reduced ? {} : { scale: 0.96 }}
 									transition={{ duration: 0.12, ease }}
 								>
@@ -454,7 +454,7 @@ export function CustomProviderRow({ onChange }: Props) {
 										/>
 									)}
 									<p
-										className="text-[11px]"
+										className="text-[0.6875rem]"
 										style={{
 											color: testResult.ok ? "hsl(var(--primary))" : "hsl(var(--warning))",
 										}}
@@ -464,7 +464,7 @@ export function CustomProviderRow({ onChange }: Props) {
 								</div>
 							)}
 
-							{error && <p className="text-[11px] mt-2 text-destructive">{error}</p>}
+							{error && <p className="text-[0.6875rem] mt-2 text-destructive">{error}</p>}
 						</div>
 					</motion.div>
 				)}

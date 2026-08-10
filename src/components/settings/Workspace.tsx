@@ -93,10 +93,10 @@ export function Workspace() {
 						<FolderCog className="w-4 h-4 text-primary" />
 					</div>
 					<div className="text-left min-w-0">
-						<p className="text-[13px] font-medium text-foreground">
+						<p className="text-[0.8125rem] font-medium text-foreground">
 							Zosma Cowork folder
 						</p>
-						<p className="text-[11px] text-muted-foreground truncate" title={effective}>
+						<p className="text-[0.6875rem] text-muted-foreground truncate" title={effective}>
 							{effective || "Loading…"}
 							{!configured.trim() && fallback ? "  ·  default" : ""}
 						</p>
@@ -106,7 +106,7 @@ export function Workspace() {
 					type="button"
 					onClick={chooseFolder}
 					disabled={busy}
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium shrink-0 disabled:opacity-50 text-primary bg-primary/10 hover:bg-primary/15 transition-colors"
+					className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[0.75rem] font-medium shrink-0 disabled:opacity-50 text-primary bg-primary/10 hover:bg-primary/15 transition-colors"
 					whileHover={reduced || busy ? {} : { scale: 1.03 }}
 					whileTap={reduced || busy ? {} : { scale: 0.97 }}
 					transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
@@ -121,14 +121,14 @@ export function Workspace() {
 					type="button"
 					onClick={() => persist("")}
 					disabled={busy}
-					className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+					className="mt-2 inline-flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground hover:text-foreground disabled:opacity-50"
 				>
 					<RotateCcw className="w-3 h-3" />
 					Reset to default
 				</button>
 			) : null}
 
-			{error ? <p className="mt-2 text-[11px] text-destructive">{error}</p> : null}
+			{error ? <p className="mt-2 text-[0.6875rem] text-destructive">{error}</p> : null}
 		</section>
 	);
 }

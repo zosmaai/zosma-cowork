@@ -182,8 +182,8 @@ export function ChatMessageItem({
 				<div className="flex-1 min-w-0">
 					{/* Header row */}
 					<div className="flex items-center gap-2 mb-0.5">
-						<span className="text-[13px] font-medium text-foreground">{isUser ? "You" : "Zosma"}</span>
-						<span className="text-[13px] text-muted-foreground tabular-nums">
+						<span className="text-[0.8125rem] font-medium text-foreground">{isUser ? "You" : "Zosma"}</span>
+						<span className="text-[0.8125rem] text-muted-foreground tabular-nums">
 							{new Date(message.timestamp).toLocaleTimeString([], {
 								hour: "2-digit",
 								minute: "2-digit",
@@ -194,17 +194,17 @@ export function ChatMessageItem({
 					    turn. Live queued items still render inline via ChatView. */}
 						{(message.kind === "queued-steer" ||
 							message.kind === "queued-follow-up") && (
-							<span className="text-[13px] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
+							<span className="text-[0.8125rem] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
 								{message.kind === "queued-steer" ? "Steering" : "Follow-up"}
 							</span>
 						)}
 						{message.model && (
-							<span className="text-[13px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
+							<span className="text-[0.8125rem] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
 								{modelLabel(message, models)}
 							</span>
 						)}
 						{message.isStreaming && (
-							<span className="inline-flex items-center gap-1 text-[13px] font-medium text-status-active-fg">
+							<span className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-status-active-fg">
 								<span className="w-1.5 h-1.5 rounded-full animate-pulse-dot bg-primary" />
 								streaming
 							</span>

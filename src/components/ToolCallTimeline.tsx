@@ -105,7 +105,7 @@ function ToolCallBlock({
 				)}
 				<span className="opacity-90 flex-1">{header}</span>
 				{!showContent && !isRunning && (
-					<span className="text-[13px] opacity-40 flex-shrink-0">Ctrl+O</span>
+					<span className="text-[0.8125rem] opacity-40 flex-shrink-0">Ctrl+O</span>
 				)}
 			</button>
 
@@ -251,7 +251,7 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 		// No partial output yet — show a running indicator so user sees activity
 		const runningLabel = getRunningLabel(toolCall.name);
 		return (
-			<div className="flex items-center gap-1.5 text-[13px] opacity-70">
+			<div className="flex items-center gap-1.5 text-[0.8125rem] opacity-70">
 				<span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse-dot bg-tool-running-fg" />
 				<span>{runningLabel}</span>
 			</div>
@@ -341,7 +341,7 @@ function TruncatedOutput({ text, limit }: { text: string; limit: number }) {
 			<button
 				type="button"
 				onClick={() => setExpanded(true)}
-				className="text-[13px] opacity-50 hover:opacity-90 transition-opacity mt-0.5"
+				className="text-[0.8125rem] opacity-50 hover:opacity-90 transition-opacity mt-0.5"
 			>
 				{hiddenLines > 0
 					? `··· ${hiddenLines} more line${hiddenLines !== 1 ? "s" : ""} · Click to expand`
@@ -467,19 +467,19 @@ function SplitDiff({ diffText }: { diffText: string }) {
 				<div key={hunk[0]?.text || hunk[0]?.type} className="min-w-[500px]">
 					{/* Hunk header */}
 					{hunk[0]?.type === "hunk" && (
-						<div className="text-[13px] opacity-50 py-0.5">{hunk[0].text}</div>
+						<div className="text-[0.8125rem] opacity-50 py-0.5">{hunk[0].text}</div>
 					)}
 					{/* Side-by-side rows */}
 					<div className="grid" style={{ gridTemplateColumns: isNewFile ? "1fr" : "1fr 1fr" }}>
 						{/* Column headers */}
 						{!isNewFile && (
 							<>
-								<div className="text-[13px] opacity-40 px-1 border-b border-border/30">old</div>
-								<div className="text-[13px] opacity-40 px-1 border-b border-border/30">new</div>
+								<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">old</div>
+								<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">new</div>
 							</>
 						)}
 						{isNewFile && (
-							<div className="text-[13px] opacity-40 px-1 border-b border-border/30">new file</div>
+							<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">new file</div>
 						)}
 						{/* Lines */}
 						{hunk
@@ -576,7 +576,7 @@ export function ToolCallSummary({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
 	if (errors > 0) parts.push(`${errors} failed`);
 
 	return (
-		<span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+		<span className="inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground">
 			<span className="text-muted-foreground/60">●</span>
 			{toolCalls.length} tool{toolCalls.length !== 1 ? "s" : ""}
 			{parts.length > 0 && (

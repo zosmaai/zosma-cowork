@@ -376,7 +376,7 @@ export function ConversationSearch({
 							>
 								<MessagesSquare className="w-7 h-7 text-muted-foreground/20" />
 							</motion.div>
-							<p className="text-[13px] text-muted-foreground/40">
+							<p className="text-[0.8125rem] text-muted-foreground/40">
 								{query.trim() ? "No results" : "No sessions yet"}
 							</p>
 						</motion.div>
@@ -537,7 +537,7 @@ function SessionRow({
 					</span>
 
 					{/* Folder path — where this session was opened (VSCode-style) */}
-					<span className="flex items-center gap-1 mt-0.5 text-[13px] truncate text-muted-foreground/50" title={session.folder || path}
+					<span className="flex items-center gap-1 mt-0.5 text-[0.8125rem] truncate text-muted-foreground/50" title={session.folder || path}
 					>
 						<Folder className="w-2.5 h-2.5 shrink-0" />
 						<span className="truncate">{path}</span>
@@ -545,10 +545,10 @@ function SessionRow({
 
 					{/* Last message / search snippet + timestamp */}
 					<span className="flex items-center gap-1.5 mt-0.5">
-						<span className="text-[13px] truncate flex-1 text-muted-foreground/55">
+						<span className="text-[0.8125rem] truncate flex-1 text-muted-foreground/55">
 							{snippet || session.lastMessage}
 						</span>
-						<span className="text-[13px] shrink-0 tabular-nums text-muted-foreground/35">
+						<span className="text-[0.8125rem] shrink-0 tabular-nums text-muted-foreground/35">
 							{formatTime(session.timestamp)}
 						</span>
 					</span>
