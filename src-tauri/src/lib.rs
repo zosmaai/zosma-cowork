@@ -2248,19 +2248,37 @@ struct ArtifactFile {
     mime_type: String,
 }
 
-fn canonical_workspace_file(workspace: &Path, path: &Path) -> Result<PathBuf, String> {
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, File as CapFile};
+
+fn workspace_relative_path(workspace: &Path, requested: &Path) -> Result<PathBuf, String> {
     let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
-    let file = std::fs::canonicalize(path).map_err(|_| "File unavailable".to_string())?;
-    if !file.starts_with(&root) || !file.is_file() {
+    let relative = if requested.is_absolute() {
+        requested
+            .strip_prefix(&root)
+            .map_err(|_| "File unavailable".to_string())?
+            .to_path_buf()
+    } else {
+        requested.to_path_buf()
+    };
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
         return Err("File unavailable".to_string());
     }
-    Ok(file)
+    Ok(relative)
 }
 
-fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<ArtifactFile, String> {
-    use std::io::Read;
-    let canonical = canonical_workspace_file(workspace, requested)?;
-    let mut handle = std::fs::File::open(&canonical).map_err(|_| "File unavailable".to_string())?;
+fn open_authorized_artifact(workspace: &Path, requested: &Path) -> Result<CapFile, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let relative = workspace_relative_path(&root, requested)?;
+    let directory = Dir::open_ambient_dir(&root, ambient_authority())
+        .map_err(|_| "Workspace unavailable".to_string())?;
+    let handle = directory
+        .open(&relative)
+        .map_err(|_| "File unavailable".to_string())?;
     if !handle
         .metadata()
         .map_err(|_| "File unavailable".to_string())?
@@ -2268,6 +2286,12 @@ fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<Artifa
     {
         return Err("File unavailable".to_string());
     }
+    Ok(handle)
+}
+
+fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<ArtifactFile, String> {
+    use std::io::Read;
+    let mut handle = open_authorized_artifact(workspace, requested)?;
     let mut bytes = Vec::new();
     handle
         .by_ref()
@@ -2277,14 +2301,8 @@ fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<Artifa
     if bytes.len() as u64 > MAX_ARTIFACT_BYTES {
         return Err("File unavailable".to_string());
     }
-    // Bind validation to the opened handle as far as std permits without a
-    // platform dependency: do not return bytes if the requested path changed
-    // after open/read. canonical_workspace_file also resolves symlink parents.
-    if canonical_workspace_file(workspace, requested)? != canonical {
-        return Err("File unavailable".to_string());
-    }
     Ok(ArtifactFile {
-        mime_type: mime_guess::from_path(&canonical)
+        mime_type: mime_guess::from_path(requested)
             .first_or(mime_guess::mime::APPLICATION_OCTET_STREAM)
             .to_string(),
         bytes,
@@ -2718,10 +2736,10 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_set_session_mode_payload, build_steer_payload, canonical_workspace_file,
-        canonical_workspace_parent, fail_pending_requests, has_pi_state_files, is_fresh_start,
-        normalize_session_stream_message, read_authorized_artifact, PendingRequest,
-        MAX_ARTIFACT_BYTES,
+        build_set_session_mode_payload, build_steer_payload, canonical_workspace_parent,
+        fail_pending_requests, has_pi_state_files, is_fresh_start,
+        normalize_session_stream_message, open_authorized_artifact, read_authorized_artifact,
+        PendingRequest, MAX_ARTIFACT_BYTES,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -2734,10 +2752,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("report.md");
         std::fs::write(&file, "ok").unwrap();
-        assert_eq!(
-            canonical_workspace_file(&root, &file).unwrap(),
-            std::fs::canonicalize(&file).unwrap()
-        );
+        assert!(open_authorized_artifact(&root, &file).is_ok());
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -2749,7 +2764,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let outside = base.join("secret.txt");
         std::fs::write(&outside, "no").unwrap();
-        assert!(canonical_workspace_file(&root, &outside).is_err());
+        assert!(open_authorized_artifact(&root, &outside).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -2765,7 +2780,7 @@ mod tests {
         std::fs::write(&outside, "no").unwrap();
         let link = root.join("linked.txt");
         symlink(&outside, &link).unwrap();
-        assert!(canonical_workspace_file(&root, &link).is_err());
+        assert!(open_authorized_artifact(&root, &link).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -3056,5 +3071,29 @@ mod tests {
         fail_pending_requests(&pending, "sidecar lost").await;
         assert_eq!(receiver.await.unwrap(), Err("sidecar lost".to_string()));
         assert!(pending.lock().await.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn authorized_artifact_handle_stays_bound_after_path_replacement() {
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-handle-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("report.md");
+        std::fs::write(&file, "inside").unwrap();
+
+        let mut handle = open_authorized_artifact(&root, &file).unwrap();
+        std::fs::rename(&file, root.join("original.md")).unwrap();
+        std::fs::write(&file, "replacement").unwrap();
+
+        let mut content = String::new();
+        use std::io::Read;
+        handle.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "inside");
+        std::fs::remove_dir_all(base).unwrap();
     }
 }
