@@ -3,10 +3,12 @@ import { DropZoneOverlay } from "@/components/DropZoneOverlay";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
+import { SelectionActions } from "@/components/SelectionActions";
 import { SessionEmptyIntro, SessionStarterPrompts } from "@/components/SessionEmptyState";
 import { QueuedMessages } from "@/chat/QueuedMessages";
 import { WorkPanel } from "@/components/WorkPanel";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { useSelectionActions } from "@/hooks/useSelectionActions";
 import { deriveWorkProjection } from "@/lib/work-projections";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
@@ -113,6 +115,13 @@ export function ChatView({
 	const inputRef = useRef<{ focus: () => void }>(null);
 	const isUserScrolledUp = useRef(false);
 	const [detailsExpanded, setDetailsExpanded] = useState(false);
+
+	// ── Selection actions (Task 3) ──
+	const activeSessionKey = sessionKey ?? sessionFile;
+	const { selection: selectedText, dismiss: dismissSelection } = useSelectionActions(
+		scrollContainerRef,
+		activeSessionKey,
+	);
 
 	// ── In-thread find (Cmd/Ctrl+F) ──
 	const [findOpen, setFindOpen] = useState(false);
@@ -391,6 +400,14 @@ export function ChatView({
 				</div>
 
 				{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
+
+				{selectedText && (
+					<SelectionActions
+						selection={selectedText}
+						onAsk={() => dismissSelection()}
+						onStartWriting={() => dismissSelection()}
+					/>
+				)}
 
 				{/* One keyed composer under one stable parent. Empty Work -> Active Work changes
 			    only the scroll surface; draft/files/focus/voice/model/queue state do not remount. */}

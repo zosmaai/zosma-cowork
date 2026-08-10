@@ -5,6 +5,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "./ChatView";
 
+function selectRenderedText(element: Element) {
+	const node = element.firstChild!;
+	const range = document.createRange();
+	range.selectNodeContents(node);
+	Object.defineProperty(range, "getBoundingClientRect", {
+		value: () => ({ left: 80, top: 120, right: 180, bottom: 140, width: 100, height: 20 }),
+	});
+	const selection = window.getSelection()!;
+	selection.removeAllRanges();
+	selection.addRange(range);
+	// Trigger the selectionchange event so the hook picks it up
+	document.dispatchEvent(new Event("selectionchange"));
+}
+
 describe("ChatView selection boundaries", () => {
 	afterEach(() => cleanupMocks());
 
@@ -29,6 +43,45 @@ describe("ChatView selection boundaries", () => {
 			"Assistant answer",
 		);
 		expect(screen.getByText("User direction").closest("[data-assistant-response]")).toBeNull();
+	});
+
+	it.each(["chat", "work"] as const)(
+		"shows one selection toolbar for assistant Markdown in %s",
+		async (mode) => {
+			const { container } = render(
+				<ChatView
+					sessionFile={`/${mode}.jsonl`}
+					messages={[{ id: "a", role: "assistant", content: "Selectable answer", timestamp: 1 }]}
+					streamingMessage={null}
+					isRunning={false}
+					error={null}
+					onSend={vi.fn()}
+					onAbort={vi.fn()}
+					mode={mode}
+				/>,
+			);
+			selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
+			await new Promise((r) => setTimeout(r, 0));
+			expect(screen.getByRole("toolbar", { name: "Selection actions" })).toBeInTheDocument();
+		},
+	);
+
+	it("does not show selection actions for user text", async () => {
+		const { container } = render(
+			<ChatView
+				sessionFile="/chat.jsonl"
+				messages={[{ id: "u", role: "user", content: "User direction", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning={false}
+				error={null}
+				onSend={vi.fn()}
+				onAbort={vi.fn()}
+				mode="chat"
+			/>,
+		);
+		selectRenderedText(container.querySelector("[data-message-id='u'] .chat-markdown")!);
+		await new Promise((r) => setTimeout(r, 0));
+		expect(screen.queryByRole("toolbar", { name: "Selection actions" })).not.toBeInTheDocument();
 	});
 });
 

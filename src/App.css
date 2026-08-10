@@ -1511,3 +1511,64 @@ body[data-wallpaper]::before {
 		animation: none !important;
 	}
 }
+
+/* ── Selection actions toolbar ── */
+.selection-actions {
+	position: fixed;
+	z-index: 70;
+	display: flex;
+	align-items: center;
+	padding: 0.25rem;
+	border: 1px solid hsl(var(--border));
+	border-radius: 0.75rem;
+	background: hsl(var(--popover));
+	box-shadow: 0 10px 30px hsl(var(--background) / 0.35);
+	transform: translate(-50%, calc(-100% - 0.5rem));
+}
+.selection-actions[data-placement="below"] {
+	transform: translate(-50%, 0.5rem);
+}
+.selection-actions button {
+	min-height: 36px;
+	padding: 0.4rem 0.7rem;
+	border-radius: 0.5rem;
+	font-size: 14px;
+	color: hsl(var(--foreground));
+}
+.selection-actions button:hover,
+.selection-actions button:focus-visible {
+	background: hsl(var(--muted));
+}
+.selection-actions button:focus-visible {
+	outline: 2px solid hsl(var(--ring));
+	outline-offset: 1px;
+}
+
+/* ── Composer quote card ── */
+.composer-quote {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 0.5rem;
+	margin: 0.65rem 0.75rem 0;
+	padding: 0.55rem 0.65rem;
+	border-left: 2px solid hsl(var(--primary));
+	border-radius: 0.5rem;
+	background: hsl(var(--muted) / 0.55);
+	color: hsl(var(--muted-foreground));
+	font-size: 13px;
+}
+.composer-quote blockquote {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+}
+.composer-quote button {
+	border-radius: 0.35rem;
+	padding: 0.2rem;
+}
+.composer-quote button:focus-visible {
+	outline: 2px solid hsl(var(--ring));
+	outline-offset: 1px;
+}
