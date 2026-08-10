@@ -123,6 +123,19 @@ export function ChatView({
 		activeSessionKey,
 	);
 
+	// Transient quote context owned by this session shell
+	const [storedQuote, setStoredQuote] = useState<{ excerpt: string; sessionKey: string } | null>(null);
+	const quoteContext = storedQuote?.sessionKey === activeSessionKey ? storedQuote.excerpt : null;
+
+	const handleAskSelection = useCallback(
+		(excerpt: string) => {
+			setStoredQuote({ excerpt, sessionKey: activeSessionKey });
+			dismissSelection();
+			requestAnimationFrame(() => inputRef.current?.focus());
+		},
+		[activeSessionKey, dismissSelection],
+	);
+
 	// ── In-thread find (Cmd/Ctrl+F) ──
 	const [findOpen, setFindOpen] = useState(false);
 	const [findQuery, setFindQuery] = useState("");
@@ -404,7 +417,7 @@ export function ChatView({
 				{selectedText && (
 					<SelectionActions
 						selection={selectedText}
-						onAsk={() => dismissSelection()}
+						onAsk={handleAskSelection}
 						onStartWriting={() => dismissSelection()}
 					/>
 				)}
@@ -444,6 +457,11 @@ export function ChatView({
 						onRunCommand={onRunCommand}
 						emptyMode={isEmpty ? mode : undefined}
 						disabled={modeChangeDisabled}
+						quoteContext={
+							quoteContext
+								? { excerpt: quoteContext, onRemove: () => setStoredQuote(null) }
+								: undefined
+						}
 					/>
 				</motion.div>
 

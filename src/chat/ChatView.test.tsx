@@ -83,6 +83,56 @@ describe("ChatView selection boundaries", () => {
 		await new Promise((r) => setTimeout(r, 0));
 		expect(screen.queryByRole("toolbar", { name: "Selection actions" })).not.toBeInTheDocument();
 	});
+
+	it.each(["chat", "work"] as const)(
+		"Ask AI creates one removable quote and focuses the composer in %s",
+		async (mode) => {
+			const user = userEvent.setup();
+			const { container } = render(
+				<ChatView
+					sessionFile={`/${mode}.jsonl`}
+					sessionKey={`/${mode}.jsonl`}
+					messages={[{ id: "a", role: "assistant", content: "Selected answer", timestamp: 1 }]}
+					streamingMessage={null}
+					isRunning={false}
+					error={null}
+					onSend={vi.fn()}
+					onAbort={vi.fn()}
+					mode={mode}
+				/>,
+			);
+			selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
+			await new Promise((r) => setTimeout(r, 0));
+			await user.click(screen.getByRole("button", { name: "Ask AI" }));
+			expect(screen.queryByRole("toolbar", { name: "Selection actions" })).not.toBeInTheDocument();
+			expect(screen.getByRole("region", { name: "Quoted context" })).toHaveTextContent(
+				"Selected answer",
+			);
+			// Focus happens via requestAnimationFrame; wait for it
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			expect(screen.getByRole("textbox")).toHaveFocus();
+			expect(screen.getByRole("textbox")).toHaveValue("");
+		},
+	);
+
+	it("never renders quoted context in a different session", async () => {
+		const user = userEvent.setup();
+		const props = {
+			messages: [{ id: "a", role: "assistant" as const, content: "Selected answer", timestamp: 1 }],
+			streamingMessage: null,
+			isRunning: false,
+			error: null,
+			onSend: vi.fn(),
+			onAbort: vi.fn(),
+		};
+		const view = render(<ChatView {...props} sessionFile="/a.jsonl" sessionKey="/a.jsonl" />);
+		selectRenderedText(view.container.querySelector("[data-assistant-response='a']")!);
+		await new Promise((r) => setTimeout(r, 0));
+		await user.click(screen.getByRole("button", { name: "Ask AI" }));
+		expect(screen.getByRole("region", { name: "Quoted context" })).toBeInTheDocument();
+		view.rerender(<ChatView {...props} sessionFile="/b.jsonl" sessionKey="/b.jsonl" />);
+		expect(screen.queryByRole("region", { name: "Quoted context" })).not.toBeInTheDocument();
+	});
 });
 
 describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {

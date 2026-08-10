@@ -2,6 +2,7 @@ import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { useFileMention } from "@/hooks/useFileMention";
 import { trackEvent } from "@/lib/telemetry";
 import { findModel } from "@/lib/model-key";
+import { formatSelectionPrompt } from "@/lib/selection-actions";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
@@ -40,6 +41,11 @@ function calcMentionAnchor(
 		top: rect.top - 8,
 		left: rect.left + 16,
 	};
+}
+
+interface QuoteContext {
+	excerpt: string;
+	onRemove: () => void;
 }
 
 interface MessageInputProps {
@@ -106,6 +112,8 @@ interface MessageInputProps {
 	pendingDropNonce?: number;
 	/** Chat/Work empty-state composer variant (rows/placeholder/width). */
 	emptyMode?: SessionMode;
+	/** Removable quote context from a selected text action. */
+	quoteContext?: QuoteContext;
 }
 
 export interface MessageInputHandle {
@@ -136,6 +144,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			pendingDropFiles,
 			pendingDropNonce,
 			emptyMode,
+			quoteContext,
 		},
 		ref,
 	) => {
@@ -319,7 +328,12 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		) {
 			e?.preventDefault();
 			const trimmed = text.trim();
-			if ((!trimmed && attachedFiles.length === 0 && pastedImages.length === 0) || disabled) return;
+			// When quote context exists, require typed custom instruction even if
+			// files/images are attached. Quote alone is not an instruction.
+			const hasContent = quoteContext
+				? !!trimmed
+				: !!(trimmed || attachedFiles.length > 0 || pastedImages.length > 0);
+			if (!hasContent || disabled) return;
 
 			// Build prompt with file and image references
 			const sections: string[] = [];
@@ -330,7 +344,15 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				sections.push(`[Image: ${img.dataUrl}]`);
 			}
 			let finalPrompt = sections.join("\n");
-			if (trimmed) {
+			// Serialize quote context as Markdown block quote
+			if (quoteContext && trimmed) {
+				const quotedPrompt = formatSelectionPrompt(quoteContext.excerpt, trimmed);
+				if (quotedPrompt) {
+					finalPrompt = finalPrompt
+						? `${finalPrompt}\n\n${quotedPrompt}`
+						: quotedPrompt;
+				}
+			} else if (trimmed) {
 				finalPrompt = finalPrompt ? `${finalPrompt}\n\n${trimmed}` : trimmed;
 			}
 
@@ -341,6 +363,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			setText("");
 			setAttachedFiles([]);
 			clearImages();
+			quoteContext?.onRemove();
 			if (textareaRef.current) {
 				textareaRef.current.style.height = "auto";
 				// PR3 follow-up: keep focus on the textarea after submit so
@@ -496,7 +519,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						? "Ask Zosma…"
 						: "Message (Enter to send, Shift+Enter for newline)";
 
-		const hasContent = !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
+		const hasContent = quoteContext
+			? !!text.trim()
+			: !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
 
 		// Slash-command palette state derived from the current input.
 		const slash = useMemo(() => parseSlashInput(text), [text]);
@@ -568,6 +593,21 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							}}
 							anchorRect={calcMentionAnchor(shellRef.current, textareaRef.current)}
 						/>
+					)}
+
+					{/* Removable quote context from selected text */}
+					{quoteContext && (
+						<div className="composer-quote" role="region" aria-label="Quoted context">
+							<span aria-hidden="true">↪</span>
+							<blockquote>{quoteContext.excerpt.replace(/\s+/g, " ").trim()}</blockquote>
+							<button
+								type="button"
+								onClick={quoteContext.onRemove}
+								aria-label="Remove quoted context"
+							>
+								<X size={14} />
+							</button>
+						</div>
 					)}
 
 					{/* Textarea */}

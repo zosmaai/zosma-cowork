@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { describe, expect, it } from "vitest";
 import { useSelectionActions } from "./useSelectionActions";
 
