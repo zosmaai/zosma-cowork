@@ -9,6 +9,7 @@ import { QueuedMessages } from "@/chat/QueuedMessages";
 import { WorkPanel } from "@/components/WorkPanel";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import { useSelectionActions } from "@/hooks/useSelectionActions";
+import { formatSelectionPrompt, START_WRITING_INSTRUCTION } from "@/lib/selection-actions";
 import { deriveWorkProjection } from "@/lib/work-projections";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
@@ -134,6 +135,21 @@ export function ChatView({
 			requestAnimationFrame(() => inputRef.current?.focus());
 		},
 		[activeSessionKey, dismissSelection],
+	);
+
+	const handleStartWriting = useCallback(
+		(excerpt: string) => {
+			const prompt = formatSelectionPrompt(excerpt, START_WRITING_INSTRUCTION);
+			if (!prompt) return;
+			if (isRunning) {
+				if (!onFollowUp) return;
+				onFollowUp(prompt);
+			} else {
+				onSend(prompt);
+			}
+			dismissSelection();
+		},
+		[dismissSelection, isRunning, onFollowUp, onSend],
 	);
 
 	// ── In-thread find (Cmd/Ctrl+F) ──
@@ -418,7 +434,7 @@ export function ChatView({
 					<SelectionActions
 						selection={selectedText}
 						onAsk={handleAskSelection}
-						onStartWriting={() => dismissSelection()}
+						onStartWriting={handleStartWriting}
 					/>
 				)}
 

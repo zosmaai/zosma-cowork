@@ -138,6 +138,7 @@ vi.mock("@/chat/ChatView", () => ({
 		mode,
 		onModeChange,
 		onSend,
+		onFollowUp,
 		onStarterSelect,
 		modeChangeDisabled,
 		modeError,
@@ -153,6 +154,7 @@ vi.mock("@/chat/ChatView", () => ({
 		mode: "chat" | "work";
 		onModeChange: (mode: "chat" | "work") => void;
 		onSend: (text: string) => void;
+		onFollowUp?: (text: string) => void;
 		onStarterSelect: (text: string) => void;
 		modeChangeDisabled?: boolean;
 		modeError?: string | null;
@@ -179,6 +181,18 @@ vi.mock("@/chat/ChatView", () => ({
 			</button>
 			<button type="button" onClick={() => onSend("first task")}>
 				send-first
+			</button>
+			<button
+				type="button"
+				onClick={() => onSend("> quote\n\nStart writing from this excerpt.")}
+			>
+				idle-start-writing
+			</button>
+			<button
+				type="button"
+				onClick={() => onFollowUp?.("> quote\n\nStart writing from this excerpt.")}
+			>
+				running-start-writing
 			</button>
 			<button ref={sidebarButtonRef} type="button" onClick={() => onDrawerChange?.("sidebar")}>
 				open-sidebar-drawer
@@ -851,5 +865,49 @@ describe("App cached session switching", () => {
 		expect(screen.getByRole("dialog", { name: "Sessions" })).toHaveAttribute("aria-modal", "true");
 		fireEvent.keyDown(window, { key: "Escape" });
 		await waitFor(() => expect(sidebarTrigger).toHaveFocus());
+	});
+
+	it("targets idle Start writing to the active session only", async () => {
+		controller.states = new Map([
+			["/a.jsonl", streamState("/a.jsonl", "A history")],
+			["/b.jsonl", streamState("/b.jsonl", "B history")],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+			{ file: "/b.jsonl", title: "B", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /b.jsonl" }));
+		fireEvent.click(screen.getByText("idle-start-writing"));
+		await waitFor(() =>
+			expect(controller.startStream).toHaveBeenCalledWith(
+				"/b.jsonl",
+				"> quote\n\nStart writing from this excerpt.",
+			),
+		);
+		expect(controller.startStream).not.toHaveBeenCalledWith(
+			"/a.jsonl",
+			expect.anything(),
+		);
+	});
+
+	it("targets running Start writing to the active session follow-up only", async () => {
+		controller.states = new Map([
+			[
+				"/a.jsonl",
+				streamState("/a.jsonl", "A running", { running: true }),
+			],
+		]);
+		controller.entries = [
+			{ file: "/a.jsonl", title: "A", messageCount: 1, createdAt: 1, lastActivity: 2 },
+		];
+		render(<App />);
+		fireEvent.click(await screen.findByRole("button", { name: "select /a.jsonl" }));
+		fireEvent.click(screen.getByText("running-start-writing"));
+		expect(controller.followUpStream).toHaveBeenCalledWith(
+			"/a.jsonl",
+			"> quote\n\nStart writing from this excerpt.",
+		);
+		expect(controller.startStream).not.toHaveBeenCalled();
 	});
 });

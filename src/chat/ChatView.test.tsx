@@ -133,6 +133,77 @@ describe("ChatView selection boundaries", () => {
 		view.rerender(<ChatView {...props} sessionFile="/b.jsonl" sessionKey="/b.jsonl" />);
 		expect(screen.queryByRole("region", { name: "Quoted context" })).not.toBeInTheDocument();
 	});
+
+	it("Start writing immediately sends a quoted normal turn while idle", async () => {
+		const user = userEvent.setup();
+		const onSend = vi.fn();
+		const onFollowUp = vi.fn();
+		const { container } = render(
+			<ChatView
+				sessionFile="/a.jsonl"
+				messages={[{ id: "a", role: "assistant", content: "Selected answer", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning={false}
+				error={null}
+				onSend={onSend}
+				onAbort={vi.fn()}
+				onFollowUp={onFollowUp}
+			/>,
+		);
+		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
+		await new Promise((r) => setTimeout(r, 0));
+		await user.click(screen.getByRole("button", { name: "Start writing" }));
+		expect(onSend).toHaveBeenCalledWith(
+			"> Selected answer\n\nStart writing from this excerpt.",
+		);
+		expect(onFollowUp).not.toHaveBeenCalled();
+	});
+
+	it("Start writing queues a quoted follow-up while the selected session is running", async () => {
+		const user = userEvent.setup();
+		const onSend = vi.fn();
+		const onFollowUp = vi.fn();
+		const { container } = render(
+			<ChatView
+				sessionFile="/a.jsonl"
+				messages={[{ id: "a", role: "assistant", content: "Selected answer", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning
+				error={null}
+				onSend={onSend}
+				onAbort={vi.fn()}
+				onFollowUp={onFollowUp}
+			/>,
+		);
+		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
+		await new Promise((r) => setTimeout(r, 0));
+		await user.click(screen.getByRole("button", { name: "Start writing" }));
+		expect(onFollowUp).toHaveBeenCalledWith(
+			"> Selected answer\n\nStart writing from this excerpt.",
+		);
+		expect(onSend).not.toHaveBeenCalled();
+	});
+
+	it("Start writing does nothing when the required running follow-up handler is absent", async () => {
+		const user = userEvent.setup();
+		const onSend = vi.fn();
+		const { container } = render(
+			<ChatView
+				sessionFile="/a.jsonl"
+				messages={[{ id: "a", role: "assistant", content: "Selected answer", timestamp: 1 }]}
+				streamingMessage={null}
+				isRunning
+				error={null}
+				onSend={onSend}
+				onAbort={vi.fn()}
+			/>,
+		);
+		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
+		await new Promise((r) => setTimeout(r, 0));
+		await user.click(screen.getByRole("button", { name: "Start writing" }));
+		expect(onSend).not.toHaveBeenCalled();
+		expect(screen.getByRole("toolbar", { name: "Selection actions" })).toBeInTheDocument();
+	});
 });
 
 describe("ChatView queued bubbles (#201 PR3 follow-up)", () => {
