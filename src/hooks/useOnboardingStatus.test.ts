@@ -19,6 +19,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.useRealTimers();
 });
 
 describe("useOnboardingStatus", () => {
@@ -80,5 +81,26 @@ describe("useOnboardingStatus", () => {
 
 		// Status preserved
 		expect(result.current.status?.zosmaConnected).toBe(true);
+	});
+
+	it("keeps retrying after transient boot failures so the splash never strands", async () => {
+		vi.useFakeTimers();
+		invoke.mockRejectedValue(new Error("sidecar not ready"));
+		renderHook(() => useOnboardingStatus());
+		await act(async () => {
+			await Promise.resolve();
+		});
+		const before = invoke.mock.calls.length;
+		// Advance timers in steps, flushing the async rejection microtask after
+		// each so the next retry can be scheduled. The old code stopped at 5.
+		await act(async () => {
+			for (let i = 0; i < 20; i++) {
+				vi.advanceTimersByTime(3000);
+				await Promise.resolve();
+			}
+		});
+		expect(invoke.mock.calls.length).toBeGreaterThan(before);
+		expect(invoke.mock.calls.length).toBeGreaterThan(5);
+		vi.useRealTimers();
 	});
 });

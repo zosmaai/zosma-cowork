@@ -132,6 +132,9 @@ function App() {
 	const [, setSidebarView] = useState("chats");
 	// Manual sidebar rail collapse (Phase 2). Default stays expanded.
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	// Sidebar rail auto-default applied once per session, so switching Chat<->Work
+	// tabs on the same session never fights the user's collapse choice.
+	const sidebarDefaultedFor = useRef<string | null>(null);
 	const [openDrawer, setOpenDrawer] = useState<OpenDrawer>(null);
 	const sidebarDrawerTriggerRef = useRef<HTMLButtonElement>(null);
 	const workPanelTriggerRef = useRef<HTMLButtonElement>(null);
@@ -208,14 +211,18 @@ function App() {
 		setModeError(null);
 	}, [activeSessionFile]);
 
-	// Default the sidebar rail per entered view: empty Chat collapses, empty
-	// Work and every active transcript expand. A manual expand/collapse does
-	// not retrigger until the user enters a different session/mode/empty state.
+	// Default the sidebar rail once per entered session: empty Chat collapses,
+	// empty Work and every active transcript expand. A manual expand/collapse wins
+	// until a DIFFERENT session is entered, so switching Chat<->Work tabs on the
+	// same session never re-toggles the rail under the user.
 	// No active session (splash/onboarding) has no sidebar view to default.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: default once per session; mode/empty snapshot at entry
 	useEffect(() => {
 		if (!activeSessionFile) return;
+		if (sidebarDefaultedFor.current === activeSessionFile) return;
+		sidebarDefaultedFor.current = activeSessionFile;
 		setSidebarCollapsed(isEmptySession && activeMode === "chat");
-	}, [activeSessionFile, activeMode, isEmptySession]);
+	}, [activeSessionFile]);
 	// The agent's current workspace folder (where file/bash tools read & write).
 	// The agent's current workspace folder (where file/bash tools read & write).
 	// Derived from the ACTIVE cached session — each runtime owns its cwd.

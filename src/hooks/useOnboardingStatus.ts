@@ -40,11 +40,12 @@ export function useOnboardingStatus(): UseOnboardingStatusResult {
 			setLoading(false);
 			retryRef.current = 0;
 		} catch {
-			// Sidecar may still be booting. Keep status unknown and retry without
-			// flashing new-user UI; the ready event below also triggers a fetch.
-			if (mountedRef.current && retryRef.current < 5) {
+			// Sidecar may still be booting. Keep retrying with bounded backoff until it
+			// resolves (the splash is gated on this status, so giving up strands it).
+			if (mountedRef.current) {
 				retryRef.current += 1;
-				retryTimerRef.current = setTimeout(fetchStatus, 500 * retryRef.current);
+				const delay = Math.min(500 * retryRef.current, 3000);
+				retryTimerRef.current = setTimeout(fetchStatus, delay);
 			}
 		}
 	}, []);
