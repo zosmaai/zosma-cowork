@@ -11,14 +11,14 @@ const source = (path: string) => readFileSync(resolve(root, path), "utf8");
 describe("Chat and Work readability", () => {
 	it("defines the approved 100% typography tokens", () => {
 		for (const token of [
-			"--font-response: 17px",
-			"--font-user-message: 16px",
-			"--font-composer: 16px",
-			"--font-empty-heading: 26px",
-			"--font-session-title: 14px",
-			"--font-secondary: 13px",
-			"--font-code: 14px",
-			"--font-control: 14px",
+			"--font-response: 1.1875rem",
+			"--font-user-message: 1.125rem",
+			"--font-composer: 1.125rem",
+			"--font-empty-heading: 1.875rem",
+			"--font-session-title: 0.9375rem",
+			"--font-secondary: 0.875rem",
+			"--font-code: 0.9375rem",
+			"--font-control: 0.9375rem",
 		]) expect(css).toContain(token);
 	});
 
@@ -27,7 +27,7 @@ describe("Chat and Work readability", () => {
 		expect(css).toMatch(/\.session-shell[^}]*font-family:\s*var\(--font-reading\)/s);
 	});
 
-	it("applies 17px assistant and 16px user message classes", () => {
+	it("applies enlarged response and user message classes", () => {
 		expect(css).toMatch(/\.chat-markdown\s*\{[^}]*var\(--font-response\)/s);
 		expect(css).toMatch(/\.chat-markdown-user\s*\{[^}]*var\(--font-user-message\)/s);
 		expect(source("src/components/ChatMessage.tsx")).toContain("chat-markdown-user");
