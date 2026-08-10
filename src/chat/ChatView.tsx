@@ -17,7 +17,7 @@ import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
 import { WorkHeader } from "@/work/WorkHeader";
 import { WorkSessionView } from "@/work/WorkSessionView";
-import { motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
@@ -441,11 +441,7 @@ export function ChatView({
 
 				{/* One keyed composer under one stable parent. Empty Work -> Active Work changes
 			    only the scroll surface; draft/files/focus/voice/model/queue state do not remount. */}
-				<motion.div
-					layout={reducedScroll ? false : "position"}
-					transition={{ layout: { duration: 0.5, ease: "easeInOut" } }}
-					className="overflow-hidden"
-				>
+				<div className="overflow-hidden">
 					<MessageInput
 						key={sessionKey}
 						sessionFile={sessionFile}
@@ -480,7 +476,7 @@ export function ChatView({
 								: undefined
 						}
 					/>
-				</motion.div>
+				</div>
 
 				{/* Top and bottom flex regions center the composer while empty, keeping
 			    exactly one mounted MessageInput across empty↔active transitions. */}

@@ -6,7 +6,7 @@ import { formatSelectionPrompt } from "@/lib/selection-actions";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import type { SessionMode } from "@/types/session-runtime";
-import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -153,7 +153,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		const [text, setText] = useState("");
 		const [commandIndex, setCommandIndex] = useState(0);
 		const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
-		const [isListening, setIsListening] = useState(false);
 		const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
 		const mention = useFileMention(sessionFile);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
@@ -170,7 +169,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		);
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
 		const shellRef = useRef<HTMLDivElement>(null);
-		const recognitionRef = useRef<SpeechRecognition | null>(null);
 
 		useImperativeHandle(ref, () => ({
 			focus: () => textareaRef.current?.focus(),
@@ -214,45 +212,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
 		}, [text]);
 
-		const startVoiceInput = useCallback(() => {
-			const SpeechRecognition =
-				(window as unknown as { SpeechRecognition?: new () => SpeechRecognition })
-					.SpeechRecognition ||
-				(window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition })
-					.webkitSpeechRecognition;
-			if (!SpeechRecognition) return;
-
-			if (isListening && recognitionRef.current) {
-				recognitionRef.current.stop();
-				setIsListening(false);
-				return;
-			}
-
-			const recognition = new SpeechRecognition();
-			recognition.lang = "en-US";
-			recognition.interimResults = true;
-			recognition.continuous = false;
-
-			recognition.onresult = (event: SpeechRecognitionEvent) => {
-				const transcript = Array.from(event.results)
-					.map((r) => r[0].transcript)
-					.join("");
-				setText((prev) => prev + transcript);
-			};
-
-			recognition.onend = () => {
-				setIsListening(false);
-			};
-
-			recognition.onerror = () => {
-				setIsListening(false);
-			};
-
-			recognitionRef.current = recognition;
-			recognition.start();
-			setIsListening(true);
-			trackEvent("voice_input_started");
-		}, [isListening]);
 
 		const openFileDialog = useCallback(async () => {
 			try {
@@ -723,19 +682,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 								className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--muted)/0.7)] transition-colors disabled:opacity-40"
 							>
 								<Paperclip size={16} />
-							</button>
-							<button
-								type="button"
-								onClick={startVoiceInput}
-								disabled={disabled}
-								aria-label={isListening ? "Stop recording" : "Voice input"}
-								className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors disabled:opacity-40 ${
-									isListening
-										? "text-red-500 hover:bg-red-500/10"
-										: "text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--muted)/0.7)]"
-								}`}
-							>
-								<Mic size={16} />
 							</button>
 							{models && onModelSelect ? (
 								<ModelSelector
