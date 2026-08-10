@@ -2253,14 +2253,16 @@ use cap_std::fs::{Dir, File as CapFile};
 
 fn workspace_relative_path(workspace: &Path, requested: &Path) -> Result<PathBuf, String> {
     let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
-    let relative = if requested.is_absolute() {
-        requested
-            .strip_prefix(&root)
-            .map_err(|_| "File unavailable".to_string())?
-            .to_path_buf()
-    } else {
+    let candidate = if requested.is_absolute() {
         requested.to_path_buf()
+    } else {
+        root.join(requested)
     };
+    let target = std::fs::canonicalize(candidate).map_err(|_| "File unavailable".to_string())?;
+    let relative = target
+        .strip_prefix(&root)
+        .map_err(|_| "File unavailable".to_string())?
+        .to_path_buf();
     if relative.as_os_str().is_empty()
         || relative
             .components()
@@ -2765,6 +2767,23 @@ mod tests {
         let outside = base.join("secret.txt");
         std::fs::write(&outside, "no").unwrap();
         assert!(open_authorized_artifact(&root, &outside).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_artifact_guard_accepts_symlinked_workspace_alias() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-workspace-alias-{}",
+            std::process::id()
+        ));
+        let root = base.join("workspace");
+        let alias = base.join("workspace-alias");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("report.md"), "ok").unwrap();
+        symlink(&root, &alias).unwrap();
+        assert!(open_authorized_artifact(&alias, &alias.join("report.md")).is_ok());
         std::fs::remove_dir_all(base).unwrap();
     }
 

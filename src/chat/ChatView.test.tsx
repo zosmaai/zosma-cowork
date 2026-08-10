@@ -105,6 +105,7 @@ describe("ChatView selection boundaries", () => {
 					mode={mode}
 				/>,
 			);
+			// biome-ignore lint/style/noNonNullAssertion: rendered fixture must expose its assistant response
 			selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
 			await new Promise((r) => setTimeout(r, 0));
 			await user.click(screen.getByRole("button", { name: "Ask AI" }));
@@ -130,6 +131,7 @@ describe("ChatView selection boundaries", () => {
 			onAbort: vi.fn(),
 		};
 		const view = render(<ChatView {...props} sessionFile="/a.jsonl" sessionKey="/a.jsonl" />);
+		// biome-ignore lint/style/noNonNullAssertion: rendered fixture must expose its assistant response
 		selectRenderedText(view.container.querySelector("[data-assistant-response='a']")!);
 		await new Promise((r) => setTimeout(r, 0));
 		await user.click(screen.getByRole("button", { name: "Ask AI" }));
@@ -154,12 +156,11 @@ describe("ChatView selection boundaries", () => {
 				onFollowUp={onFollowUp}
 			/>,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: rendered fixture must expose its assistant response
 		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
 		await new Promise((r) => setTimeout(r, 0));
 		await user.click(screen.getByRole("button", { name: "Start writing" }));
-		expect(onSend).toHaveBeenCalledWith(
-			"> Selected answer\n\nStart writing from this excerpt.",
-		);
+		expect(onSend).toHaveBeenCalledWith("> Selected answer\n\nStart writing from this excerpt.");
 		expect(onFollowUp).not.toHaveBeenCalled();
 	});
 
@@ -179,6 +180,7 @@ describe("ChatView selection boundaries", () => {
 				onFollowUp={onFollowUp}
 			/>,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: rendered fixture must expose its assistant response
 		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
 		await new Promise((r) => setTimeout(r, 0));
 		await user.click(screen.getByRole("button", { name: "Start writing" }));
@@ -202,6 +204,7 @@ describe("ChatView selection boundaries", () => {
 				onAbort={vi.fn()}
 			/>,
 		);
+		// biome-ignore lint/style/noNonNullAssertion: rendered fixture must expose its assistant response
 		selectRenderedText(container.querySelector("[data-assistant-response='a']")!);
 		await new Promise((r) => setTimeout(r, 0));
 		await user.click(screen.getByRole("button", { name: "Start writing" }));

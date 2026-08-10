@@ -23,6 +23,12 @@ describe("formatSelectionPrompt", () => {
 	});
 });
 
+function textNode(selector: string): Node {
+	const node = document.querySelector(selector)?.firstChild;
+	if (!node) throw new Error(`Missing fixture text: ${selector}`);
+	return node;
+}
+
 function select(start: Node, end: Node = start): Selection {
 	const range = document.createRange();
 	range.setStart(start, 0);
@@ -51,7 +57,7 @@ describe("readAssistantSelection", () => {
 	it("accepts text wholly inside one assistant response root", () => {
 		document.body.innerHTML =
 			'<div data-assistant-response="m1"><p id="one">Selected answer</p></div>';
-		const selection = select(document.querySelector("#one")!.firstChild!);
+		const selection = select(textNode("#one"));
 		expect(readAssistantSelection(selection)).toEqual({
 			excerpt: "Selected answer",
 			messageId: "m1",
@@ -64,21 +70,17 @@ describe("readAssistantSelection", () => {
 			'<div data-assistant-response="m1"><p id="one">First</p></div>',
 			'<div data-assistant-response="m2"><p id="two">Second</p></div>',
 		].join("");
-		const selection = select(
-			document.querySelector("#one")!.firstChild!,
-			document.querySelector("#two")!.firstChild!,
-		);
+		const selection = select(textNode("#one"), textNode("#two"));
 		expect(readAssistantSelection(selection)).toBeNull();
 	});
 
 	it("rejects text outside an assistant response root", () => {
 		document.body.innerHTML = '<div data-message-id="u1"><p id="user">User text</p></div>';
-		expect(readAssistantSelection(select(document.querySelector("#user")!.firstChild!))).toBeNull();
+		expect(readAssistantSelection(select(textNode("#user")))).toBeNull();
 	});
 
 	it("rejects a collapsed or whitespace-only selection", () => {
-		document.body.innerHTML =
-			'<div data-assistant-response="m1"><p id="blank">   </p></div>';
-		expect(readAssistantSelection(select(document.querySelector("#blank")!.firstChild!))).toBeNull();
+		document.body.innerHTML = '<div data-assistant-response="m1"><p id="blank">   </p></div>';
+		expect(readAssistantSelection(select(textNode("#blank")))).toBeNull();
 	});
 });

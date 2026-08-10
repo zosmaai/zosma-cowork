@@ -31,6 +31,9 @@ export default defineConfig({
 		},
 	},
 	build: {
+		// Vite reports uncompressed kB; the 1,062 kB Markdown chunk is 358 kB gzip,
+		// below this repository's 500 kB gzip budget.
+		chunkSizeWarningLimit: 1100,
 		rollupOptions: {
 			output: {
 				manualChunks(id) {
@@ -48,7 +51,8 @@ export default defineConfig({
 						id.includes("rehype-") ||
 						id.includes("micromark") ||
 						id.includes("/unified@")
-					) return "markdown";
+					)
+						return "markdown";
 				},
 			},
 		},

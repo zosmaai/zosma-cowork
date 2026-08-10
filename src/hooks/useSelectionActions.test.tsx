@@ -8,9 +8,15 @@ function Harness({ sessionKey = "/a.jsonl" }: { sessionKey?: string }) {
 	const { selection } = useSelectionActions(rootRef, sessionKey);
 	return (
 		<div ref={rootRef} data-testid="scroll-root">
-			<div data-assistant-response="a"><span>Selectable answer</span></div>
-			<div data-message-id="u"><span>User text</span></div>
-			<button type="button" data-selection-actions>Toolbar action</button>
+			<div data-assistant-response="a">
+				<span>Selectable answer</span>
+			</div>
+			<div data-message-id="u">
+				<span>User text</span>
+			</div>
+			<button type="button" data-selection-actions>
+				Toolbar action
+			</button>
 			<output>{selection?.excerpt ?? "closed"}</output>
 		</div>
 	);
@@ -41,7 +47,7 @@ describe("useSelectionActions", () => {
 	it("closes when the selection collapses", () => {
 		render(<Harness />);
 		selectText(screen.getByText("Selectable answer"));
-		window.getSelection()!.removeAllRanges();
+		window.getSelection()?.removeAllRanges();
 		act(() => document.dispatchEvent(new Event("selectionchange")));
 		expect(screen.getByText("closed", { selector: "output" })).toBeInTheDocument();
 	});
