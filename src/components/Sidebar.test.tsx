@@ -39,4 +39,31 @@ describe("Sidebar", () => {
 		fireEvent.click(screen.getByText("Settings"));
 		expect(onChangeView).toHaveBeenCalledWith("settings");
 	});
+
+	it("shows the running count when collapsed", () => {
+		render(
+			<Sidebar
+				{...baseProps}
+				collapsed
+				onCollapsedChange={vi.fn()}
+				sessions={[
+					{
+						id: "1",
+						title: "First",
+						lastMessage: "work",
+						timestamp: 1,
+						runtimeStatus: "running",
+					},
+					{
+						id: "2",
+						title: "Second",
+						lastMessage: "work",
+						timestamp: 2,
+						runtimeStatus: "running",
+					},
+				]}
+			/>,
+		);
+		expect(screen.getByLabelText("2 running sessions")).toBeInTheDocument();
+	});
 });

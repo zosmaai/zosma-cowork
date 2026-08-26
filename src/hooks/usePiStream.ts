@@ -2,15 +2,21 @@ import type { ChatMessage, ToolCallInfo } from "@/types";
 import { log } from "../lib/log";
 import type {
 	PiErrorEvent,
-	PiEvent,
 	PiMessageUpdateEvent,
 	PiToolExecutionEndEvent,
-	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import type {
+	SessionEventEnvelope,
+	SessionMode,
+	SessionModel,
+	SessionSnapshot,
+	SessionLoadStatus,
+	SessionWireError,
+} from "@/types/session-runtime";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 
 /**
  * Snapshot of the agent session's pending message queue (#201 PR 3).
@@ -37,6 +43,23 @@ export interface StreamState {
 	isRunning: boolean;
 	status: "idle" | "thinking" | "tool_call" | "responding" | "error";
 	error: string | null;
+	/** Structured form of the terminal error (hydration + ErrorBanner). */
+	sessionError: SessionWireError | null;
+	/** Session identity this state belongs to (canonical absolute file). */
+	sessionFile: string | null;
+	/** The addressed runtime's workspace. */
+	cwd: string | null;
+	/** Model metadata for this session (set on load and MODEL_INFO). */
+	model?: SessionModel;
+	/** Durable product mode; mutable only while the session is empty. */
+	mode: SessionMode;
+	/** True after hydration/load; false after sidecar_loss or load failure. */
+	runtimeLoaded: boolean;
+	loadStatus: SessionLoadStatus;
+	/** True after START_STREAM until the correlated terminal done is reduced. */
+	awaitingDone: boolean;
+	/** Monotonic done count; survives React batching and duplicate render states. */
+	settledVersion: number;
 	/** Pending steer + follow-up messages — see {@link QueueSnapshot}. */
 	queue: QueueSnapshot;
 	/**
@@ -98,10 +121,19 @@ export type StreamAction =
 	| { type: "TURN_RESET" }
 	| { type: "MESSAGE_END" }
 	| { type: "STREAM_COMPLETE" }
-	| { type: "STREAM_ERROR"; error: string }
+	| { type: "STREAM_ERROR"; error: string; sessionError?: SessionWireError }
 	| { type: "ABORT_STREAM" }
 	| { type: "RESET" }
 	| { type: "CLEAR_MESSAGES" }
+	/**
+	 * Adopt a full sidecar snapshot (ready/new/load). Replaces the reducer's
+	 * transcript, queue, status, running state, and structured error.
+	 */
+	| { type: "HYDRATE_SESSION"; snapshot: SessionSnapshot }
+	| { type: "BEGIN_LOAD" }
+	| { type: "LOAD_FAILED"; error: SessionWireError }
+	| { type: "SET_SESSION_MODEL"; model: SessionModel }
+	| { type: "SET_SESSION_MODE"; mode: SessionMode }
 	/**
 	 * Reconciling action — dispatched on every `queue_update` event from
 	 * the sidecar. Replaces the entire queue snapshot (no merge: the
@@ -151,11 +183,34 @@ export const INITIAL_STATE: StreamState = {
 	isRunning: false,
 	status: "idle",
 	error: null,
+	sessionError: null,
+	sessionFile: null,
+	cwd: null,
+	model: undefined,
+	mode: "chat",
+	runtimeLoaded: false,
+	loadStatus: "loaded",
+	awaitingDone: false,
+	settledVersion: 0,
 	queue: { steering: [], followUp: [] },
 	streamSegments: [],
 	queuedKinds: {},
 	promptEchoConsumed: false,
 };
+
+/**
+ * Fresh per-key state. Uses a factory so nested arrays/objects (queue,
+ * streamSegments, queuedKinds) are never shared between map entries.
+ */
+export function createStreamState(sessionFile: string): StreamState {
+	return {
+		...INITIAL_STATE,
+		sessionFile,
+		queue: { steering: [], followUp: [] },
+		streamSegments: [],
+		queuedKinds: {},
+	};
+}
 
 /** Join non-empty sub-turn segments into the bubble's rendered content. */
 function joinSegments(segments: string[]): string {
@@ -185,18 +240,15 @@ export const INITIAL_TOOL_PHASE: ToolPhase | null = null;
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
 	switch (action.type) {
 		case "START_STREAM":
+			// Preserve the persisted transcript (hydrated history) and append the
+			// new user prompt; reset only turn-local fields so history survives.
 			return {
-				...INITIAL_STATE,
+				...state,
 				isRunning: true,
 				status: "thinking",
-				messages: [
-					{
-						id: crypto.randomUUID(),
-						role: "user",
-						content: action.prompt,
-						timestamp: Date.now(),
-					},
-				],
+				error: null,
+				sessionError: null,
+				awaitingDone: true,
 				streamingMessage: {
 					id: crypto.randomUUID(),
 					role: "assistant",
@@ -206,7 +258,57 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					toolCalls: [],
 					timestamp: Date.now(),
 				},
+				streamSegments: [],
+				promptEchoConsumed: false,
+				messages: [
+					...state.messages,
+					{
+						id: crypto.randomUUID(),
+						role: "user",
+						content: action.prompt,
+						timestamp: Date.now(),
+					},
+				],
 			};
+
+		case "HYDRATE_SESSION":
+			// Adopt a full sidecar snapshot into the keyed reducer entry.
+			return {
+				...INITIAL_STATE,
+				sessionFile: action.snapshot.sessionFile,
+				cwd: action.snapshot.cwd,
+				model: action.snapshot.model,
+				mode: action.snapshot.mode,
+				messages: action.snapshot.messages,
+				isRunning: action.snapshot.isRunning,
+				status: action.snapshot.status,
+				error: action.snapshot.error?.message ?? null,
+				sessionError: action.snapshot.error ?? null,
+				queue: action.snapshot.queue,
+				runtimeLoaded: true,
+				loadStatus: "loaded",
+				awaitingDone: action.snapshot.isRunning,
+			};
+
+		case "BEGIN_LOAD":
+			return { ...state, loadStatus: "loading" };
+
+		case "LOAD_FAILED":
+			return {
+				...state,
+				isRunning: false,
+				status: "error",
+				error: action.error.message,
+				sessionError: action.error,
+				runtimeLoaded: false,
+				loadStatus: "error",
+			};
+
+		case "SET_SESSION_MODEL":
+			return { ...state, model: action.model };
+
+		case "SET_SESSION_MODE":
+			return { ...state, mode: action.mode };
 
 		/**
 		 * TURN_RESET — Soft boundary at the start of each assistant sub-message
@@ -303,9 +405,10 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "MODEL_INFO": {
 			const msg = state.streamingMessage;
-			if (!msg) return state;
+			if (!msg) return { ...state, model: { provider: action.provider, id: action.model } };
 			return {
 				...state,
+				model: { provider: action.provider, id: action.model },
 				streamingMessage: {
 					...msg,
 					model: action.model,
@@ -395,8 +498,25 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "STREAM_COMPLETE": {
 			const msg = state.streamingMessage;
+			const settledVersion = state.settledVersion + (state.awaitingDone ? 1 : 0);
 			if (!msg) {
-				return { ...state, isRunning: false, status: "idle", streamingMessage: null };
+				return state.error
+					? {
+							...state,
+							isRunning: false,
+							status: "error",
+							streamingMessage: null,
+							awaitingDone: false,
+							settledVersion,
+						}
+					: {
+							...state,
+							isRunning: false,
+							status: "idle",
+							streamingMessage: null,
+							awaitingDone: false,
+							settledVersion,
+						};
 			}
 			// Skip empty streaming messages — MESSAGE_END creates a fresh
 			// blank streaming message after finalizing the real content,
@@ -409,6 +529,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 					isRunning: false,
 					status: "idle",
 					streamingMessage: null,
+					awaitingDone: false,
+					settledVersion,
 				};
 			}
 			return {
@@ -417,6 +539,8 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				status: "idle",
 				messages: [...state.messages, { ...msg, isStreaming: false }],
 				streamingMessage: null,
+				awaitingDone: false,
+				settledVersion,
 			};
 		}
 
@@ -433,6 +557,9 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				isRunning: false,
 				status: "error",
 				error: action.error,
+				// Structured error (if provided) surfaces in session introspection;
+				// the unchanged awaitingDone keeps the guaranteed `done` terminal.
+				sessionError: action.sessionError ?? state.sessionError,
 				messages: hasContent
 					? [...state.messages, { ...(msg as ChatMessage), isStreaming: false }]
 					: state.messages,
@@ -509,7 +636,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 
 		case "CLEAR_MESSAGES":
 			return state.error
-				? { ...INITIAL_STATE, error: state.error, status: "error" }
+				? { ...INITIAL_STATE, error: state.error, sessionError: state.sessionError, status: "error" }
 				: INITIAL_STATE;
 
 		case "QUEUE_UPDATE": {
@@ -555,252 +682,215 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 	}
 }
 
+export type SessionStreamsState = Map<string, StreamState>;
+
+export type SessionStreamsAction =
+	| { type: "APPLY"; sessionFile: string; action: StreamAction }
+	| { type: "REMOVE_SESSION"; sessionFile: string }
+	| { type: "SIDECAR_LOST" };
+
+export const INITIAL_SESSION_STREAMS: SessionStreamsState = new Map();
+
+export function sessionStreamsReducer(
+	states: SessionStreamsState,
+	action: SessionStreamsAction,
+): SessionStreamsState {
+	if (action.type === "REMOVE_SESSION") {
+		if (!states.has(action.sessionFile)) return states;
+		const next = new Map(states);
+		next.delete(action.sessionFile);
+		return next;
+	}
+
+	if (action.type === "SIDECAR_LOST") {
+		const next = new Map(states);
+		const error: SessionWireError = {
+			code: "session_interrupted",
+			message: "Session stopped because the sidecar restarted",
+			retryable: true,
+		};
+		for (const [sessionFile, state] of states) {
+			const interrupted =
+				state.loadStatus === "loading"
+					? streamReducer(state, { type: "LOAD_FAILED", error })
+					: state.isRunning
+						? streamReducer(state, {
+								type: "STREAM_ERROR",
+								error: error.message,
+								sessionError: error,
+							})
+						: state;
+			next.set(sessionFile, {
+				...interrupted,
+				runtimeLoaded: false,
+				awaitingDone: false,
+			});
+		}
+		return next;
+	}
+
+	const current = states.get(action.sessionFile) ?? createStreamState(action.sessionFile);
+	const updated = streamReducer(current, action.action);
+	if (updated === current && states.has(action.sessionFile)) return states;
+	const next = new Map(states);
+	next.set(action.sessionFile, updated);
+	return next;
+}
+
 function extractToolCallInfo(tc: {
 	id: string;
 	name?: string;
 	arguments?: Record<string, unknown>;
+	outputPath?: { path: string; displayPath: string };
 }): ToolCallInfo {
 	return {
 		id: tc.id,
 		name: tc.name || "unknown",
 		args: tc.arguments || {},
 		status: "running" as const,
+		outputPath: tc.outputPath,
 	};
 }
 
-export function usePiStream() {
-	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
-	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
+export function usePiStream(activeSessionFile: string | null) {
+	const [states, dispatchSessions] = useReducer(
+		sessionStreamsReducer,
+		INITIAL_SESSION_STREAMS,
+	);
+	const statesRef = useRef(states);
+	const loadedRef = useRef(new Set<string>());
+	const loadingRef = useRef(new Map<string, Promise<SessionSnapshot>>());
+	const deletedRef = useRef(new Set<string>());
+	const sidecarEpochRef = useRef(0);
+	const modeRef = useRef(new Map<string, SessionMode>());
+	const modeVersionRef = useRef(new Map<string, number>());
+	const modeSavesRef = useRef(new Map<string, Promise<void>>());
+	const listenerReadyRef = useRef<Promise<void> | null>(null);
+	const resolveListenerReadyRef = useRef<(() => void) | null>(null);
+	if (!listenerReadyRef.current) {
+		listenerReadyRef.current = new Promise<void>((resolve) => {
+			resolveListenerReadyRef.current = resolve;
+		});
+	}
 
-	const startStream = useCallback(async (text: string) => {
-		dispatch({ type: "START_STREAM", prompt: text });
+	useLayoutEffect(() => {
+		statesRef.current = states;
+	}, [states]);
 
-		const channel = new Channel<PiEvent>();
+	const state = activeSessionFile
+		? states.get(activeSessionFile) ?? createStreamState(activeSessionFile)
+		: INITIAL_STATE;
 
-		channel.onmessage = (event: PiEvent) => {
-			try {
-				switch (event.type) {
-					case "message_update": {
-						const msgEvent = event as PiMessageUpdateEvent;
-						const ame = msgEvent.assistantMessageEvent;
+	const dispatchTo = useCallback((sessionFile: string, action: StreamAction) => {
+		dispatchSessions({ type: "APPLY", sessionFile, action });
+	}, []);
 
-						if (msgEvent.message?.model || msgEvent.message?.provider) {
-							dispatch({
-								type: "MODEL_INFO",
-								model: msgEvent.message.model || "",
-								provider: msgEvent.message.provider || "",
-							});
-						}
+	const hydrateSession = useCallback((snapshot: SessionSnapshot) => {
+		if (deletedRef.current.has(snapshot.sessionFile)) return;
+		loadedRef.current.add(snapshot.sessionFile);
+		modeRef.current.set(snapshot.sessionFile, snapshot.mode);
+		dispatchTo(snapshot.sessionFile, { type: "HYDRATE_SESSION", snapshot });
+	}, [dispatchTo]);
 
-						switch (ame.type) {
-							case "thinking_delta":
-								dispatch({ type: "THINKING_DELTA", delta: ame.delta });
-								break;
-							case "text_delta":
-								dispatch({ type: "TEXT_DELTA", delta: ame.delta });
-								break;
-							/**
-							 * text_end — pi emits this when a streaming content block
-							 * completes. The `content` field has the authoritative final
-							 * text, correcting any delta accumulation errors (#307).
-							 */
-							case "text_end":
-								if (ame.content) {
-									dispatch({ type: "TEXT_END", content: ame.content });
-								}
-								break;
-							case "toolcall_end": {
-								const tc = ame.toolCall;
-								dispatch({
-									type: "TOOL_CALL_START",
-									toolCall: extractToolCallInfo(tc),
-								});
-								break;
-							}
-							case "error":
-								// Forward the actual error reason or message, not
-								// a generic placeholder. Provider 400/500 errors
-								// carry the API response in `reason` or `message`,
-								// not just "aborted".
-								dispatch({
-									type: "STREAM_ERROR",
-									error:
-										(ame as unknown as { message?: string }).message || ame.reason || "API error",
-								});
-								break;
-						}
-						break;
-					}
+	const ensureSession = useCallback(async (sessionFile: string): Promise<SessionSnapshot | null> => {
+		await listenerReadyRef.current;
+		if (deletedRef.current.has(sessionFile)) throw new Error("Session was deleted");
+		if (loadedRef.current.has(sessionFile)) return null;
+		const pending = loadingRef.current.get(sessionFile);
+		if (pending) return pending;
 
-					case "message_start": {
-						if (event.message?.role === "assistant") {
-							dispatch({ type: "TURN_RESET" });
-						} else if (event.message?.role === "user") {
-							// SDK-injected user message: the prompt echo (skipped once)
-							// or a delivered steer/follow-up. Extract its text.
-							const content = (event.message.content || [])
-								.filter((c) => c.type === "text")
-								.map((c) => (c as { text: string }).text)
-								.join("");
-							dispatch({ type: "USER_MESSAGE_STARTED", content });
-						}
-						break;
-					}
-
-					case "tool_execution_start": {
-						const te = event as PiToolExecutionStartEvent;
-						setToolPhase({
-							type: "calling",
-							toolName: te.toolName,
-							args: te.args as Record<string, unknown>,
-						});
-						break;
-					}
-
-					case "tool_execution_update": {
-						const te = event as PiToolExecutionUpdateEvent;
-						const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
-						dispatch({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: partialText,
-							status: "running",
-						});
-						dispatch({
-							type: "TOOL_PARTIAL_OUTPUT",
-							id: te.toolCallId,
-							partialOutput: partialText,
-						});
-						setToolPhase({
-							type: "executing",
-							toolName: te.toolName,
-							partialOutput: partialText,
-						});
-						break;
-					}
-
-					case "tool_execution_end": {
-						const te = event as PiToolExecutionEndEvent;
-						dispatch({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: (te.result?.content || []).map((c) => c.text).join(""),
-							status: te.isError ? "error" : "completed",
-							isError: te.isError,
-							details: te.result?.details as Record<string, unknown> | undefined,
-						});
-						setToolPhase(
-							te.isError
-								? { type: "error", toolName: te.toolName, message: "Tool failed" }
-								: { type: "done", toolName: te.toolName },
-						);
-						break;
-					}
-
-					case "message_end": {
-						const error = errorFromFinalMessage(event.message);
-						dispatch(error ? { type: "STREAM_ERROR", error } : { type: "MESSAGE_END" });
-						break;
-					}
-
-					case "agent_end":
-					case "done":
-						dispatch({ type: "STREAM_COMPLETE" });
-						break;
-
-					case "error": {
-						const errEvent = event as PiErrorEvent;
-						// Prefer pi's structured payload (v0.3.0+) over the bare
-						// message: surface the provider and a retry hint so the
-						// ErrorBanner is actionable instead of a generic string.
-						const base = errEvent.message || errEvent.details || "Unknown error";
-						const where = errEvent.provider
-							? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
-							: "";
-						const hint = errEvent.retryable ? " — retrying may help" : "";
-						dispatch({
-							type: "STREAM_ERROR",
-							error: `${base}${where}${hint}`,
-						});
-						break;
-					}
-
-					// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
-					// on every steer/follow-up enqueue, dequeue, and clear.
-					// The Rust layer also emits this globally (see
-					// `listen("queue_update")` below) so the queue stays in
-					// sync even when no prompt channel is active.
-					case "queue_update": {
-						const qe = event as unknown as {
-							steering?: string[];
-							followUp?: string[];
-						};
-						dispatch({
-							type: "QUEUE_UPDATE",
-							steering: qe.steering ?? [],
-							followUp: qe.followUp ?? [],
-						});
-						break;
-					}
+		const epoch = sidecarEpochRef.current;
+		dispatchTo(sessionFile, { type: "BEGIN_LOAD" });
+		// biome-ignore lint/style/useConst: self-referential promise (finally compares against `load` to avoid clearing a replacement's entry)
+		let load!: Promise<SessionSnapshot>;
+		load = invoke<SessionSnapshot>("load_session", { sessionFile })
+			.then((snapshot) => {
+				if (deletedRef.current.has(sessionFile) || epoch !== sidecarEpochRef.current) {
+					throw new Error("Session load was invalidated");
 				}
-			} catch (err) {
-				log.error("[cowork] Error processing event:", err, event);
-			}
-		};
-
-		try {
-			await invoke("send_prompt", { text, ch: channel });
-		} catch (err) {
-			dispatch({
-				type: "STREAM_ERROR",
-				error: err instanceof Error ? err.message : String(err),
+				hydrateSession(snapshot);
+				return snapshot;
+			})
+			.catch((error) => {
+				if (!deletedRef.current.has(sessionFile) && epoch === sidecarEpochRef.current) {
+					const wireError: SessionWireError = {
+						code: "session_load_failed",
+						message: error instanceof Error ? error.message : String(error),
+						retryable: true,
+					};
+					dispatchTo(sessionFile, { type: "LOAD_FAILED", error: wireError });
+				}
+				throw error;
+			})
+			.finally(() => {
+				if (loadingRef.current.get(sessionFile) === load) loadingRef.current.delete(sessionFile);
 			});
-		}
-	}, []);
+		loadingRef.current.set(sessionFile, load);
+		return load;
+	}, [dispatchTo, hydrateSession]);
 
-	const abortStream = useCallback(async () => {
-		dispatch({ type: "ABORT_STREAM" });
+	// ponytail: process epoch is enough for the current non-replay relay; add
+	// envelope sequence cursors only if transport replay/reconnect is introduced.
+
+	const startStream = useCallback(async (sessionFile: string, text: string) => {
+		await ensureSession(sessionFile);
+		dispatchTo(sessionFile, { type: "START_STREAM", prompt: text });
 		try {
-			await invoke("abort_prompt");
-		} catch {
-			// ignore
+			await invoke("send_prompt", { sessionFile, text });
+		} catch (error) {
+			dispatchTo(sessionFile, {
+				type: "STREAM_ERROR",
+				error: error instanceof Error ? error.message : String(error),
+			});
+			dispatchTo(sessionFile, { type: "STREAM_COMPLETE" });
 		}
-	}, []);
+	}, [dispatchTo, ensureSession]);
+
+	const abortStream = useCallback(async (sessionFile: string): Promise<boolean> => {
+		try {
+			await invoke("abort_prompt", { sessionFile });
+			dispatchTo(sessionFile, { type: "ABORT_STREAM" });
+			return true;
+		} catch (error) {
+			log.warn("[cowork] abort_prompt rejected:", error);
+			return false;
+		}
+	}, [dispatchTo]);
 
 	/**
 	 * Queue a steering message on the running session (issue #201, PR 1).
 	 * Mid-turn course correction — the agent picks it up after its current
 	 * tool batch finishes, before the next LLM call. Errors from the sidecar
 	 * (extension command, empty text, etc.) are logged but not re-thrown:
-	 * the composer’s textarea is already cleared on submit so we don’t want
+	 * the composer's textarea is already cleared on submit so we don't want
 	 * to surface a stack trace mid-conversation. Future PR may surface them
 	 * as a transient toast.
 	 */
-	const steerStream = useCallback(async (text: string) => {
+	const steerStream = useCallback(async (sessionFile: string, text: string) => {
 		// Optimistic: surface the user bubble immediately so the UI doesn't
 		// feel like the message vanished. The next queue_update event will
 		// reconcile (no-op if it matches; visible if SDK rejected text).
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text });
+		dispatchTo(sessionFile, { type: "QUEUE_OPTIMISTIC", kind: "steer", text });
 		try {
-			await invoke("steer_prompt", { text });
+			await invoke("steer_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] steer_prompt rejected:", err);
 		}
-	}, []);
+	}, [dispatchTo]);
 
 	/**
 	 * Queue a follow-up message on the running session (issue #201, PR 1).
 	 * Delivered after the agent finishes all current work. Same error
 	 * handling rationale as {@link steerStream}.
 	 */
-	const followUpStream = useCallback(async (text: string) => {
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
+	const followUpStream = useCallback(async (sessionFile: string, text: string) => {
+		dispatchTo(sessionFile, { type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
 		try {
-			await invoke("follow_up_prompt", { text });
+			await invoke("follow_up_prompt", { sessionFile, text });
 		} catch (err) {
 			log.warn("[cowork] follow_up_prompt rejected:", err);
 		}
-	}, []);
+	}, [dispatchTo]);
 
 	/**
 	 * Atomically drain the SDK queue and return its contents. Issue #201
@@ -810,9 +900,9 @@ export function usePiStream() {
 	 * steerStream/followUpStream. Returns empty arrays on failure (so the
 	 * caller can render "nothing to edit" rather than crash).
 	 */
-	const clearQueue = useCallback(async (): Promise<QueueSnapshot> => {
+	const clearQueue = useCallback(async (sessionFile: string): Promise<QueueSnapshot> => {
 		try {
-			const raw = (await invoke("clear_queue")) as {
+			const raw = (await invoke("clear_queue", { sessionFile })) as {
 				steering?: string[];
 				followUp?: string[];
 			};
@@ -826,39 +916,280 @@ export function usePiStream() {
 		}
 	}, []);
 
-	/**
-	 * Global queue_update listener. The Rust event router emits
-	 * `queue_update` globally (separate from the prompt channel) so we
-	 * get queue mutations even when no prompt is active — e.g. a
-	 * follow-up dequeues right after STREAM_COMPLETE.
-	 */
-	// #268 — seed the reasoning level on mount and whenever the sidecar
+	const setSessionModel = useCallback((sessionFile: string, model: SessionModel) => {
+		dispatchTo(sessionFile, { type: "SET_SESSION_MODEL", model });
+	}, [dispatchTo]);
 
-	useEffect(() => {
-		let unlisten: (() => void) | undefined;
-		listen<{ steering?: string[]; followUp?: string[] }>("queue_update", (evt) => {
-			const payload = evt.payload ?? {};
-			dispatch({
-				type: "QUEUE_UPDATE",
-				steering: payload.steering ?? [],
-				followUp: payload.followUp ?? [],
+	const setSessionMode = useCallback(async (
+		sessionFile: string,
+		mode: SessionMode,
+	): Promise<void> => {
+		await ensureSession(sessionFile);
+		if (deletedRef.current.has(sessionFile)) throw new Error("Session was deleted");
+
+		const previous = modeRef.current.get(sessionFile) ?? "chat";
+		const version = (modeVersionRef.current.get(sessionFile) ?? 0) + 1;
+		modeVersionRef.current.set(sessionFile, version);
+		modeRef.current.set(sessionFile, mode);
+		dispatchTo(sessionFile, { type: "SET_SESSION_MODE", mode });
+
+		const prior = modeSavesRef.current.get(sessionFile) ?? Promise.resolve();
+		const save = prior
+			.catch(() => undefined)
+			.then(async () => {
+				await invoke("set_session_mode", { sessionFile, mode });
 			});
-		}).then((fn) => {
-			unlisten = fn;
-		});
-		return () => {
-			unlisten?.();
-		};
+		modeSavesRef.current.set(sessionFile, save);
+
+		try {
+			await save;
+		} catch (error) {
+			// Ignore a deleted/superseded failure: the later mutation or tombstone
+			// determines truth. Never let rollback recreate a removed cache entry.
+			if (
+				deletedRef.current.has(sessionFile) ||
+				modeVersionRef.current.get(sessionFile) !== version
+			) return;
+			modeRef.current.set(sessionFile, previous);
+			dispatchTo(sessionFile, { type: "SET_SESSION_MODE", mode: previous });
+			throw error;
+		} finally {
+			if (modeSavesRef.current.get(sessionFile) === save) {
+				modeSavesRef.current.delete(sessionFile);
+			}
+		}
+	}, [dispatchTo, ensureSession]);
+
+	const removeSession = useCallback((sessionFile: string) => {
+		deletedRef.current.add(sessionFile);
+		loadedRef.current.delete(sessionFile);
+		loadingRef.current.delete(sessionFile);
+		modeRef.current.delete(sessionFile);
+		modeVersionRef.current.delete(sessionFile);
+		modeSavesRef.current.delete(sessionFile);
+		dispatchSessions({ type: "REMOVE_SESSION", sessionFile });
 	}, []);
+
+	/**
+	 * Route ONE global `session_event` envelope to its keyed reducer entry.
+	 * `agent_end` intentionally dispatches nothing: the normalized terminal
+	 * `done` is the authoritative completion (Phase 1 prompt contract), and
+	 * dispatching STREAM_COMPLETE on both would double-finalize one prompt.
+	 */
+	const handleEnvelope = useCallback((envelope: SessionEventEnvelope) => {
+		const sessionFile = envelope.sessionFile;
+		if (!sessionFile || deletedRef.current.has(sessionFile)) return;
+		const event = envelope.event;
+		try {
+			switch (event.type) {
+				case "message_update": {
+					const msgEvent = event as PiMessageUpdateEvent;
+					const ame = msgEvent.assistantMessageEvent;
+
+					if (msgEvent.message?.model || msgEvent.message?.provider) {
+						dispatchTo(sessionFile, {
+							type: "MODEL_INFO",
+							model: msgEvent.message.model || "",
+							provider: msgEvent.message.provider || "",
+						});
+					}
+
+					switch (ame.type) {
+						case "thinking_delta":
+							dispatchTo(sessionFile, { type: "THINKING_DELTA", delta: ame.delta });
+							break;
+						case "text_delta":
+							dispatchTo(sessionFile, { type: "TEXT_DELTA", delta: ame.delta });
+							break;
+						/**
+						 * text_end — pi emits this when a streaming content block
+						 * completes. The `content` field has the authoritative final
+						 * text, correcting any delta accumulation errors (#307).
+						 */
+						case "text_end":
+							if (ame.content) {
+								dispatchTo(sessionFile, { type: "TEXT_END", content: ame.content });
+							}
+							break;
+						case "toolcall_end": {
+							const tc = ame.toolCall;
+							dispatchTo(sessionFile, {
+								type: "TOOL_CALL_START",
+								toolCall: extractToolCallInfo(tc),
+							});
+							break;
+						}
+						case "error":
+							// Forward the actual error reason or message, not
+							// a generic placeholder. Provider 400/500 errors
+							// carry the API response in `reason` or `message`,
+							// not just "aborted".
+							dispatchTo(sessionFile, {
+								type: "STREAM_ERROR",
+								error:
+									(ame as unknown as { message?: string }).message || ame.reason || "API error",
+							});
+							break;
+					}
+					break;
+				}
+
+				case "message_start": {
+					if (event.message?.role === "assistant") {
+						dispatchTo(sessionFile, { type: "TURN_RESET" });
+					} else if (event.message?.role === "user") {
+						// SDK-injected user message: the prompt echo (skipped once)
+						// or a delivered steer/follow-up. Extract its text.
+						const content = (event.message.content || [])
+							.filter((c) => c.type === "text")
+							.map((c) => (c as { text: string }).text)
+							.join("");
+						dispatchTo(sessionFile, { type: "USER_MESSAGE_STARTED", content });
+					}
+					break;
+				}
+
+				// No separate state: status is already driven by tool-call events.
+				case "tool_execution_start":
+					break;
+
+				case "tool_execution_update": {
+					const te = event as PiToolExecutionUpdateEvent;
+					const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
+					dispatchTo(sessionFile, {
+						type: "TOOL_CALL_UPDATE",
+						id: te.toolCallId,
+						result: partialText,
+						status: "running",
+					});
+					dispatchTo(sessionFile, {
+						type: "TOOL_PARTIAL_OUTPUT",
+						id: te.toolCallId,
+						partialOutput: partialText,
+					});
+					break;
+				}
+
+				case "tool_execution_end": {
+					const te = event as PiToolExecutionEndEvent;
+					dispatchTo(sessionFile, {
+						type: "TOOL_CALL_UPDATE",
+						id: te.toolCallId,
+						result: (te.result?.content || []).map((c) => c.text).join(""),
+						status: te.isError ? "error" : "completed",
+						isError: te.isError,
+						details: te.result?.details as Record<string, unknown> | undefined,
+					});
+					break;
+				}
+
+				case "message_end": {
+					const error = errorFromFinalMessage(event.message);
+					dispatchTo(
+						sessionFile,
+						error ? { type: "STREAM_ERROR", error } : { type: "MESSAGE_END" },
+					);
+					break;
+				}
+
+				case "agent_end":
+					// No reducer terminal — the guaranteed normalized `done` settles.
+					break;
+
+				case "done":
+					dispatchTo(sessionFile, { type: "STREAM_COMPLETE" });
+					break;
+
+				// Pi SDK session-level queue snapshot (#201 PR 3).
+				case "queue_update": {
+					const qe = event as unknown as {
+						steering?: string[];
+						followUp?: string[];
+					};
+					dispatchTo(sessionFile, {
+						type: "QUEUE_UPDATE",
+						steering: qe.steering ?? [],
+						followUp: qe.followUp ?? [],
+					});
+					break;
+				}
+
+				case "error": {
+					const errEvent = event as PiErrorEvent;
+					const wireError: SessionWireError = {
+						code: errEvent.code ?? "provider_error",
+						message: errEvent.message || errEvent.details || "Unknown error",
+						retryable: errEvent.retryable ?? false,
+						details: errEvent.details,
+					};
+					dispatchTo(sessionFile, {
+						type: "STREAM_ERROR",
+						error: wireError.message,
+						sessionError: wireError,
+					});
+					break;
+				}
+				default:
+					break;
+			}
+		} catch (err) {
+			log.error("[cowork] Error processing event:", err, event);
+		}
+	}, [dispatchTo]);
+
+	/**
+	 * Subscribe once to the canonical relay streams. The listener gate
+	 * resolves only after BOTH subscriptions exist, so no prompt/load can
+	 * precede a registered listener (startStream/ensureSession await it).
+	 * Sidecar loss bumps the process epoch so old loads cannot hydrate.
+	 */
+	useEffect(() => {
+		let disposed = false;
+		let unlistenSession: (() => void) | undefined;
+		let unlistenLost: (() => void) | undefined;
+
+		void Promise.all([
+			listen<SessionEventEnvelope>("session_event", ({ payload }) => {
+				if (!payload?.sessionFile || deletedRef.current.has(payload.sessionFile)) return;
+				handleEnvelope(payload);
+			}),
+			listen("sidecar_lost", () => {
+				sidecarEpochRef.current += 1;
+				loadedRef.current.clear();
+				loadingRef.current.clear();
+				dispatchSessions({ type: "SIDECAR_LOST" });
+			}),
+		]).then(([sessionUnlisten, lostUnlisten]) => {
+			if (disposed) {
+				sessionUnlisten();
+				lostUnlisten();
+				return;
+			}
+			unlistenSession = sessionUnlisten;
+			unlistenLost = lostUnlisten;
+			resolveListenerReadyRef.current?.();
+		});
+
+		return () => {
+			disposed = true;
+			unlistenSession?.();
+			unlistenLost?.();
+		};
+	}, [handleEnvelope]);
 
 	return {
 		state,
+		states,
+		getSessionState: (sessionFile: string) => statesRef.current.get(sessionFile),
+		hydrateSession,
+		ensureSession,
 		startStream,
 		abortStream,
 		steerStream,
 		followUpStream,
 		clearQueue,
-		dispatch,
-		toolPhase,
+		setSessionModel,
+		setSessionMode,
+		removeSession,
 	};
 }

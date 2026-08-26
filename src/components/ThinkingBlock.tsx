@@ -41,7 +41,7 @@ export function ThinkingBlock({
 			<button
 				type="button"
 				onClick={() => setLocalExpanded(!localExpanded)}
-				className="flex items-center gap-1 text-[11px] opacity-60 hover:opacity-90 transition-opacity"
+				className="flex items-center gap-1 text-[0.8125rem] opacity-60 hover:opacity-90 transition-opacity"
 			>
 				<ChevronRight
 					className="w-3 h-3 flex-shrink-0 transition-transform"
@@ -53,11 +53,11 @@ export function ThinkingBlock({
 					{thinking && ` · ${thinking.length} chars`}
 				</span>
 				{!expanded && thinking && (
-					<span className="text-[10px] opacity-40 ml-1">· Ctrl+O to expand</span>
+					<span className="text-[0.8125rem] opacity-40 ml-1">· Ctrl+O to expand</span>
 				)}
 			</button>
 			{expanded && (
-				<div className="mt-0.5 pl-4 text-[11px] whitespace-pre-wrap opacity-70 leading-relaxed">
+				<div className="mt-0.5 pl-4 text-[0.8125rem] whitespace-pre-wrap opacity-70 leading-relaxed">
 					{thinking || "..."}
 				</div>
 			)}
@@ -121,12 +121,12 @@ function SimpleThinking({
 			{/* Latest snippet (collapsed) or full thinking (expanded) */}
 			{expanded ? (
 				thinking && (
-					<div className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap pl-6 text-[12px] leading-relaxed opacity-70">
+					<div className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap pl-6 text-[0.75rem] leading-relaxed opacity-70">
 						{thinking}
 					</div>
 				)
 			) : preview ? (
-				<div className="mt-1 truncate pl-6 text-[12px] opacity-55">{preview}</div>
+				<div className="mt-1 truncate pl-6 text-[0.75rem] opacity-55">{preview}</div>
 			) : null}
 		</div>
 	);

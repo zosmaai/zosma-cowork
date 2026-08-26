@@ -13,22 +13,24 @@ import type { Components } from "react-markdown";
  * In-page fragment links (`#section`) keep their default behavior.
  */
 export const markdownComponents: Components = {
-	a({ href, children, ...props }) {
+	a({ href, children, title }) {
+		const isFragment = href?.startsWith("#") ?? false;
 		const isExternal = isExternalUrl(href);
+		if (!href || (!isFragment && !isExternal)) return <span>{children}</span>;
 
 		return (
 			<a
 				href={href}
+				title={title}
 				// Hints for the browser-dev fallback path; ignored inside Tauri
 				// because we preventDefault and open via the backend.
 				target={isExternal ? "_blank" : undefined}
 				rel={isExternal ? "noopener noreferrer" : undefined}
-				onClick={(e) => {
-					if (!isExternal || !href) return;
-					e.preventDefault();
+				onClick={(event) => {
+					if (!isExternal) return;
+					event.preventDefault();
 					void openExternalUrl(href);
 				}}
-				{...props}
 			>
 				{children}
 			</a>

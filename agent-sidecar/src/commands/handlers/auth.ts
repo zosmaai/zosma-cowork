@@ -123,7 +123,7 @@ export async function handleCancelOAuth(deps: HandlerDependencies, cmd: any): Pr
 }
 
 export async function handleLogout(deps: HandlerDependencies, cmd: any): Promise<void> {
-	if (!deps.initialized || !deps.authStorage || !deps.modelRegistry || !deps.sessionManager) {
+	if (!deps.initialized || !deps.authStorage || !deps.modelRegistry || !deps.runtimeManager) {
 		sendMsg({ type: "error", id: cmd.id, message: "Not initialized" });
 		return;
 	}

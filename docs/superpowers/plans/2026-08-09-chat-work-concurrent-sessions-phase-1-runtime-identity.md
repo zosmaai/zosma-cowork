@@ -1914,3 +1914,19 @@ Phase 1 is complete only when:
 - existing single-session UX and all CI gates remain green.
 
 This plan intentionally stops at **Phase 1: Session Runtime and Identity Foundation**. Phase 2 requires a separate detailed plan for keyed frontend stream state, true visible concurrency, cached switching, and sidebar runtime indicators.
+
+---
+
+## Post-Execution Notes / Phase 2 Contracts
+
+These notes record the implemented Phase 1 boundary. They are not retroactive changes to the execution steps above.
+
+- Every new session-bound command must extend `SessionBoundCommand` in `agent-sidecar/src/commands/types.ts`.
+- Required props added to shared components require a grep of every production and test renderer; Phase 1 additionally touched `MessageInput.steering.test.tsx`, `MessageInput.queue.test.tsx`, `MessageInput.paste.test.tsx`, and `CommandPalette.test.tsx` beyond the original file list.
+- Ready payloads carry `session` only when initialization creates the first runtime; `defaultWorkspace` remains available independently. In-process auth/settings refreshes call `runtimeManager.reloadAll()` and never replace loaded runtime identities.
+- Session errors retain structured `code`, `message`, and `retryable` fields. Prompt failures always terminate with `done`.
+- `get_workspace` returns an object containing the target runtime's `cwd`; `abort` is awaited before its result is returned.
+- `load_session` is idempotent and duplicate cold loads share one sidecar promise.
+- The frontend Phase 1 reducer intentionally remains single-active and guards late channel events by active session plus generation.
+- Phase 2 must replace that guard with keyed routing, remove stop-on-switch, preserve every loaded session's complete state, and keep model/workspace/queue/error operations session-local.
+- Phase 1 currently emits each full envelope through global `session_event`, while the prompt-channel event branch forwards only the inner event. Phase 2 should make global `session_event` the sole frontend stream bus and remove the redundant prompt-channel path rather than maintaining two event routes that can diverge or double-dispatch.

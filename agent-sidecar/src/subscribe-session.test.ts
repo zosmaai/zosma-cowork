@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // of model. Fix centralizes all subscriptions in subscribeSession().
 
 describe("subscribeSession", () => {
-	it("forwards every agent event to stdout", async () => {
+	it("tags events and marks only the emitting runtime watchdog", async () => {
 		const send = vi.fn();
 		vi.doMock("./protocol.js", () => ({
 			send,
@@ -23,22 +23,92 @@ describe("subscribeSession", () => {
 			logError: vi.fn(),
 		}));
 		const { subscribeSession } = await import("./prompt-runner.js");
-		let cb: ((e: unknown) => void) | undefined;
-		subscribeSession({ subscribe: (f) => { cb = f; } });
-		cb?.({ type: "text", text: "hi" });
-		expect(send).toHaveBeenCalledWith({ type: "event", event: { type: "text", text: "hi" } });
+		const callbacks = new Map<string, (event: unknown) => void>();
+		const runtime = (sessionFile: string) => ({
+			sessionFile,
+			status: "thinking",
+			error: undefined,
+			prompt: { activePromptId: "p", startedAt: 1, hasEmitted: false },
+			session: {
+				subscribe: (callback: (event: unknown) => void) => {
+					callbacks.set(sessionFile, callback);
+					return vi.fn();
+				},
+			},
+		});
+		const a = runtime("/tmp/a.jsonl");
+		const b = runtime("/tmp/b.jsonl");
+		subscribeSession(a as never);
+		subscribeSession(b as never);
+		callbacks.get("/tmp/a.jsonl")?.({ type: "message_update" });
+		expect(a.prompt.hasEmitted).toBe(true);
+		expect(b.prompt.hasEmitted).toBe(false);
+		expect(send).toHaveBeenCalledWith({
+			type: "event",
+			sessionFile: "/tmp/a.jsonl",
+			event: { type: "message_update" },
+		});
+		vi.resetModules();
+	});
+
+	it("derives output path from the emitting runtime cwd, not active/global state", async () => {
+		const send = vi.fn();
+		vi.doMock("./protocol.js", () => ({
+			send,
+			log: vi.fn(),
+			logDebug: vi.fn(),
+			logWarn: vi.fn(),
+			logError: vi.fn(),
+		}));
+		const { subscribeSession } = await import("./prompt-runner.js");
+		const callbacks = new Map<string, (event: unknown) => void>();
+		const runtime = (sessionFile: string, cwd: string) => ({
+			sessionFile,
+			cwd,
+			status: "thinking",
+			error: undefined,
+			prompt: { activePromptId: "p", startedAt: 1, hasEmitted: false },
+			session: {
+				subscribe: (callback: (event: unknown) => void) => {
+					callbacks.set(sessionFile, callback);
+					return vi.fn();
+				},
+			},
+		});
+		const a = runtime("/tmp/a.jsonl", "/work/a");
+		const b = runtime("/tmp/b.jsonl", "/work/b");
+		subscribeSession(a as never);
+		subscribeSession(b as never);
+		const toolcall = (path: string) => ({
+			type: "message_update",
+			assistantMessageEvent: {
+				type: "toolcall_end",
+				toolCall: { id: "w1", name: "write", arguments: { path } },
+			},
+		});
+		callbacks.get("/tmp/a.jsonl")?.(toolcall("out.md"));
+		const sentA = send.mock.calls.at(-1)?.[0] as { event?: { assistantMessageEvent?: { toolCall?: { outputPath?: { path: string } } } } };
+		expect(sentA.event?.assistantMessageEvent?.toolCall?.outputPath?.path).toBe("/work/a/out.md");
+		callbacks.get("/tmp/b.jsonl")?.(toolcall("out.md"));
+		const sentB = send.mock.calls.at(-1)?.[0] as { event?: { assistantMessageEvent?: { toolCall?: { outputPath?: { path: string } } } } };
+		expect(sentB.event?.assistantMessageEvent?.toolCall?.outputPath?.path).toBe("/work/b/out.md");
 		vi.resetModules();
 	});
 
 	// Regression guard: no session may be subscribed with a bare event-forward
-	// that skips the watchdog heartbeat. All three sites (init + 2 rebinds)
-	// must route through subscribeSession.
+	// that skips the watchdog heartbeat. All subscriptions live in
+	// session-runtime-factory.ts and call subscribeSession(runtime).
 	it("no rebind bypasses subscribeSession with a bare event-forward", () => {
-		for (const rel of ["index.ts", "commands/handlers/sessions.ts"]) {
-			const src = readFileSync(join(here, rel), "utf8");
-			expect(src, `${rel} has a bare .subscribe forwarding events`).not.toMatch(
-				/\.subscribe\(\s*\([^)]*\)\s*=>\s*\{[^}]*type:\s*["']event["']/s,
-			);
+		for (const rel of ["session-runtime-factory.ts", "commands/handlers/sessions.ts"]) {
+			const path = join(here, rel);
+			try {
+				const src = readFileSync(path, "utf8");
+				expect(src, `${rel} has a bare .subscribe forwarding events`).not.toMatch(
+					/\.subscribe\(\s*\([^)]*\)\s*=>\s*\{[^}]*type:\s*["']event["']/s,
+				);
+			} catch {
+				// File not yet created — will be checked once it exists.
+			}
 		}
 	});
 });

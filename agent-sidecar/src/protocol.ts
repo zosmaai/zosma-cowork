@@ -53,31 +53,16 @@ export function logDebug(...args: unknown[]) {
  * exits cleanly instead of throwing.
  */
 export function send(obj: unknown) {
-	const busEvent = obj as {
-		type: string;
-		id?: string;
-		data?: unknown;
-		message?: string;
-		event?: unknown;
-	};
+	const busEvent = obj as Record<string, unknown> & { type?: string };
 	if (busEvent.type === "event") {
 		eventBus.publish({ type: "event", data: busEvent });
-	} else if (busEvent.type === "result") {
-		eventBus.publish({
-			type: "result",
-			id: busEvent.id || "",
-			data: busEvent.data,
-		});
-	} else if (busEvent.type === "done") {
-		eventBus.publish({ type: "done", id: busEvent.id || "" });
-	} else if (busEvent.type === "error") {
-		eventBus.publish({
-			type: "error",
-			id: busEvent.id || "",
-			message: busEvent.message || "",
-		});
-	} else if (busEvent.type === "ready") {
-		eventBus.publish({ type: "ready" });
+	} else if (
+		busEvent.type === "result" ||
+		busEvent.type === "done" ||
+		busEvent.type === "error" ||
+		busEvent.type === "ready"
+	) {
+		eventBus.publish(busEvent as unknown as import("./event-bus.js").BusEvent);
 	}
 
 	try {

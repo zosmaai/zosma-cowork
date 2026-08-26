@@ -35,7 +35,7 @@ export function FileMentionPopup({
 			style={{ top: anchorRect.top, left: anchorRect.left }}
 		>
 			{breadcrumb && (
-				<div className="px-2 py-1 text-[10px] text-muted-foreground border-b border-border truncate">
+				<div className="px-2 py-1 text-[0.8125rem] text-muted-foreground border-b border-border truncate">
 					{breadcrumb}
 				</div>
 			)}

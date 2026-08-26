@@ -2,40 +2,16 @@
  * Zosma Content CoWork — Prompt Runner
  *
  * Runs one prompt to completion on the agent session, with support for
- * startup watchdog and auto-abort timeout.
+ * startup watchdog and auto-abort timeout. All prompt/watchdog state is
+ * now runtime-local (no module globals) so multiple sessions can run
+ * independently.
  */
 
 import { send, log, logError, logDebug } from "./protocol.js";
+import { normalizeSessionToolEvent } from "./session-output-path.js";
+import { makeSessionDone, makeSessionError, makeSessionEvent } from "./session-protocol.js";
+import type { SessionRuntime } from "./session-runtime-manager.js";
 
-/** Tracks whether the current prompt has emitted ANY agent event. */
-export let currentPromptStartedAt = 0;
-export let promptHasEmitted = false;
-
-/** Tracks the current prompt ID for abort correlation. */
-export let activePromptId: string | null = null;
-
-export function setActivePromptId(id: string | null): void {
-	activePromptId = id;
-}
-
-export function clearPromptFlags(): void {
-	currentPromptStartedAt = 0;
-	promptHasEmitted = false;
-}
-
-/** Mark the current prompt as having emitted at least one agent event. */
-export function markPromptEmitted(): void {
-	promptHasEmitted = true;
-}
-
-/**
- * Forward every agent event to stdout AND feed the startup watchdog.
- *
- * MUST be the single subscription used by init and every session rebind
- * (new_session, load_session). If a rebind subscribes without marking the
- * prompt as emitted, promptHasEmitted stays false and the 20s startup
- * watchdog aborts every turn — regardless of model. See sessions.ts.
- */
 /** Streaming deltas fire many times per second — excluded from sequence trace. */
 const HIGH_FREQ_EVENTS = new Set([
 	"text_delta",
@@ -44,26 +20,43 @@ const HIGH_FREQ_EVENTS = new Set([
 	"tool_execution_update",
 ]);
 
-export function subscribeSession(session: { subscribe: (cb: (e: unknown) => void) => void }): void {
-	session.subscribe((event: unknown) => {
-		if (currentPromptStartedAt > 0) {
-			markPromptEmitted();
+type PromptRuntime = Pick<
+	SessionRuntime,
+	"sessionFile" | "session" | "prompt" | "status" | "error" | "cwd"
+>;
+
+/**
+ * Subscribe to a single runtime's agent events. Updates only that runtime's
+ * watchdog and status fields, and tags every event with its sessionFile.
+ * Returns the SDK unsubscribe function so the runtime can dispose it.
+ */
+export function subscribeSession(runtime: PromptRuntime): () => void {
+	return runtime.session.subscribe((event: unknown) => {
+		if (runtime.prompt.startedAt > 0) runtime.prompt.hasEmitted = true;
+		const eventType = (event as { type?: string })?.type;
+		if (eventType === "tool_execution_start" || eventType === "tool_execution_update") {
+			runtime.status = "tool_call";
+		} else if (eventType === "message_update") {
+			runtime.status = "responding";
+		} else if (eventType === "agent_start" || eventType === "turn_start") {
+			runtime.status = "thinking";
+		} else if (eventType === "agent_end") {
+			runtime.status = "idle";
+		} else if (eventType === "error") {
+			runtime.status = "error";
 		}
-		// Sequence trace: log every lifecycle event type (skipping high-frequency
-		// streaming deltas) so the exact order of turn/tool/retry events is
-		// reconstructable from logs. Debug-gated — off in production by default.
-		const et = (event as { type?: string })?.type;
-		if (et && !HIGH_FREQ_EVENTS.has(et)) {
-			logDebug("event: %s", et);
+		if (eventType && !HIGH_FREQ_EVENTS.has(eventType)) {
+			logDebug("event[%s]: %s", runtime.sessionFile, eventType);
 		}
-		send({ type: "event", event });
+		send(makeSessionEvent(runtime.sessionFile, normalizeSessionToolEvent(event, runtime.cwd)));
 	});
 }
 
 /**
  * Runs one prompt to completion on the agent session.
  * Extracted from the "prompt" command so it can be scheduled on the
- * promptChain instead of being awaited inline in the stdin read loop.
+ * runtime-local promptScheduler instead of being awaited inline in the
+ * stdin read loop. All watchdog state lives on the runtime now.
  */
 export async function runPromptTask(
 	cmd: {
@@ -71,78 +64,73 @@ export async function runPromptTask(
 		text: string;
 		_origin?: string;
 	},
-	session: {
-		model?: { provider?: string; id?: string; name?: string };
-		prompt: (text: string) => Promise<unknown>;
-		abort: () => void;
-		agent?: { state?: { messages?: unknown[] } };
-	} | undefined,
-	zosmaDir: string,
-	workspaceCwd: string,
+	runtime: PromptRuntime,
 ): Promise<void> {
-	if (!session) {
-		send({ type: "error", id: cmd.id, message: "Not initialized" });
-		send({ type: "done", id: cmd.id });
-		return;
-	}
-	const promptModel = session.model;
-	log("prompt: using model %s/%s", promptModel?.provider, promptModel?.id);
-	activePromptId = cmd.id;
-	logDebug("prompt: start id=%s", cmd.id);
+	const promptModel = runtime.session.model;
+	log("prompt[%s]: using model %s/%s", runtime.sessionFile, promptModel?.provider, promptModel?.id);
+	runtime.prompt.activePromptId = cmd.id;
+	runtime.prompt.startedAt = Date.now();
+	runtime.prompt.hasEmitted = false;
+	runtime.status = "thinking";
+	runtime.error = undefined;
+	logDebug("prompt[%s]: start id=%s", runtime.sessionFile, cmd.id);
 
 	// Startup timeout (20s): if the model doesn't produce ANY agent events
 	// within 20 seconds, abort the prompt.
 	const STARTUP_TIMEOUT_MS = 20_000;
 	const PROMPT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-	currentPromptStartedAt = Date.now();
-	promptHasEmitted = false;
 	const safeAbort = () => {
 		try {
-			session.abort();
+			runtime.session.abort();
 		} catch {
 			// ignore if session already completed
 		}
 	};
 
 	const startupTimer = setTimeout(() => {
-		if (promptHasEmitted) return;
+		if (runtime.prompt.hasEmitted) return;
 		logError(
-			"prompt: no events within %dms — aborting (model may have failed to load)",
+			"prompt[%s]: no events within %dms — aborting (model may have failed to load)",
+			runtime.sessionFile,
 			STARTUP_TIMEOUT_MS,
 		);
 		safeAbort();
 	}, STARTUP_TIMEOUT_MS);
 
 	const abortTimeout = setTimeout(() => {
-		logError("prompt: timeout after %dms — aborting session", PROMPT_TIMEOUT_MS);
+		logError("prompt[%s]: timeout after %dms — aborting session", runtime.sessionFile, PROMPT_TIMEOUT_MS);
 		safeAbort();
 	}, PROMPT_TIMEOUT_MS);
 
-
 	try {
-		await session.prompt(cmd.text);
+		await runtime.session.prompt(cmd.text);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		if (promptHasEmitted || Date.now() - currentPromptStartedAt <= STARTUP_TIMEOUT_MS) {
-			logError("prompt error: %s", msg);
-			send({ type: "error", id: cmd.id, message: msg });
+		const wireError = {
+			code: "provider_error" as const,
+			message:
+				runtime.prompt.hasEmitted || Date.now() - runtime.prompt.startedAt <= STARTUP_TIMEOUT_MS
+					? msg
+					: "Model failed to load or is unresponsive. Check model availability and try again.",
+			retryable: true,
+		};
+		if (!runtime.prompt.hasEmitted) {
+			logError("prompt[%s]: aborted (startup timeout) — %s", runtime.sessionFile, msg);
 		} else {
-			logError("prompt: aborted (startup timeout) — %s", msg);
-			send({
-				type: "error",
-				id: cmd.id,
-				message:
-					"Model failed to load or is unresponsive. Check model availability and try again.",
-			});
+			logError("prompt[%s] error: %s", runtime.sessionFile, msg);
 		}
+		runtime.error = wireError;
+		runtime.status = "error";
+		send(makeSessionError(cmd.id, runtime.sessionFile, wireError));
 	} finally {
 		clearTimeout(abortTimeout);
 		clearTimeout(startupTimer);
-		currentPromptStartedAt = 0;
-		promptHasEmitted = false;
-		send({ type: "done", id: cmd.id });
-		logDebug("prompt: done id=%s", cmd.id);
-		activePromptId = null;
+		runtime.prompt.activePromptId = null;
+		runtime.prompt.startedAt = 0;
+		runtime.prompt.hasEmitted = false;
+		send(makeSessionDone(cmd.id, runtime.sessionFile));
+		logDebug("prompt[%s]: done id=%s", runtime.sessionFile, cmd.id);
+		if (!runtime.error) runtime.status = "idle";
 	}
 }
 

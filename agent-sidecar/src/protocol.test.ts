@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeLevel, logAt } from "./protocol.js";
+import { activeLevel, logAt, send } from "./protocol.js";
+import { eventBus } from "./event-bus.js";
+import { makeSessionError } from "./session-protocol.js";
 
 const orig = process.env.SIDECAR_LOG_LEVEL;
 afterEach(() => {
@@ -43,5 +45,33 @@ describe("logAt", () => {
 		const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		logAt("debug", "a", "b");
 		expect(spy).toHaveBeenCalledWith("[sidecar:debug] a b\n");
+	});
+});
+
+describe("send preserves session-aware structured error fields", () => {
+	it("forwards sessionFile, code, and retryable through the event bus", () => {
+		const received: unknown[] = [];
+		const unsub = eventBus.subscribe((evt) => received.push(evt));
+		vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+		const envelope = makeSessionError("p-1", "/tmp/a.jsonl", {
+			code: "session_not_loaded",
+			message: "missing",
+			retryable: true,
+		});
+		send(envelope);
+
+		const busEvent = received.find((e) => (e as { type?: string })?.type === "error");
+		expect(busEvent).toMatchObject({
+			type: "error",
+			id: "p-1",
+			sessionFile: "/tmp/a.jsonl",
+			code: "session_not_loaded",
+			message: "missing",
+			retryable: true,
+		});
+
+		unsub();
+		vi.restoreAllMocks();
 	});
 });

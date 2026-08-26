@@ -1,5 +1,12 @@
 import { describe, expect, it, test } from "vitest";
-import { type ArtifactType, detectArtifactType, extractFilePaths, parentDir } from "./artifacts";
+import {
+	type ArtifactType,
+	detectArtifactType,
+	extractFilePaths,
+	parentDir,
+	sandboxedHtml,
+	sanitizeSvg,
+} from "./artifacts";
 
 // ─── extractFilePaths ───────────────────────────────────────────────
 
@@ -81,6 +88,33 @@ describe("detectArtifactType", () => {
 
 	it.each(testCases)("detects %s as %s", (path, expected) => {
 		expect(detectArtifactType(path)).toBe(expected);
+	});
+});
+
+// ─── parentDir ──────────────────────────────────────────────────────
+
+describe("artifact sanitizers", () => {
+	it("removes executable SVG content and unsafe references", () => {
+		const sanitized = sanitizeSvg(
+			'<svg onload="pwn()"><style>.x{fill:url(https://bad)}</style><script>pwn()</script><a href="https://bad"><circle style="fill:url(#x)"/></a></svg>',
+		);
+		expect(sanitized).not.toContain("script");
+		expect(sanitized).not.toContain("onload");
+		expect(sanitized).not.toContain("https://bad");
+		expect(sanitized).not.toContain("style=");
+	});
+
+	it("rejects malformed SVG", () => {
+		expect(sanitizeSvg("<svg><g></svg>")).toBeNull();
+	});
+
+	it("removes HTML navigation and remote loads", () => {
+		const sanitized = sandboxedHtml(
+			'<meta http-equiv="refresh" content="0;url=https://bad"><a href="https://bad">go</a><img src="https://bad/x"><script>pwn()</script>',
+		);
+		expect(sanitized).toContain("default-src 'none'");
+		expect(sanitized).not.toContain("https://bad");
+		expect(sanitized).not.toContain("<script");
 	});
 });
 

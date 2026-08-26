@@ -13,21 +13,40 @@ describe("ArtifactPreview", () => {
 		);
 		const iframe = container.querySelector("iframe");
 		expect(iframe).toBeInTheDocument();
-		expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+		expect(iframe).toHaveAttribute("sandbox", "");
 		expect(screen.getByText("test.html")).toBeInTheDocument();
 	});
 
-	it("renders SVG inline", () => {
+	it("blocks scripts and remote loading in HTML previews", () => {
 		const { container } = render(
 			<ArtifactPreview
-				filePath="/tmp/logo.svg"
-				fileContent='<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="5"/></svg>'
+				filePath="/work/a.html"
+				fileContent='<meta http-equiv="refresh" content="0;url=https://tracker.invalid"><script>window.pwned=1</script><a href="https://tracker.invalid/x">go</a><img src="https://tracker.invalid/x">'
+				artifactType="html"
+			/>,
+		);
+		const iframe = container.querySelector("iframe");
+		expect(iframe).toHaveAttribute("sandbox", "");
+		const srcdoc = iframe?.getAttribute("srcdoc") ?? "";
+		expect(srcdoc).toContain("default-src 'none'");
+		expect(srcdoc).not.toContain("tracker.invalid");
+		expect(srcdoc).not.toContain("<script");
+		expect(srcdoc).not.toContain("onload=");
+	});
+
+	it("renders sanitized SVG as an image rather than executable inline markup", () => {
+		const { container } = render(
+			<ArtifactPreview
+				filePath="/work/a.svg"
+				fileContent='<svg onload="window.pwned=1"><script>alert(1)</script><circle/></svg>'
 				artifactType="svg"
 			/>,
 		);
-		expect(screen.getByText("logo.svg")).toBeInTheDocument();
-		const svgEl = container.querySelector("svg");
-		expect(svgEl).toBeInTheDocument();
+		expect(container.querySelector("svg")).toBeNull();
+		expect(container.querySelector("script")).toBeNull();
+		const image = screen.getByRole("img", { name: "a.svg" });
+		expect(decodeURIComponent(image.getAttribute("src") ?? "")).not.toContain("script");
+		expect(decodeURIComponent(image.getAttribute("src") ?? "")).not.toContain("onload");
 	});
 
 	it("renders image preview with alt text", () => {

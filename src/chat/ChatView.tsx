@@ -3,15 +3,31 @@ import { DropZoneOverlay } from "@/components/DropZoneOverlay";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
+import { SelectionActions } from "@/components/SelectionActions";
+import { SessionEmptyIntro, SessionStarterPrompts } from "@/components/SessionEmptyState";
+import { QueuedMessages } from "@/chat/QueuedMessages";
+import { WorkPanel } from "@/components/WorkPanel";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { useSelectionActions } from "@/hooks/useSelectionActions";
+import { formatSelectionPrompt, START_WRITING_INSTRUCTION } from "@/lib/selection-actions";
+import { deriveWorkProjection } from "@/lib/work-projections";
+import { invoke } from "@tauri-apps/api/core";
 import type { FileAttachment, ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
-import { motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SessionMode } from "@/types/session-runtime";
+import { WorkHeader } from "@/work/WorkHeader";
+import { WorkSessionView } from "@/work/WorkSessionView";
+import { useReducedMotion } from "motion/react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type StreamStateStatus = "idle" | "thinking" | "tool_call" | "responding" | "error";
 
+/** Safe no-op for direct/test renderers that omit the mode handler. */
+const NOOP_MODE_CHANGE = () => {};
+
 interface ChatViewProps {
+	/** Canonical session file of the active session (threaded to composer). */
+	sessionFile: string;
 	messages: ChatMessage[];
 	streamingMessage: ChatMessage | null;
 	isRunning: boolean;
@@ -41,9 +57,28 @@ interface ChatViewProps {
 	onEditQueue?: () => void;
 	/** Called when files are dropped onto the chat area */
 	onFilesDrop?: (filePaths: string[]) => void;
+	/** Durable Chat/Work mode — optional-compatible until Task 5 renders controls. */
+	mode?: SessionMode;
+	/** Lock tabs + composer while the first-prompt mode commit is pending. */
+	modeChangeDisabled?: boolean;
+	/** Inline error from a failed mode save. */
+	modeError?: string | null;
+	/** User selected a Chat/Work tab on an empty session. */
+	onModeChange?: (mode: SessionMode) => void;
+	/** The agent's workspace folder (for the Work empty state). */
+	workspaceCwd?: string | null;
+	/** A starter prompt was clicked — fill the composer, never send. */
+	onStarterSelect?: (text: string) => void;
+	/** Stable task identity shown above an active Work document. */
+	taskTitle?: string;
+	drawer?: null | "sidebar" | "work-panel";
+	onDrawerChange?: (drawer: null | "sidebar" | "work-panel") => void;
+	sidebarButtonRef?: RefObject<HTMLButtonElement | null>;
+	panelButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 export function ChatView({
+	sessionFile,
 	messages,
 	streamingMessage,
 	isRunning,
@@ -65,12 +100,58 @@ export function ChatView({
 	queue,
 	onEditQueue,
 	onFilesDrop,
+	mode = "chat",
+	modeChangeDisabled = false,
+	modeError,
+	onModeChange,
+	workspaceCwd,
+	onStarterSelect,
+	taskTitle,
+	drawer,
+	onDrawerChange,
+	sidebarButtonRef,
+	panelButtonRef,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<{ focus: () => void }>(null);
 	const isUserScrolledUp = useRef(false);
 	const [detailsExpanded, setDetailsExpanded] = useState(false);
+
+	// ── Selection actions (Task 3) ──
+	const activeSessionKey = sessionKey ?? sessionFile;
+	const { selection: selectedText, dismiss: dismissSelection } = useSelectionActions(
+		scrollContainerRef,
+		activeSessionKey,
+	);
+
+	// Transient quote context owned by this session shell
+	const [storedQuote, setStoredQuote] = useState<{ excerpt: string; sessionKey: string } | null>(null);
+	const quoteContext = storedQuote?.sessionKey === activeSessionKey ? storedQuote.excerpt : null;
+
+	const handleAskSelection = useCallback(
+		(excerpt: string) => {
+			setStoredQuote({ excerpt, sessionKey: activeSessionKey });
+			dismissSelection();
+			requestAnimationFrame(() => inputRef.current?.focus());
+		},
+		[activeSessionKey, dismissSelection],
+	);
+
+	const handleStartWriting = useCallback(
+		(excerpt: string) => {
+			const prompt = formatSelectionPrompt(excerpt, START_WRITING_INSTRUCTION);
+			if (!prompt) return;
+			if (isRunning) {
+				if (!onFollowUp) return;
+				onFollowUp(prompt);
+			} else {
+				onSend(prompt);
+			}
+			dismissSelection();
+		},
+		[dismissSelection, isRunning, onFollowUp, onSend],
+	);
 
 	// ── In-thread find (Cmd/Ctrl+F) ──
 	const [findOpen, setFindOpen] = useState(false);
@@ -87,7 +168,7 @@ export function ChatView({
 		onDrop: async (paths) => {
 			onFilesDrop?.(paths);
 			// Convert paths to FileAttachment with metadata
-			const { invoke } = await import("@tauri-apps/api/core");
+			// invoke imported statically
 			const files: FileAttachment[] = [];
 			for (const p of paths) {
 				try {
@@ -249,151 +330,185 @@ export function ChatView({
 
 	const allMessages = streamingMessage ? [...messages, streamingMessage] : messages;
 	const isEmpty = messages.length === 0 && !streamingMessage;
-	const queuedItems = [
-		...(queue?.steering ?? []).map((text, i) => ({
-			key: `s:${i}:${text}`,
-			kind: "steer" as const,
-			text,
-		})),
-		...(queue?.followUp ?? []).map((text, i) => ({
-			key: `f:${i}:${text}`,
-			kind: "follow_up" as const,
-			text,
-		})),
-	];
+	const activeWork = mode === "work" && !isEmpty;
+	const projection = useMemo(
+		() =>
+			activeWork
+				? deriveWorkProjection(
+						streamingMessage ? [...messages, streamingMessage] : messages,
+						workspaceCwd ?? "",
+					)
+				: { outputs: [], sources: [] },
+		[activeWork, messages, streamingMessage, workspaceCwd],
+	);
 
 	return (
-		<div className="chat-font relative flex flex-col flex-1 min-h-0">
-			<InThreadFind
-				open={findOpen}
-				query={findQuery}
-				current={findMatches.length === 0 ? 0 : safeActive + 1}
-				total={findMatches.length}
-				onQueryChange={setFindQuery}
-				onNext={goNextMatch}
-				onPrev={goPrevMatch}
-				onClose={closeFind}
-			/>
-
-			<div
-				ref={scrollContainerRef}
-				onScroll={handleScroll}
-				className="flex-1 overflow-y-auto relative"
-				style={{ scrollbarGutter: "stable" }}
-				onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
-				onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
-				onDragLeave={dropHandlers.onDragLeave as unknown as React.DragEventHandler}
-				onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
-			>
-				<DropZoneOverlay isVisible={isDragging} />
-				{!isEmpty && (
-					<div className="pt-1 pb-6">
-						{allMessages.map((msg) => {
-							const isStreaming = msg.id === streamingMessage?.id;
-							return (
-								<ChatMessageItem
-									key={msg.id}
-									message={msg}
-									detailsExpanded={detailsExpanded}
-									models={models}
-									findTerm={isStreaming ? undefined : findTerm}
-									activeFindIndex={
-										activeEntry && activeEntry.messageId === msg.id
-											? activeEntry.localIndex
-											: undefined
-									}
-								/>
-							);
-						})}
-						{/* Issue #201 PR3 follow-up: queued messages render AFTER
-						    streamingMessage — they are work the agent will do NEXT,
-						    so chronologically they belong below the current bubble.
-						    Threaded visual: a left vertical line ties the queued
-						    items to the in-progress bubble above (pi-TUI inspired).
-						    Source of truth is the `queue` prop — NOT state.messages
-						    — so clearQueue() drops every bubble atomically. */}
-						{queuedItems.length > 0 && (
-							<div
-								data-testid="queued-section"
-								className="mx-auto w-full px-4 mt-1 mb-3"
-								style={{ maxWidth: "var(--chat-max-width, 820px)" }}
-							>
-								<div
-									data-testid="queued-thread"
-									className="ml-11 border-l-2 pl-4 py-1 space-y-1.5 text-sm border-border"
-								>
-									{queuedItems.map((item) => (
-										<div
-											key={item.key}
-											className="relative text-muted-foreground/90 leading-relaxed"
-										>
-											{/* Tiny node-dot connecting each item to the thread line. */}
-											<span
-												className="absolute -left-[1.30rem] top-2 h-1.5 w-1.5 rounded-full bg-border"
-												aria-hidden="true"
-											/>
-											<span className="font-medium text-muted-foreground">
-												{item.kind === "steer" ? "Steering " : "Follow-up "}
-											</span>
-											<span className="text-muted-foreground/60">· </span>
-											<span className="whitespace-pre-wrap">{item.text}</span>
-										</div>
-									))}
-									<div className="text-xs text-muted-foreground/60">
-										Ctrl+↑ to edit all queued messages
-									</div>
-								</div>
-							</div>
-						)}
-						<div ref={messagesEndRef} />
-					</div>
+		<div
+			className="chat-font session-shell session-layout relative flex-1 min-h-0"
+			data-session-mode={mode}
+			data-active-work={activeWork ? "true" : "false"}
+		>
+			<div className="session-center" inert={drawer === "work-panel" ? true : undefined}>
+				{activeWork && (
+					<WorkHeader
+						title={taskTitle ?? "Untitled task"}
+						onOpenSidebar={() => onDrawerChange?.("sidebar")}
+						onOpenPanel={() => onDrawerChange?.("work-panel")}
+						sidebarButtonRef={sidebarButtonRef}
+						panelButtonRef={panelButtonRef}
+					/>
 				)}
-			</div>
+				<InThreadFind
+					open={findOpen}
+					query={findQuery}
+					current={findMatches.length === 0 ? 0 : safeActive + 1}
+					total={findMatches.length}
+					onQueryChange={setFindQuery}
+					onNext={goNextMatch}
+					onPrev={goPrevMatch}
+					onClose={closeFind}
+				/>
 
-			{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
+				<div
+					ref={scrollContainerRef}
+					onScroll={handleScroll}
+					className={`flex-1 overflow-y-auto relative ${isEmpty ? "flex flex-col" : ""}`}
+					style={{ scrollbarGutter: "stable" }}
+					onDragEnter={dropHandlers.onDragEnter as unknown as React.DragEventHandler}
+					onDragOver={dropHandlers.onDragOver as unknown as React.DragEventHandler}
+					onDragLeave={dropHandlers.onDragLeave as unknown as React.DragEventHandler}
+					onDrop={dropHandlers.onDrop as unknown as React.DragEventHandler}
+				>
+					<DropZoneOverlay isVisible={isDragging} />
+					{isEmpty && (
+						<div className="flex flex-1 items-end justify-center pb-5">
+							<SessionEmptyIntro
+								mode={mode}
+								onModeChange={onModeChange ?? NOOP_MODE_CHANGE}
+								disabled={modeChangeDisabled}
+								error={modeError}
+							/>
+						</div>
+					)}
+					{!isEmpty && (
+						<>
+							{activeWork ? (
+								<WorkSessionView
+									messages={messages}
+									streamingMessage={streamingMessage}
+									isRunning={isRunning}
+									models={models}
+									detailsExpanded={detailsExpanded}
+									workspaceCwd={workspaceCwd ?? ""}
+								/>
+							) : (
+								<div className="pt-1 pb-6">
+									{allMessages.map((msg) => {
+										const isStreaming = msg.id === streamingMessage?.id;
+										return (
+											<ChatMessageItem
+												key={msg.id}
+												message={msg}
+												detailsExpanded={detailsExpanded}
+												models={models}
+												workspaceCwd={workspaceCwd}
+												findTerm={isStreaming ? undefined : findTerm}
+												activeFindIndex={
+													activeEntry && activeEntry.messageId === msg.id
+														? activeEntry.localIndex
+														: undefined
+												}
+											/>
+										);
+									})}
+								</div>
+							)}
+							<QueuedMessages queue={queue} />
+							<div ref={messagesEndRef} />
+						</>
+					)}
+				</div>
 
-			{/* Single persistent MessageInput. Flex positions it: centered (empty,
-			    via the bottom spacer) or pinned to the bottom (active). `layout=
-			    "position"` smoothly slides it between the two over 500ms — position
-			    only, so the composer's own height changes while typing are NOT
-			    animated. Never remounted (key=sessionKey) so focus/draft survive. */}
-			<motion.div
-				layout={reducedScroll ? false : "position"}
-				transition={{ layout: { duration: 0.5, ease: "easeInOut" } }}
-				className="overflow-hidden"
-			>
-				<MessageInput
-					key={sessionKey}
-					ref={inputRef}
-					onSend={onSend}
-					/* Issue #201: while streaming, the input stays enabled and
+				{error && <ErrorBanner error={error} onRetry={onRetry} onSwitchModel={onRetry} />}
+
+				{selectedText && (
+					<SelectionActions
+						selection={selectedText}
+						onAsk={handleAskSelection}
+						onStartWriting={handleStartWriting}
+					/>
+				)}
+
+				{/* One keyed composer under one stable parent. Empty Work -> Active Work changes
+			    only the scroll surface; draft/files/focus/voice/model/queue state do not remount. */}
+				<div className="overflow-hidden">
+					<MessageInput
+						key={sessionKey}
+						sessionFile={sessionFile}
+						ref={inputRef}
+						onSend={onSend}
+						/* Issue #201: while streaming, the input stays enabled and
 					   Enter/Alt+Enter route to steer/follow-up instead of starting
 					   a fresh prompt. `disabled` is reserved for hard-blocks like
 					   "no model selected" or "sidecar not ready". */
-					streaming={isRunning}
-					/* Stop now lives in the composer (replaces the old StatusBar). */
-					onAbort={onAbort}
-					onSteer={onSteer}
-					onFollowUp={onFollowUp}
-					queue={queue}
-					onEditQueue={onEditQueue}
-					models={models}
-					currentModelId={currentModelId}
-					onModelSelect={onModelSelect}
-					modelSelectorOpen={modelSelectorOpen}
-					onModelSelectorOpenChange={onModelSelectorOpenChange}
-					pendingDropFiles={pendingDrop.files}
-					pendingDropNonce={pendingDrop.nonce}
-					draft={draft}
-					commands={commands}
-					onRunCommand={onRunCommand}
-				/>
-			</motion.div>
+						streaming={isRunning}
+						/* Stop now lives in the composer (replaces the old StatusBar). */
+						onAbort={onAbort}
+						onSteer={onSteer}
+						onFollowUp={onFollowUp}
+						queue={queue}
+						onEditQueue={onEditQueue}
+						models={models}
+						currentModelId={currentModelId}
+						onModelSelect={onModelSelect}
+						modelSelectorOpen={modelSelectorOpen}
+						onModelSelectorOpenChange={onModelSelectorOpenChange}
+						pendingDropFiles={pendingDrop.files}
+						pendingDropNonce={pendingDrop.nonce}
+						draft={draft}
+						commands={commands}
+						onRunCommand={onRunCommand}
+						emptyMode={isEmpty ? mode : undefined}
+						disabled={modeChangeDisabled}
+						quoteContext={
+							quoteContext
+								? { excerpt: quoteContext, onRemove: () => setStoredQuote(null) }
+								: undefined
+						}
+					/>
+				</div>
 
-			{/* Bottom spacer balances the empty scroll area so the input sits
-			    vertically centered on an empty session. Removed on first message,
-			    letting the input settle at the bottom. */}
-			{isEmpty && <div className="flex-1" aria-hidden="true" />}
+				{/* Top and bottom flex regions center the composer while empty, keeping
+			    exactly one mounted MessageInput across empty↔active transitions. */}
+				{isEmpty && (
+					<div className="flex flex-1 justify-center pt-4" aria-label={`${mode} starters`}>
+						<SessionStarterPrompts
+							mode={mode}
+							workspaceCwd={workspaceCwd}
+							onSelect={(text) => onStarterSelect?.(text)}
+						/>
+					</div>
+				)}
+			</div>
+			{activeWork && (
+				<>
+					{drawer === "work-panel" && (
+						<button
+							type="button"
+							className="drawer-backdrop work-panel-backdrop"
+							aria-label="Close Work panel"
+							onClick={() => onDrawerChange?.(null)}
+						/>
+					)}
+					<WorkPanel
+						outputs={projection.outputs}
+						sources={projection.sources}
+						workspace={workspaceCwd ?? ""}
+						open={drawer === "work-panel"}
+						onClose={() => onDrawerChange?.(null)}
+					/>
+				</>
+			)}
 		</div>
 	);
 }

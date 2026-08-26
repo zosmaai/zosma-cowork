@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+cap-std = "4.0.2"
 sys-locale = "0.3"
 humantime = "2"
 rand = "0.8"
@@ -29,7 +30,7 @@ tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2.7.1"
-tauri-plugin-log = "2"
+tauri-plugin-log = "2.9.0"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 reqwest = { version = "0.12", features = ["json"] }

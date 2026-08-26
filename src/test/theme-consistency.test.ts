@@ -60,8 +60,10 @@ describe("glass / elevated surfaces", () => {
 describe("preserved features", () => {
 	it("applies default zoom class on the root container", () => {
 		// Font scale is fixed at the default (1×) — no user-facing picker.
-		// The zoom class is hardcoded directly on the root div.
-		expect(appTsx).toContain("[zoom:1] h-screen");
+		// The persisted scale is restored via fontScaleClass(getFontScale) on the
+		// root div, so the default remains 1× while saved presets still layer on.
+		expect(appTsx).toContain("fontScaleClass(fontScale)");
+		expect(appTsx).toContain("getFontScale");
 		expect(fontScaleTs).toContain("[zoom:1]");
 	});
 

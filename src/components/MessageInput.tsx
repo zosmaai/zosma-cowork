@@ -2,9 +2,13 @@ import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { useFileMention } from "@/hooks/useFileMention";
 import { trackEvent } from "@/lib/telemetry";
 import { findModel } from "@/lib/model-key";
+import { formatSelectionPrompt } from "@/lib/selection-actions";
 import type { FileAttachment, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
-import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
+import type { SessionMode } from "@/types/session-runtime";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
 	forwardRef,
 	useCallback,
@@ -41,7 +45,14 @@ function calcMentionAnchor(
 	};
 }
 
+interface QuoteContext {
+	excerpt: string;
+	onRemove: () => void;
+}
+
 interface MessageInputProps {
+	/** Canonical session file for workspace file-mention lookups. */
+	sessionFile: string;
 	onSend: (message: string) => void;
 	disabled?: boolean;
 	modelLabel?: string;
@@ -101,6 +112,10 @@ interface MessageInputProps {
 	pendingDropFiles?: FileAttachment[];
 	/** Incrementing counter to trigger re-processing of pendingDropFiles */
 	pendingDropNonce?: number;
+	/** Chat/Work empty-state composer variant (rows/placeholder/width). */
+	emptyMode?: SessionMode;
+	/** Removable quote context from a selected text action. */
+	quoteContext?: QuoteContext;
 }
 
 export interface MessageInputHandle {
@@ -110,6 +125,7 @@ export interface MessageInputHandle {
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 	(
 		{
+			sessionFile,
 			onSend,
 			disabled,
 			modelLabel,
@@ -129,15 +145,16 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			onEditQueue,
 			pendingDropFiles,
 			pendingDropNonce,
+			emptyMode,
+			quoteContext,
 		},
 		ref,
 	) => {
 		const [text, setText] = useState("");
 		const [commandIndex, setCommandIndex] = useState(0);
 		const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
-		const [isListening, setIsListening] = useState(false);
 		const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
-		const mention = useFileMention();
+		const mention = useFileMention(sessionFile);
 		const { pastedImages, pasteHandler, clearImages } = usePasteDetection();
 		const currentModel = useMemo(
 			() => (models && currentModelId ? findModel(models, currentModelId) : undefined),
@@ -152,7 +169,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		);
 		const textareaRef = useRef<HTMLTextAreaElement>(null);
 		const shellRef = useRef<HTMLDivElement>(null);
-		const recognitionRef = useRef<SpeechRecognition | null>(null);
 
 		useImperativeHandle(ref, () => ({
 			focus: () => textareaRef.current?.focus(),
@@ -196,56 +212,17 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
 		}, [text]);
 
-		const startVoiceInput = useCallback(() => {
-			const SpeechRecognition =
-				(window as unknown as { SpeechRecognition?: new () => SpeechRecognition })
-					.SpeechRecognition ||
-				(window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition })
-					.webkitSpeechRecognition;
-			if (!SpeechRecognition) return;
-
-			if (isListening && recognitionRef.current) {
-				recognitionRef.current.stop();
-				setIsListening(false);
-				return;
-			}
-
-			const recognition = new SpeechRecognition();
-			recognition.lang = "en-US";
-			recognition.interimResults = true;
-			recognition.continuous = false;
-
-			recognition.onresult = (event: SpeechRecognitionEvent) => {
-				const transcript = Array.from(event.results)
-					.map((r) => r[0].transcript)
-					.join("");
-				setText((prev) => prev + transcript);
-			};
-
-			recognition.onend = () => {
-				setIsListening(false);
-			};
-
-			recognition.onerror = () => {
-				setIsListening(false);
-			};
-
-			recognitionRef.current = recognition;
-			recognition.start();
-			setIsListening(true);
-			trackEvent("voice_input_started");
-		}, [isListening]);
 
 		const openFileDialog = useCallback(async () => {
 			try {
-				const { open } = await import("@tauri-apps/plugin-dialog");
+				// open imported statically
 				const result = await open({
 					multiple: true,
 					title: "Select files",
 				});
 				if (!result) return;
 				const paths = Array.isArray(result) ? result : [result];
-				const { invoke } = await import("@tauri-apps/api/core");
+				// invoke imported statically
 				const files: FileAttachment[] = [];
 				for (const p of paths) {
 					try {
@@ -312,7 +289,12 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		) {
 			e?.preventDefault();
 			const trimmed = text.trim();
-			if ((!trimmed && attachedFiles.length === 0 && pastedImages.length === 0) || disabled) return;
+			// When quote context exists, require typed custom instruction even if
+			// files/images are attached. Quote alone is not an instruction.
+			const hasContent = quoteContext
+				? !!trimmed
+				: !!(trimmed || attachedFiles.length > 0 || pastedImages.length > 0);
+			if (!hasContent || disabled) return;
 
 			// Build prompt with file and image references
 			const sections: string[] = [];
@@ -323,7 +305,15 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				sections.push(`[Image: ${img.dataUrl}]`);
 			}
 			let finalPrompt = sections.join("\n");
-			if (trimmed) {
+			// Serialize quote context as Markdown block quote
+			if (quoteContext && trimmed) {
+				const quotedPrompt = formatSelectionPrompt(quoteContext.excerpt, trimmed);
+				if (quotedPrompt) {
+					finalPrompt = finalPrompt
+						? `${finalPrompt}\n\n${quotedPrompt}`
+						: quotedPrompt;
+				}
+			} else if (trimmed) {
 				finalPrompt = finalPrompt ? `${finalPrompt}\n\n${trimmed}` : trimmed;
 			}
 
@@ -334,6 +324,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			setText("");
 			setAttachedFiles([]);
 			clearImages();
+			quoteContext?.onRemove();
 			if (textareaRef.current) {
 				textareaRef.current.style.height = "auto";
 				// PR3 follow-up: keep focus on the textarea after submit so
@@ -483,9 +474,15 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 				? queueCount > 0
 					? `Steer with Enter · Alt+Enter for follow-up · ${queueCount} queued (Ctrl+↑ to edit)`
 					: "Steer with Enter · Alt+Enter to queue follow-up"
-				: "Message (Enter to send, Shift+Enter for newline)";
+				: emptyMode === "work"
+					? "Work on anything…"
+					: emptyMode === "chat"
+						? "Ask Zosma…"
+						: "Message (Enter to send, Shift+Enter for newline)";
 
-		const hasContent = !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
+		const hasContent = quoteContext
+			? !!text.trim()
+			: !!(text.trim() || attachedFiles.length > 0 || pastedImages.length > 0);
 
 		// Slash-command palette state derived from the current input.
 		const slash = useMemo(() => parseSlashInput(text), [text]);
@@ -503,8 +500,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 		return (
 			<form
 				onSubmit={(e) => handleSubmit(streaming ? "steer" : "send", e)}
-				className="px-4 pb-2 mx-auto w-full"
-				style={{ maxWidth: "var(--chat-composer-max-width, 852px)" }}
+				className={`px-4 pb-2 mx-auto w-full ${
+					emptyMode === "chat"
+						? "max-w-[700px]"
+						: emptyMode === "work"
+							? "max-w-[780px]"
+							: "max-w-[852px]"
+				}`}
 			>
 				{/* Outer shell */}
 				<div ref={shellRef} className="composer-glass relative rounded-2xl">
@@ -554,6 +556,21 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						/>
 					)}
 
+					{/* Removable quote context from selected text */}
+					{quoteContext && (
+						<div className="composer-quote" role="region" aria-label="Quoted context">
+							<span aria-hidden="true">↪</span>
+							<blockquote>{quoteContext.excerpt.replace(/\s+/g, " ").trim()}</blockquote>
+							<button
+								type="button"
+								onClick={quoteContext.onRemove}
+								aria-label="Remove quoted context"
+							>
+								<X size={14} />
+							</button>
+						</div>
+					)}
+
 					{/* Textarea */}
 					<textarea
 						ref={textareaRef}
@@ -566,11 +583,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 						onKeyDown={handleKeyDown}
 						onPaste={(e) => pasteHandler(e.nativeEvent)}
 						placeholder={placeholder}
-						rows={1}
+						rows={emptyMode === "work" ? 3 : 1}
 						disabled={disabled}
 						enterKeyHint="send"
 						inputMode="text"
-						className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+						className={`session-composer w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50 ${
+							emptyMode === "work" ? "min-h-24" : ""
+						}`}
 					/>
 
 					{/* PR3 follow-up: the standalone steer/follow-up hint row and
@@ -583,7 +602,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					    and the placeholder reverts to the idle wording. */}
 					{queueCount > 0 && !streaming && !disabled && (
 						<div
-							className="px-4 pb-1 text-[11px] leading-tight"
+							className="px-4 pb-1 text-[0.8125rem] leading-tight"
 							style={{ color: "hsl(var(--muted-foreground) / 0.85)" }}
 							data-testid="composer-queue-summary"
 						>
@@ -639,7 +658,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 					{!modelSupportsImages && hasImageAttachments && (
 						<div className="px-4 pb-1.5">
 							<p
-								className="text-[11px] leading-tight flex items-center gap-1.5"
+								className="text-[0.8125rem] leading-tight flex items-center gap-1.5"
 								style={{ color: "hsl(var(--warning))" }}
 							>
 								<span>⚠</span>
@@ -664,19 +683,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							>
 								<Paperclip size={16} />
 							</button>
-							<button
-								type="button"
-								onClick={startVoiceInput}
-								disabled={disabled}
-								aria-label={isListening ? "Stop recording" : "Voice input"}
-								className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors disabled:opacity-40 ${
-									isListening
-										? "text-red-500 hover:bg-red-500/10"
-										: "text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--muted)/0.7)]"
-								}`}
-							>
-								<Mic size={16} />
-							</button>
 							{models && onModelSelect ? (
 								<ModelSelector
 									models={models}
@@ -687,7 +693,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 								/>
 							) : (
 								<span
-									className="px-1.5 text-xs"
+									className="px-1.5 text-sm"
 									style={{ color: "hsl(var(--muted-foreground) / 0.55)" }}
 								>
 									{modelLabel || "Zosma"}

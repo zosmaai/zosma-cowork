@@ -49,10 +49,10 @@ export function Theme() {
 						)}
 					</div>
 					<div className="text-left">
-						<p className="text-[13px] font-medium text-foreground">
+						<p className="text-[0.8125rem] font-medium text-foreground">
 							{isDark ? "Dark mode" : "Light mode"}
 						</p>
-						<p className="text-[11px] text-muted-foreground">
+						<p className="text-[0.6875rem] text-muted-foreground">
 							{isDark ? "Easy on the eyes at night" : "Best in bright environments"}
 						</p>
 					</div>
@@ -105,7 +105,7 @@ export function Theme() {
 									}}
 								/>
 								<span
-									className="text-[11px] font-medium"
+									className="text-[0.6875rem] font-medium"
 									style={{
 										color: isActive ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
 									}}

@@ -23,13 +23,16 @@ import {
 	runBuiltinCommand,
 } from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
+import { fontScaleClass, getFontScale } from "@/lib/font-scale";
 import { trackEvent } from "@/lib/telemetry";
-import type { ChatMessage } from "@/types";
+import type { SessionMode, SessionSnapshot, SidecarReadyPayload } from "@/types/session-runtime";
 import type { Command } from "@/types/commands";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from "react";
+
+type OpenDrawer = null | "sidebar" | "work-panel";
 
 interface SessionEntry {
 	file: string;
@@ -47,27 +50,40 @@ interface SessionEntry {
 	titleLocked?: boolean;
 	/** One-line preview of the latest message (real content, for the sidebar). */
 	preview?: string;
+	/** Durable Chat/Work product mode for this session. */
+	mode?: SessionMode;
 }
 
 function App() {
 	const appUpdate = useUpdate();
+
+	// Session management (declared BEFORE usePiStream so the hook can borrow
+	// the active file; hook order stays unconditional across renders).
+	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
+	// Show only the active folder's sessions (pi-style) by default; toggle to all.
+	const [allFolders, setAllFolders] = useState(false);
+	const [activeSessionFile, setActiveSessionFile] = useState<string | null>(null);
+
 	const {
 		state: streamState,
+		states: streamStates,
+		getSessionState,
+		hydrateSession,
+		ensureSession,
 		startStream,
 		abortStream,
 		steerStream,
 		followUpStream,
 		clearQueue,
-		dispatch,
-	} = usePiStream();
+		setSessionModel,
+		setSessionMode,
+		removeSession,
+	} = usePiStream(activeSessionFile);
 
 	// Custom instructions are no longer prepended to messages here. They live in
 	// INSTRUCTIONS.md and the sidecar injects them into the system prompt as
 	// always-on context (see CustomInstructions / save_instructions).
 
-	// Remove right-click prevention — users need copy/paste/inspect.
-	// The desktop app is a serious tool, not a locked-down kiosk.
-	// (Context menu prevention removed intentionally.)
 	const { models } = useProviders();
 	useTelemetry(); // initialize telemetry consent from settings
 	const { hasCredentials, loading: authLoading, saveApiKey } = useAuth();
@@ -85,7 +101,6 @@ function App() {
 	const zosmaEnabled = import.meta.env.VITE_ZOSMA_AUTH_ENABLED !== "false";
 
 	// Onboarding status: explicit, non-secret classification for startup routing.
-	// Replaces the old hasCredentials-only decision with a clear contract.
 	const {
 		status: onboardingStatus,
 		loading: onboardingLoading,
@@ -115,6 +130,40 @@ function App() {
 	}, [refreshOnboardingStatus]);
 	const announcementAuth = useZosmaAuth({ onComplete: handleAnnouncementComplete });
 	const [, setSidebarView] = useState("chats");
+	// Manual sidebar rail collapse (Phase 2). Default stays expanded.
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+	// Sidebar rail auto-default applied once per session, so switching Chat<->Work
+	// tabs on the same session never fights the user's collapse choice.
+	const sidebarDefaultedFor = useRef<string | null>(null);
+	const [openDrawer, setOpenDrawer] = useState<OpenDrawer>(null);
+	const sidebarDrawerTriggerRef = useRef<HTMLButtonElement>(null);
+	const workPanelTriggerRef = useRef<HTMLButtonElement>(null);
+	const mainContentRef = useRef<HTMLElement>(null);
+	const closeDrawer = useCallback(() => {
+		const trigger = openDrawer === "sidebar" ? sidebarDrawerTriggerRef : workPanelTriggerRef;
+		setOpenDrawer(null);
+		queueMicrotask(() => {
+			const button = trigger.current;
+			if (button && window.getComputedStyle(button).display !== "none") button.focus();
+			else mainContentRef.current?.focus();
+		});
+	}, [openDrawer]);
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: close overlays on session identity change
+	useEffect(() => {
+		setOpenDrawer(null);
+	}, [activeSessionFile]);
+
+	useEffect(() => {
+		if (!openDrawer) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") closeDrawer();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [openDrawer, closeDrawer]);
+	// Persisted font scaling (zoom preset) restored once at startup.
+	const [fontScale] = useState(getFontScale);
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
@@ -128,33 +177,102 @@ function App() {
 	// API-key save too.
 	const [hasSubscription, setHasSubscription] = useState(false);
 
-	// Session management
-	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
-	// Show only the active folder's sessions (pi-style) by default; toggle to all.
-	const [allFolders, setAllFolders] = useState(false);
-	const [activeSessionFile, setActiveSessionFile] = useState<string | null>(null);
 	// Draft prompt pushed into the composer (e.g. when a template is clicked).
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
-	const [composerDraft, setComposerDraft] = useState<{ text: string; nonce: number }>();
+	// Targetted per-session so a starter on session A never bleeds into B.
+	interface ComposerDraft {
+		sessionFile: string;
+		text: string;
+		nonce: number;
+	}
+
+	const [composerDraft, setComposerDraft] = useState<ComposerDraft>();
+	const draftSessionKey = activeSessionFile ?? "__new__";
+
+	// Durable Chat/Work mode. Loaded sessions derive it from keyed state; an
+	// unbound choice (before a canonical snapshot exists) lives only until the
+	// new_session snapshot returns canonical identity.
+	const [unboundMode, setUnboundMode] = useState<SessionMode>("chat");
+	const activeMode: SessionMode = activeSessionFile ? streamState.mode : unboundMode;
+	const selectedModeRef = useRef<SessionMode>(activeMode);
+	useEffect(() => {
+		selectedModeRef.current = activeMode;
+	}, [activeMode]);
+	const isEmptySession =
+		streamState.messages.length === 0 &&
+		streamState.streamingMessage === null &&
+		!streamState.isRunning;
+	const [firstSendPending, setFirstSendPending] = useState(false);
+	const modeLocked = !isEmptySession || firstSendPending;
+	const [modeError, setModeError] = useState<string | null>(null);
+	// Clear the mode error when entering a different session.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on session switch (value not read in body)
+	useEffect(() => {
+		setModeError(null);
+	}, [activeSessionFile]);
+
+	// Default the sidebar rail once per entered session: empty Chat collapses,
+	// empty Work and every active transcript expand. A manual expand/collapse wins
+	// until a DIFFERENT session is entered, so switching Chat<->Work tabs on the
+	// same session never re-toggles the rail under the user.
+	// No active session (splash/onboarding) has no sidebar view to default.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: default once per session; mode/empty snapshot at entry
+	useEffect(() => {
+		if (!activeSessionFile) return;
+		if (sidebarDefaultedFor.current === activeSessionFile) return;
+		sidebarDefaultedFor.current = activeSessionFile;
+		setSidebarCollapsed(isEmptySession && activeMode === "chat");
+	}, [activeSessionFile]);
 	// The agent's current workspace folder (where file/bash tools read & write).
-	const [workspaceCwd, setWorkspaceCwd] = useState<string | null>(null);
+	// The agent's current workspace folder (where file/bash tools read & write).
+	// Derived from the ACTIVE cached session — each runtime owns its cwd.
+	const workspaceCwd = streamState.cwd;
 	// The user's home dir (sidecar's default workspace) — used to label the
 	// "Home" folder group in the sidebar.
 	const [homeDir, setHomeDir] = useState<string | null>(null);
-	/** Messages loaded from a saved session file — merged with stream messages */
-	const [loadedSessionMessages, setLoadedSessionMessages] = useState<ChatMessage[] | null>(null);
-	const [loadingSession, setLoadingSession] = useState(false);
+
+	// ── Cache a sidecar snapshot into the keyed stream map ──
+	const cacheSnapshot = useCallback(
+		(snapshot: SessionSnapshot) => {
+			hydrateSession(snapshot);
+		},
+		[hydrateSession],
+	);
+
+	// Cache AND switch the active render key to that session.
+	const activateSnapshot = useCallback(
+		(snapshot: SessionSnapshot) => {
+			cacheSnapshot(snapshot);
+			setActiveSessionFile(snapshot.sessionFile);
+		},
+		[cacheSnapshot],
+	);
 
 	// ── Sidecar readiness: drives the startup splash (#169) ──
-	// Listen for the Tauri `ready` event, plus a timeout fallback so the
-	// splash never hangs forever if the sidecar fails to start.
+	// Listen for the Tauri `ready` event (carrying the initial session
+	// snapshot), plus a timeout fallback so the splash never hangs forever.
 	useEffect(() => {
 		if (!isTauri()) return;
 		let mounted = true;
 		let unlisten: (() => void) | undefined;
 		(async () => {
-			const u = await listen("ready", () => {
-				if (mounted) setSidecarReady(true);
+			const u = await listen<SidecarReadyPayload | null>("ready", (evt) => {
+				if (!mounted) return;
+				setSidecarReady(true);
+				const payload = evt.payload;
+				if (!payload) return;
+				// 1. Always apply the default workspace when present.
+				if (typeof payload.defaultWorkspace === "string") {
+					setHomeDir(payload.defaultWorkspace);
+				}
+				// 2. Ignore the spawn-level ready payload with no session.
+				if (!payload.session) return;
+				// 3. Fresh startup: adopt the initial runtime's snapshot.
+				// 4. After a sidecar restart the cache stays visible; selecting or
+				//    sending lazily reloads the runtime through ensureSession.
+				if (activeSessionFileRef.current === null) {
+					activateSnapshot(payload.session);
+				}
 			});
 			if (!mounted) {
 				u();
@@ -171,14 +289,17 @@ function App() {
 			clearTimeout(timeout);
 			unlisten?.();
 		};
-	}, []);
+	}, [activateSnapshot]);
+
+	// Latest active file for the ready listener (avoids stale closures).
+	const activeSessionFileRef = useRef(activeSessionFile);
+	useEffect(() => {
+		activeSessionFileRef.current = activeSessionFile;
+	}, [activeSessionFile]);
 
 	const needsOnboarding = authLoading === false && !hasCredentials;
 
 	// Startup routing based on explicit onboarding status.
-	// - New user: HomeView connect step (Zosma-first, expandable alternatives)
-	// - Existing user: normal chat; announcement if eligible
-	// - Zosma-connected: normal chat, no announcement
 	const onboardingReady = !onboardingLoading && onboardingStatus !== null;
 	const showNewUserConnect = onboardingReady && isNewUser && !skipOnboarding && !showKeyEntry;
 	const telemetryUndecided = false;
@@ -189,7 +310,9 @@ function App() {
 	const initializing =
 		!showNewUserConnect &&
 		!showKeyEntry &&
-		(telemetryUndecided || waitingForStartupClassification || (!sidecarReady && (authLoading || hasCredentials !== true)));
+		(telemetryUndecided ||
+			waitingForStartupClassification ||
+			(!sidecarReady && (authLoading || hasCredentials !== true)));
 
 	// Whether to render the legacy Connect / API-key modal. It remains reachable
 	// from Settings, but is not part of Zosma first-run onboarding.
@@ -225,23 +348,22 @@ function App() {
 					if (match) {
 						log.debug("[settings] restoring model:", match.provider, match.id);
 						setActiveModelId(modelKey(match.provider, match.id));
-						invoke("set_active_model", {
-							provider: match.provider,
-							model: match.id,
-						}).catch(() => {});
+						// Wait for an active session before pushing the model to it.
+						void applyDefaultModelWhenReady(match.provider, match.id);
 						return;
 					}
 				}
 
 				// 2. No saved preference: MIRROR the engine's actual model so the
-				//    selector matches the model that will really answer (the
-				//    per-message usage label). No push needed — it's already active.
+				//    selector matches the model that will really answer.
 				try {
-					const engine = (await invoke("get_active_model")) as {
-						provider?: string;
-						id?: string;
+					const sid = activeSessionFileRef.current;
+					if (!sid) return;
+					const engine = (await invoke("get_active_model", { sessionFile: sid })) as {
+						model?: { provider?: string; id?: string };
 					} | null;
-					const key = engine?.id ? modelKey(engine.provider, engine.id) : undefined;
+					const modelInfo = engine?.model;
+					const key = modelInfo?.id ? modelKey(modelInfo.provider, modelInfo.id) : undefined;
 					if (key && findModel(models, key)) {
 						log.debug("[settings] mirroring engine model:", key);
 						setActiveModelId(key);
@@ -251,19 +373,33 @@ function App() {
 					log.warn("[settings] get_active_model failed:", err);
 				}
 
-				// 3. Last resort: pick the first model AND push it so the UI and
-				//    engine still agree even if the mirror query failed.
+				// 3. Last resort: pick the first model.
 				const fallback = models[0];
 				setActiveModelId(modelKey(fallback.provider, fallback.id));
-				invoke("set_active_model", {
-					provider: fallback.provider,
-					model: fallback.id,
-				}).catch(() => {});
 			})();
 		} else if (models.length > 0 && !activeModelId) {
 			setActiveModelId(modelKey(models[0].provider, models[0].id));
 		}
 	}, [models, activeModelId]);
+
+	// Push the default model onto the exact session once one exists.
+	const applyDefaultModelWhenReady = useCallback(
+		async (provider: string, modelId: string) => {
+			const sid = activeSessionFileRef.current;
+			if (!sid) {
+				// Retry on the next tick; the ready snapshot lands quickly.
+				setTimeout(() => void applyDefaultModelWhenReady(provider, modelId), 100);
+				return;
+			}
+			try {
+				await invoke("set_active_model", { sessionFile: sid, provider, model: modelId });
+				setSessionModel(sid, { provider, id: modelId });
+			} catch (err) {
+				log.warn("[settings] set_active_model failed:", err);
+			}
+		},
+		[setSessionModel],
+	);
 
 	useEffect(() => {
 		if (needsOnboarding || showKeyEntry) return;
@@ -298,9 +434,6 @@ function App() {
 	// otherwise wrongly dump a just-signed-out user back into chat with
 	// no credentials.
 	useEffect(() => {
-		// Guard against async-cleanup race in StrictMode dev / HMR. Without
-		// this, the listener registers after cleanup ran, leaks, and a
-		// future `oauth_completed` event fires it multiple times.
 		let mounted = true;
 		let unlisten: (() => void) | undefined;
 		(async () => {
@@ -355,14 +488,45 @@ function App() {
 	}, []);
 
 	async function loadSessionList() {
+		const request = ++sessionListRequestRef.current;
 		try {
-			const result = await invoke("list_sessions", { allFolders });
+			const result = await invoke("list_sessions", {
+				allFolders,
+				cwd: workspaceCwd ?? undefined,
+			});
+			if (request !== sessionListRequestRef.current) return;
 			const data = result as { sessions?: SessionEntry[] };
-			setSessionEntries(data.sessions || []);
+			setSessionEntries((current) => {
+				const disk = data.sessions || [];
+				const currentByFile = new Map(current.map((entry) => [entry.file, entry]));
+				const diskFiles = new Set(disk.map((entry) => entry.file));
+				const reconciled = disk.map((entry) => {
+					const live = streamStatesRef.current.get(entry.file);
+					const optimistic = currentByFile.get(entry.file);
+					return live?.isRunning && optimistic
+						? { ...entry, ...optimistic, pinned: entry.pinned, titleLocked: entry.titleLocked }
+						: entry;
+				});
+				for (const entry of current) {
+					if (!diskFiles.has(entry.file) && streamStatesRef.current.get(entry.file)?.isRunning) {
+						reconciled.push(entry);
+					}
+				}
+				return reconciled;
+			});
 		} catch (err) {
 			log.error("Failed to load sessions:", err);
 		}
 	}
+
+	// Reconcile live cache keys with disk metadata. `streamStatesRef` is always
+	// current synchronously; the plain `streamStates` effect keeps it in sync.
+	const streamStatesRef = useRef(streamStates);
+	const sessionListRequestRef = useRef(0);
+	useEffect(() => {
+		streamStatesRef.current = streamStates;
+	}, [streamStates]);
+	const previousSettledRef = useRef(new Map<string, number>());
 
 	// Re-list when the active folder switches (new_session / load_session pick a
 	// different cwd) or the all-folders toggle flips.
@@ -371,79 +535,107 @@ function App() {
 		loadSessionList().catch(() => {});
 	}, [workspaceCwd, allFolders]);
 
-	// ── When stream completes, merge into loaded messages and save to disk ──
-	// biome-ignore lint/correctness/useExhaustiveDependencies: Only trigger when stream finishes, not on every dep change
+	// ── Reconcile sidebar metadata on every terminal `done` ──
+	// Keyed on `streamStates` + a per-key monotonic `settledVersion` (the
+	// done latch). Hidden sessions — not just the active one — get their row
+	// metadata updated here, and a refresh pulls disk truth after pi persists.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reconcile every keyed done
 	useEffect(() => {
-		if (!streamState.isRunning && streamState.messages.length > 0) {
-			const sid = activeSessionFile;
-			if (!sid) return;
-
-			// Merge: loaded history + new stream messages
-			const merged = loadedSessionMessages
-				? [...loadedSessionMessages, ...streamState.messages]
-				: streamState.messages;
-
-			if (merged.length === 0) return;
-
-			const firstMsg = merged[0];
-			const title = typeof firstMsg.content === "string" ? firstMsg.content.slice(0, 80) : "Chat";
-
-			// Update loaded messages so the display shows full history
-			setLoadedSessionMessages(merged);
-
-			// Clear saved messages without hiding a terminal provider error.
-			dispatch({ type: "CLEAR_MESSAGES" });
-
-			// pi auto-persists during the agent loop — no manual save. Just
-			// reconcile the sidebar with disk truth (title/preview/count).
-			loadSessionList().catch((err) => log.error("Failed to refresh sessions:", err));
-
-			// Optimistic sidebar entry (folder = active workspace). A user-renamed
-			// (locked) title must not be clobbered by the auto-derived one, and the
-			// pin state is preserved across the optimistic update.
-			setSessionEntries((prev) => {
-				const existing = prev.find((s) => s.file === sid);
-				const filtered = prev.filter((s) => s.file !== sid);
-				return [
-					{
-						file: sid,
-						title: existing?.titleLocked ? existing.title : title,
-						cwd: workspaceCwd ?? undefined,
-						messageCount: merged.length,
-						createdAt: existing?.createdAt || Date.now(),
-						lastActivity: Date.now(),
-						pinned: existing?.pinned,
-						titleLocked: existing?.titleLocked,
-						preview:
-							typeof merged[merged.length - 1]?.content === "string"
-								? (merged[merged.length - 1].content as string)
-										.replace(/\s+/g, " ")
-										.trim()
-										.slice(0, 120)
-								: existing?.preview,
-					},
-					...filtered,
-				];
-			});
+		let settled = false;
+		for (const [sessionFile, state] of streamStates) {
+			const previous = previousSettledRef.current.get(sessionFile) ?? 0;
+			previousSettledRef.current.set(sessionFile, state.settledVersion);
+			if (state.settledVersion <= previous) continue;
+			settled = true;
+			const latest = state.messages.at(-1);
+			setSessionEntries((entries) =>
+				entries.map((entry) =>
+					entry.file === sessionFile
+						? {
+								...entry,
+								messageCount: state.messages.length,
+								lastActivity: Date.now(),
+								preview:
+									typeof latest?.content === "string"
+										? latest.content.replace(/\s+/g, " ").trim().slice(0, 120)
+										: entry.preview,
+							}
+						: entry,
+				),
+			);
 		}
-	}, [streamState.isRunning]);
+		if (settled) {
+			loadSessionList().catch((error) => log.error("Failed to refresh sessions:", error));
+		}
+	}, [streamStates]);
+
+	const handleModeChange = useCallback(
+		async (mode: SessionMode) => {
+			if (modeLocked) return;
+			// Synchronous ref closes the click→immediate-Enter gap before the keyed
+			// reducer rerender lands. First send always uses the visibly chosen mode.
+			selectedModeRef.current = mode;
+			setModeError(null);
+			if (!activeSessionFile) {
+				setUnboundMode(mode);
+				return;
+			}
+			try {
+				await setSessionMode(activeSessionFile, mode);
+			} catch (error) {
+				log.error("[cowork] set_session_mode failed:", error);
+				setModeError("Couldn’t save this session’s mode. Try again.");
+			}
+		},
+		[activeSessionFile, modeLocked, setSessionMode],
+	);
 
 	// ── Send a new prompt ──
+	// The visible model is the ACTIVE session's runtime model when known;
+	// otherwise fall back to the saved default for future sessions.
+	const sessionModelId = streamState.model?.id
+		? modelKey(streamState.model.provider, streamState.model.id)
+		: undefined;
+	const visibleModelId = sessionModelId ?? activeModelId;
+
 	const handleSend = useCallback(
 		async (text: string) => {
+			const selectedMode = selectedModeRef.current;
 			let sessionFile = activeSessionFile;
 			const isNewSession = !sessionFile;
 			if (!sessionFile) {
-				// pi owns persistence: spin up a real session file and adopt its
-				// path as our identity (no more client-invented ids).
+				// No ready snapshot was adopted yet — ask the sidecar for a real
+				// persisted session and require a full snapshot. Never invent a
+				// client-side fallback identity.
 				try {
-					const res = await invoke<{ file?: string; cwd?: string }>("new_session", {});
-					if (res && typeof res.cwd === "string") setWorkspaceCwd(res.cwd);
-					sessionFile = res?.file ?? `session-${Date.now()}.jsonl`;
-				} catch {
-					sessionFile = `session-${Date.now()}.jsonl`;
+					const snapshot = (await invoke("new_session", {})) as SessionSnapshot | null;
+					if (!snapshot?.sessionFile) {
+						log.error("[cowork] new_session returned no session file");
+						return;
+					}
+					activateSnapshot(snapshot);
+					sessionFile = snapshot.sessionFile;
+				} catch (err) {
+					log.error("[cowork] new_session failed:", err);
+					return;
 				}
-				setActiveSessionFile(sessionFile);
+			}
+
+			// Lock tabs + composer if this is the first prompt. Mode may change
+			// while empty, then locks. Persist BEFORE the optimistic first message
+			// (startStream) so optimistic insertion cannot race persistence.
+			const firstPrompt = isNewSession || streamState.messages.length === 0;
+			if (firstPrompt) {
+				setFirstSendPending(true);
+				setModeError(null);
+				try {
+					await setSessionMode(sessionFile, selectedMode);
+				} catch (error) {
+					log.error("[cowork] first-prompt mode save failed:", error);
+					setModeError("Couldn’t save this session’s mode. Try again.");
+					setFirstSendPending(false);
+					return;
+				}
 			}
 
 			// Immediately show session in sidebar with title from first message
@@ -457,6 +649,7 @@ function App() {
 						messageCount: 1,
 						createdAt: Date.now(),
 						lastActivity: Date.now(),
+						mode: selectedMode,
 					},
 					...prev,
 				]);
@@ -464,17 +657,31 @@ function App() {
 			}
 
 			// Track message with provider/model info
-			const activeModel = findModel(models, activeModelId);
+			const activeModel = findModel(models, visibleModelId);
 			trackEvent("message_sent", {
 				provider: activeModel?.provider?.split("-")[0] ?? "unknown",
 				model: activeModel?.id ?? "unknown",
 			});
 
-			// Keep loadedSessionMessages — startStream only produces the new turn.
-			// Merging happens in the stream-complete effect above.
-			startStream(text);
+			try {
+				await startStream(sessionFile, text);
+			} catch (error) {
+				log.error("[cowork] first prompt failed before stream start:", error);
+				setModeError("Couldn’t start this session. Try again.");
+			} finally {
+				if (firstPrompt) setFirstSendPending(false);
+			}
 		},
-		[activeSessionFile, startStream, models, activeModelId, workspaceCwd],
+		[
+			activeSessionFile,
+			startStream,
+			models,
+			visibleModelId,
+			workspaceCwd,
+			activateSnapshot,
+			setSessionMode,
+			streamState.messages.length,
+		],
 	);
 
 	/**
@@ -482,44 +689,43 @@ function App() {
 	 * drain the SDK queue (so nothing fires while the user is editing) and
 	 * load the drained messages into the composer via the existing
 	 * `draft` channel.
-	 *
-	 * Format: steering items first, follow-up items second, separated by a
-	 * blank line. The user can rewrite, reorder, or delete freely. When
-	 * they press Enter / Alt+Enter, the whole edited blob re-queues as ONE
-	 * message (intentional: simpler than splitting + per-kind round-trip,
-	 * and the agent reads the result identically). If they want to drop
-	 * the queue entirely they just clear the textarea — nothing fires.
 	 */
 	const handleEditQueue = useCallback(async () => {
-		const drained = await clearQueue();
+		const sid = activeSessionFile;
+		if (!sid) return;
+		const drained = await clearQueue(sid);
 		const all = [...drained.steering, ...drained.followUp];
 		if (all.length === 0) return;
 		const joined = all.join("\n\n");
 		setComposerDraft((prev) => ({
+			sessionFile: draftSessionKey,
 			text: joined,
 			nonce: (prev?.nonce ?? 0) + 1,
 		}));
-	}, [clearQueue]);
+	}, [clearQueue, activeSessionFile, draftSessionKey]);
 
-	const handleModelSelect = useCallback(async (provider: string, modelId: string) => {
-		setActiveModelId(modelKey(provider, modelId));
-		try {
-			log.debug("[settings] saving model:", provider, modelId);
-			await invoke("save_settings", {
-				settings: {
-					defaultModel: modelId,
-					defaultProvider: provider,
-				},
-			});
-			// Actually set the model on the sidecar so it takes effect immediately
-			await invoke("set_active_model", {
-				provider,
-				model: modelId,
-			});
-		} catch (err) {
-			log.warn("[settings] save failed:", err);
-		}
-	}, []);
+	const handleModelSelect = useCallback(
+		async (provider: string, modelId: string) => {
+			setActiveModelId(modelKey(provider, modelId));
+			try {
+				log.debug("[settings] saving model:", provider, modelId);
+				await invoke("save_settings", {
+					settings: {
+						defaultModel: modelId,
+						defaultProvider: provider,
+					},
+				});
+				// Actually set the model on the exact active session.
+				const sid = activeSessionFile;
+				if (!sid) return;
+				await invoke("set_active_model", { sessionFile: sid, provider, model: modelId });
+				setSessionModel(sid, { provider, id: modelId });
+			} catch (err) {
+				log.warn("[settings] save failed:", err);
+			}
+		},
+		[activeSessionFile, setSessionModel],
+	);
 
 	// ── Connect-modal handlers (passed to <HomeView>) ──
 	const handleConnectComplete = useCallback(
@@ -543,33 +749,51 @@ function App() {
 	}, []);
 
 	// Create a fresh session bound to `cwd` (a chosen folder). The sidecar
-	// returns the resolved workspace (it may fall back to home if the path was
-	// invalid) — we reflect that. Creating a new session never mutates the
-	// previously-active session's folder; each session owns its own cwd.
+	// returns a full snapshot — we cache it (cwd, model, messages) and switch
+	// to it without ever inventing a fallback identity. Other sessions keep
+	// running; no abort is sent.
 	const handleNewSession = useCallback(
 		async (cwd?: string) => {
+			setOpenDrawer(null);
 			let resolvedCwd: string | undefined;
-			let file: string | undefined;
 			try {
-				const res = await invoke<{ cwd?: string; file?: string }>(
+				const snapshot = (await invoke<SessionSnapshot>(
 					"new_session",
 					cwd ? { cwd } : {},
-				);
-				if (res && typeof res.cwd === "string") {
-					resolvedCwd = res.cwd;
-					setWorkspaceCwd(res.cwd);
+				)) as SessionSnapshot | null;
+				if (!snapshot?.sessionFile) {
+					log.error("[cowork] new_session returned no session file");
+					return undefined;
 				}
-				if (res && typeof res.file === "string") file = res.file;
-			} catch {
-				// ignore
+				resolvedCwd = snapshot.cwd;
+				activateSnapshot(snapshot);
+				// Apply the user's selected model to THIS exact new session before
+				// the first prompt.
+				if (activeModelId) {
+					const model = findModel(models, activeModelId);
+					if (model) {
+						try {
+							await invoke("set_active_model", {
+								sessionFile: snapshot.sessionFile,
+								provider: model.provider,
+								model: model.id,
+							});
+							setSessionModel(snapshot.sessionFile, {
+								provider: model.provider,
+								id: model.id,
+							});
+						} catch {
+							// model push is best-effort
+						}
+					}
+				}
+				return resolvedCwd;
+			} catch (err) {
+				log.error("[cowork] new_session failed:", err);
+				return undefined;
 			}
-			dispatch({ type: "RESET" });
-			setLoadedSessionMessages(null);
-			// pi owns the session file; adopt its path as our identity.
-			setActiveSessionFile(file ?? `session-${Date.now()}.jsonl`);
-			return resolvedCwd;
 		},
-		[dispatch],
+		[activateSnapshot, activeModelId, models, setSessionModel],
 	);
 
 	// "New session" ALWAYS asks for a folder first (native picker), then starts
@@ -579,6 +803,7 @@ function App() {
 	// create a session in an unintended folder, and the active session is left
 	// untouched.
 	const handleNewSessionPrompt = useCallback(async () => {
+		setOpenDrawer(null);
 		let selected: string | null = null;
 		try {
 			const picked = await openDialog({
@@ -618,52 +843,49 @@ function App() {
 		[handleNewSessionPrompt],
 	);
 
-	// Load the sidecar's active workspace once it's ready, so the sidebar can
-	// show "where am I working" from the first paint.
-	useEffect(() => {
-		let cancelled = false;
-		invoke<{ cwd?: string; default?: string }>("get_workspace")
-			.then((res) => {
-				if (cancelled || !res) return;
-				if (typeof res.cwd === "string") setWorkspaceCwd(res.cwd);
-				if (typeof res.default === "string") setHomeDir(res.default);
-			})
-			.catch(() => {
-				// sidecar not ready yet — harmless; updated on next new_session
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, []);
-
-	// Font scale / zoom preference
-
-	const [pendingDelete, setPendingDelete] = useState<{ file: string; title: string } | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{
+		file: string;
+		title: string;
+		running: boolean;
+	} | null>(null);
 	const [pendingRename, setPendingRename] = useState<{ file: string; title: string } | null>(null);
 
 	const handleDeleteSession = useCallback(
 		(file: string) => {
+			setOpenDrawer(null);
 			const entry = sessionEntries.find((s) => s.file === file);
-			setPendingDelete({ file, title: entry?.title ?? "this chat" });
+			setPendingDelete({
+				file,
+				title: entry?.title ?? "this chat",
+				running: getSessionState(file)?.isRunning === true,
+			});
 		},
-		[sessionEntries],
+		[sessionEntries, getSessionState],
 	);
 
 	const handleConfirmDelete = useCallback(async () => {
 		if (!pendingDelete) return;
-		const file = pendingDelete.file;
+		const { file, running } = pendingDelete;
+		// A running runtime must stop successfully before persistent deletion,
+		// so no hidden work continues and the sidecar's running-delete guard is
+		// never the fallback for the normal user path.
+		if (running) {
+			const stopped = await abortStream(file);
+			if (!stopped) {
+				log.error("Failed to stop running session; deletion cancelled");
+				return;
+			}
+		}
 		try {
 			await invoke("delete_session", { sessionFile: file });
-		} catch {
-			// ignore
+		} catch (error) {
+			log.error("Failed to delete session:", error);
+			return;
 		}
+		removeSession(file);
 		setSessionEntries((prev) => prev.filter((s) => s.file !== file));
-		if (activeSessionFile === file) {
-			setActiveSessionFile(null);
-			setLoadedSessionMessages(null);
-			dispatch({ type: "RESET" });
-		}
-	}, [pendingDelete, activeSessionFile, dispatch]);
+		if (activeSessionFile === file) setActiveSessionFile(null);
+	}, [pendingDelete, abortStream, removeSession, activeSessionFile]);
 
 	// Open the rename popup for a session (mirrors the delete confirm flow).
 	const handleRequestRename = useCallback(
@@ -712,7 +934,11 @@ function App() {
 	const handleDeepSearch = useCallback(
 		async (query: string) => {
 			try {
-				const result = await invoke("search_sessions", { query, allFolders });
+				const result = await invoke("search_sessions", {
+					query,
+					allFolders,
+					cwd: workspaceCwd ?? undefined,
+				});
 				const data = result as {
 					matches?: { file: string; snippet: string; matchCount: number }[];
 				};
@@ -722,68 +948,78 @@ function App() {
 				return [];
 			}
 		},
-		[allFolders],
+		[allFolders, workspaceCwd],
 	);
 
 	const handleSessionSelect = useCallback(
-		async (file: string) => {
+		(file: string) => {
+			setOpenDrawer(null);
 			if (file === activeSessionFile) return;
-			setLoadingSession(true);
+			// Switching only changes the active render key. Cached states (hidden
+			// sessions) keep running independently; if the target was never
+			// hydrated/loaded, lazily load its runtime WITHOUT aborting anything.
 			setActiveSessionFile(file);
-			setLoadedSessionMessages(null);
-			dispatch({ type: "RESET" });
-			try {
-				const result = await invoke("load_session", { sessionFile: file });
-				const data = result as {
-					messages: ChatMessage[];
-					model?: string;
-					provider?: string;
-					cwd?: string;
-				};
-				if (data.messages && data.messages.length > 0) {
-					setLoadedSessionMessages(data.messages);
-				}
-				// Reflect the workspace this session was restored into (the sidecar
-				// rebinds to the session's saved folder, or home for legacy chats).
-				if (typeof data.cwd === "string") {
-					setWorkspaceCwd(data.cwd);
-				}
-				// Restore the model that was used in this conversation, so the
-				// user doesn't have to manually re-select it before sending.
-				if (data.model && data.provider) {
-					const key = modelKey(data.provider, data.model);
-					if (findModel(models, key)) {
-						setActiveModelId(key);
-						invoke("set_active_model", { model: data.model, provider: data.provider }).catch(
-							() => {},
-						);
-					} else {
-						// Saved model isn't available (e.g. different provider config on
-						// this device). Leave the default model active; the user can
-						// pick a new one from the dropdown.
-						log.warn(
-							"[cowork] Saved model %s/%s not found in available models",
-							data.provider,
-							data.model,
-						);
-					}
-				}
-			} catch (err) {
-				log.error("Failed to load session:", err);
-			} finally {
-				setLoadingSession(false);
+			const cached = getSessionState(file);
+			if (!cached?.runtimeLoaded) {
+				void ensureSession(file).catch((error) => {
+					log.error("Failed to load session:", error);
+				});
 			}
 		},
-		[activeSessionFile, dispatch, models],
+		[activeSessionFile, ensureSession, getSessionState],
 	);
 
-	// ── Build display messages ──
-	// Show loaded session history + any new stream messages together
-	const displayMessages = loadedSessionMessages
-		? streamState.messages.length > 0
-			? [...loadedSessionMessages, ...streamState.messages]
-			: loadedSessionMessages
-		: streamState.messages;
+	const sidebarSessions = sessionEntries.map((s) => {
+		const live = streamStates.get(s.file);
+		const runtimeStatus: "idle" | "running" | "error" = live?.isRunning
+			? "running"
+			: live?.status === "error" || live?.error
+				? "error"
+				: "idle";
+		return {
+			id: s.file,
+			title: s.title,
+			// Prefer a real content preview; fall back to a count for empty sessions.
+			lastMessage: s.preview?.trim() ? s.preview : `${s.messageCount} messages`,
+			timestamp: s.lastActivity || s.createdAt,
+			active: s.file === activeSessionFile,
+			folder: s.cwd,
+			pinned: s.pinned,
+			titleLocked: s.titleLocked,
+			mode: live?.mode ?? s.mode ?? "chat",
+			runtimeStatus,
+			runtimeError: live?.error ?? undefined,
+		};
+	});
+
+	const sidebarProps: ComponentProps<typeof Sidebar> = {
+		sessions: sidebarSessions,
+		activeSessionId: activeSessionFile || undefined,
+		onSessionSelect: (id) => {
+			setSidebarView("chats");
+			handleSessionSelect(id);
+		},
+		onNewSession: () => {
+			setSidebarView("chats");
+			void handleNewSession();
+		},
+		onOpenSession: () => {
+			setSidebarView("chats");
+			void handleNewSessionPrompt();
+		},
+		homeDir: homeDir ?? undefined,
+		onDeleteSession: handleDeleteSession,
+		onRequestRename: handleRequestRename,
+		onPinSession: handlePinSession,
+		onDeepSearch: handleDeepSearch,
+		allFolders,
+		onToggleAllFolders: () => setAllFolders((value) => !value),
+		onChangeView: handleChangeView,
+		collapsed: sidebarCollapsed,
+		onCollapsedChange: setSidebarCollapsed,
+	};
+	const activeSessionTitle =
+		sessionEntries.find((entry) => entry.file === activeSessionFile)?.title ?? "Untitled task";
 
 	// Hide the app chrome (sidebar, mobile bars, share button) whenever the
 	// main pane is showing a full-screen state: onboarding, settings, or the
@@ -791,38 +1027,28 @@ function App() {
 	const hideChrome =
 		showNewUserConnect || showConnectModal || showSettings || initializing || models.length === 0;
 
-	const sidebarSessions = sessionEntries.map((s) => ({
-		id: s.file,
-		title: s.title,
-		// Prefer a real content preview; fall back to a count for empty sessions.
-		lastMessage: s.preview?.trim() ? s.preview : `${s.messageCount} messages`,
-		timestamp: s.lastActivity || s.createdAt,
-		active: s.file === activeSessionFile,
-		folder: s.cwd,
-		pinned: s.pinned,
-		titleLocked: s.titleLocked,
-	}));
-
 	return (
 		// The app is scaled with CSS `zoom` (font-size presets). Because `zoom`
 		// multiplies the PAINTED size, the root height is zoom-COMPENSATED (100vh
 		// divided by the scale) so it always paints as exactly one viewport —
 		// otherwise Large/Extra-Large overflows <body>, and focus-scroll clips the
 		// fixed sidebar top-chrome (the New-chat button) off the top. The per-preset
-		<div className="flex md:gap-2.5 md:p-2.5 [zoom:1] h-screen">
+		<div className={`flex md:gap-2.5 md:p-2.5 ${fontScaleClass(fontScale)}`}>
 			{/* Delete chat confirmation */}
 			<ConfirmDialog
 				open={pendingDelete !== null}
 				onClose={() => setPendingDelete(null)}
 				onConfirm={handleConfirmDelete}
-				title="Delete chat?"
+				title={pendingDelete?.running ? "Stop and delete chat?" : "Delete chat?"}
 				description={
 					<>
-						<span className="text-foreground font-medium">“{pendingDelete?.title}”</span> will be
-						permanently removed. This can’t be undone.
+						<span className="text-foreground font-medium">“{pendingDelete?.title}”</span>{" "}
+						{pendingDelete?.running
+							? "is still running. Current work will stop before this chat is permanently deleted. This can’t be undone."
+							: "will be permanently removed. This can’t be undone."}
 					</>
 				}
-				confirmLabel="Delete"
+				confirmLabel={pendingDelete?.running ? "Stop and delete" : "Delete"}
 				cancelLabel="Cancel"
 				variant="destructive"
 			/>
@@ -860,46 +1086,26 @@ function App() {
 
 			{/* Sidebar — desktop: visible, mobile: slide-over */}
 			{!hideChrome && (
-				<>
-					{/* Desktop sidebar — floating glass panel */}
-					<div className="hidden md:block panel-sidebar overflow-hidden shrink-0">
-						<Sidebar
-							sessions={sidebarSessions}
-							activeSessionId={activeSessionFile || undefined}
-							onSessionSelect={(id) => {
-								setSidebarView("chats");
-								handleSessionSelect(id);
-							}}
-							onNewSession={() => {
-								setSidebarView("chats");
-								// "New" starts a session in the configured Zosma Cowork folder — no folder prompt.
-								handleNewSession();
-							}}
-							onOpenSession={() => {
-								setSidebarView("chats");
-								// "Open" picks a folder for the agent to work in.
-								handleNewSessionPrompt();
-							}}
-							homeDir={homeDir ?? undefined}
-							onDeleteSession={handleDeleteSession}
-							onRequestRename={handleRequestRename}
-							onPinSession={handlePinSession}
-							onDeepSearch={handleDeepSearch}
-							allFolders={allFolders}
-							onToggleAllFolders={() => setAllFolders((v) => !v)}
-							onChangeView={handleChangeView}
-						/>
-					</div>
-				</>
+				<div
+					className="hidden md:block panel-sidebar overflow-hidden shrink-0"
+					inert={openDrawer === "work-panel" ? true : undefined}
+				>
+					<Sidebar {...sidebarProps} />
+				</div>
 			)}
 
 			{/* Main content — raised glass panel */}
-			<div className="relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
+			<div className="session-work-container relative flex-1 flex flex-col min-w-0 md:panel-raised md:overflow-hidden">
 				{/* In-app update banner (issue #271) */}
 				<UpdateBanner update={appUpdate} />
 
 				{/* Content with view transition key */}
-				<main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+				<main
+					ref={mainContentRef}
+					tabIndex={-1}
+					className="flex-1 flex flex-col min-h-0 overflow-hidden"
+					inert={openDrawer === "sidebar" ? true : undefined}
+				>
 					<div
 						key={
 							initializing
@@ -910,9 +1116,7 @@ function App() {
 										? "connect"
 										: showSettings
 											? "settings"
-											: loadingSession
-												? "loading"
-												: "chat"
+											: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -946,42 +1150,88 @@ function App() {
 							/>
 						) : models.length === 0 ? (
 							<SplashScreen />
-						) : loadingSession ? (
+						) : streamState.loadStatus === "loading" && streamState.messages.length === 0 ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
 								<div className="text-sm text-muted-foreground">Loading session...</div>
 							</div>
 						) : (
 							<ChatView
-								messages={displayMessages}
+								sessionFile={activeSessionFile ?? ""}
+								messages={streamState.messages}
 								streamingMessage={streamState.streamingMessage}
 								isRunning={streamState.isRunning}
 								error={streamState.error}
 								onSend={handleSend}
-								onAbort={() => abortStream()}
+								onAbort={() => {
+									if (activeSessionFile) void abortStream(activeSessionFile);
+								}}
 								/* Issue #201, PR 2 — mid-turn message queuing. */
-								onSteer={steerStream}
-								onFollowUp={followUpStream}
+								onSteer={(text) => {
+									if (activeSessionFile) void steerStream(activeSessionFile, text);
+								}}
+								onFollowUp={(text) => {
+									if (activeSessionFile) void followUpStream(activeSessionFile, text);
+								}}
 								/* Issue #201, PR 3 — queue visibility + editing. */
 								queue={streamState.queue}
 								onEditQueue={handleEditQueue}
 								sessionKey={activeSessionFile ?? "new"}
 								onRetry={() => {
-									const lastUser = [...displayMessages].reverse().find((m) => m.role === "user");
+									const lastUser = [...streamState.messages]
+										.reverse()
+										.find((m) => m.role === "user");
 									if (lastUser?.content) handleSend(lastUser.content);
 								}}
 								models={models}
-								currentModelId={activeModelId}
+								currentModelId={visibleModelId}
 								onModelSelect={handleModelSelect}
 								modelSelectorOpen={showModelSelector}
 								onModelSelectorOpenChange={setShowModelSelector}
-								draft={composerDraft}
+								draft={composerDraft?.sessionFile === draftSessionKey ? composerDraft : undefined}
 								commands={BUILTIN_COMMANDS}
 								onRunCommand={handleRunCommand}
+								mode={activeMode}
+								modeChangeDisabled={firstSendPending}
+								modeError={modeError}
+								onModeChange={(mode) => void handleModeChange(mode)}
+								workspaceCwd={workspaceCwd}
+								taskTitle={activeSessionTitle}
+								drawer={openDrawer}
+								onDrawerChange={(drawer) =>
+									drawer === null ? closeDrawer() : setOpenDrawer(drawer)
+								}
+								sidebarButtonRef={sidebarDrawerTriggerRef}
+								panelButtonRef={workPanelTriggerRef}
+								onStarterSelect={(text) => {
+									setComposerDraft((previous) => ({
+										sessionFile: draftSessionKey,
+										text,
+										nonce: (previous?.nonce ?? 0) + 1,
+									}));
+								}}
 							/>
 						)}
 					</div>
 				</main>
+				{openDrawer === "sidebar" && (
+					<div className="mobile-sidebar-layer">
+						<button
+							type="button"
+							className="drawer-backdrop"
+							aria-label="Close session sidebar"
+							onClick={closeDrawer}
+						/>
+						<div
+							role="dialog"
+							aria-modal="true"
+							aria-label="Sessions"
+							className="mobile-sidebar-drawer"
+						>
+							<Sidebar {...sidebarProps} collapsed={false} onCollapsedChange={closeDrawer} />
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

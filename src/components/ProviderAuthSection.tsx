@@ -313,7 +313,7 @@ export function ProviderAuthSection({ provider, compact = false, onChange }: Pro
 						</button>
 					</div>
 					{verificationUrl && (
-						<p className="text-[10px] text-muted-foreground">
+						<p className="text-[0.625rem] text-muted-foreground">
 							at{" "}
 							<a
 								href={verificationUrl}
@@ -399,7 +399,7 @@ function StatusBadge({
 }) {
 	if (!connected) {
 		return (
-			<span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0 bg-muted text-muted-foreground">
+			<span className="text-[0.625rem] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0 bg-muted text-muted-foreground">
 				Not signed in
 			</span>
 		);
@@ -407,7 +407,7 @@ function StatusBadge({
 	const label = formatExpiry(expires);
 	return (
 		<span
-			className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0"
+			className="text-[0.625rem] uppercase tracking-wider px-2 py-0.5 rounded-md font-medium shrink-0"
 			style={{
 				background: "hsl(var(--primary) / 0.15)",
 				color: "hsl(var(--primary))",

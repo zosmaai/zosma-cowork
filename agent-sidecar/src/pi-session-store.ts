@@ -13,6 +13,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import { extractChatMessages } from "./extract-chat-messages.js";
+import type { SessionMode } from "./session-protocol.js";
 
 /** Sidebar list entry — same shape the frontend already consumes. */
 export interface CoworkSessionEntry {
@@ -28,6 +29,7 @@ export interface CoworkSessionEntry {
 	pinned: boolean;
 	titleLocked: boolean;
 	preview: string;
+	mode: SessionMode;
 }
 
 export interface CoworkMeta {
@@ -35,6 +37,8 @@ export interface CoworkMeta {
 	pinned: string[];
 	/** Absolute path → user-renamed title (locks auto-titling). */
 	titles: Record<string, string>;
+	/** Canonical absolute session path → durable product mode. */
+	modes: Record<string, SessionMode>;
 }
 
 export interface CoworkSearchMatch {
@@ -43,7 +47,16 @@ export interface CoworkSearchMatch {
 	matchCount: number;
 }
 
-const EMPTY_META: CoworkMeta = { pinned: [], titles: {} };
+const EMPTY_META: CoworkMeta = { pinned: [], titles: {}, modes: {} };
+
+function validModes(value: unknown): Record<string, SessionMode> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	return Object.fromEntries(
+		Object.entries(value).filter(
+			(entry): entry is [string, SessionMode] => entry[1] === "chat" || entry[1] === "work",
+		),
+	);
+}
 
 function metaPath(agentDir: string): string {
 	return join(agentDir, "cowork-meta.json");
@@ -51,20 +64,36 @@ function metaPath(agentDir: string): string {
 
 export function readMeta(agentDir: string): CoworkMeta {
 	const p = metaPath(agentDir);
-	if (!existsSync(p)) return { pinned: [], titles: {} };
+	if (!existsSync(p)) return { ...EMPTY_META, pinned: [], titles: {}, modes: {} };
 	try {
 		const raw = JSON.parse(readFileSync(p, "utf-8")) as Partial<CoworkMeta>;
 		return {
 			pinned: Array.isArray(raw.pinned) ? raw.pinned : [],
 			titles: raw.titles && typeof raw.titles === "object" ? raw.titles : {},
+			modes: validModes(raw.modes),
 		};
 	} catch {
-		return { pinned: [], titles: {} };
+		return { ...EMPTY_META, pinned: [], titles: {}, modes: {} };
 	}
 }
 
 export function writeMeta(agentDir: string, meta: CoworkMeta): void {
 	writeFileSync(metaPath(agentDir), JSON.stringify(meta), "utf-8");
+}
+
+export function getPiSessionMode(agentDir: string, path: string): SessionMode {
+	return readMeta(agentDir).modes[path] ?? "chat";
+}
+
+export function setPiSessionMode(
+	agentDir: string,
+	path: string,
+	mode: SessionMode,
+): boolean {
+	const meta = readMeta(agentDir);
+	meta.modes[path] = mode;
+	writeMeta(agentDir, meta);
+	return true;
 }
 
 /** Auto-derive a title from the first user message. */
@@ -87,6 +116,7 @@ export function mapSessionInfoToEntry(info: SessionInfo, meta: CoworkMeta): Cowo
 		pinned: meta.pinned.includes(info.path),
 		titleLocked: customTitle != null || info.name != null,
 		preview: deriveTitle(info.firstMessage),
+		mode: meta.modes[info.path] ?? "chat",
 	};
 }
 
@@ -104,8 +134,9 @@ export function sortEntries(entries: CoworkSessionEntry[]): CoworkSessionEntry[]
  */
 export function convertAgentMessagesToChat(
 	agentMessages: unknown[],
+	cwd = "",
 ): Array<Record<string, unknown>> {
-	const chat = extractChatMessages(agentMessages);
+	const chat = extractChatMessages(agentMessages, cwd);
 	return chat.map((m, i) => ({
 		id: `${m.timestamp ?? "m"}-${i}`,
 		...m,
@@ -140,8 +171,8 @@ export function loadPiSession(path: string): {
 } {
 	const manager = SessionManager.open(path);
 	const ctx = manager.buildSessionContext();
-	const messages = convertAgentMessagesToChat(ctx.messages as unknown[]);
 	const header = manager.getHeader();
+	const messages = convertAgentMessagesToChat(ctx.messages as unknown[], header?.cwd ?? "");
 	return {
 		messages,
 		title: manager.getSessionName() ?? "",
@@ -164,7 +195,9 @@ export function deletePiSession(agentDir: string, path: string): boolean {
 	const nextPinned = meta.pinned.filter((p) => p !== path);
 	const nextTitles = { ...meta.titles };
 	delete nextTitles[path];
-	writeMeta(agentDir, { pinned: nextPinned, titles: nextTitles });
+	const nextModes = { ...meta.modes };
+	delete nextModes[path];
+	writeMeta(agentDir, { pinned: nextPinned, titles: nextTitles, modes: nextModes });
 	return true;
 }
 

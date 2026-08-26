@@ -49,7 +49,7 @@ export function FilePreviewChip({ path, name, size, mimeType, source, onRemove }
 			title={path}
 		>
 			{source === "mention" && (
-				<span className="shrink-0 text-[10px] font-semibold text-muted-foreground/70">@</span>
+				<span className="shrink-0 text-xs font-semibold text-muted-foreground/70">@</span>
 			)}
 			{isImage ? (
 				<img

@@ -7,8 +7,9 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 	readDir: (...args: unknown[]) => mockReadDir(...args),
 }));
 
+const mockInvoke = vi.fn().mockResolvedValue("/home/user/project");
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn().mockResolvedValue("/home/user/project"),
+	invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
 describe("useFileMention", () => {
@@ -21,10 +22,47 @@ describe("useFileMention", () => {
 			{ name: "asset-pipeline.config.js", isDirectory: () => false },
 			{ name: "node_modules", isDirectory: () => true },
 		]);
+		mockInvoke.mockReset().mockResolvedValue("/home/user/project");
+	});
+
+	it("queries the explicitly selected session's workspace", async () => {
+		renderHook(() => useFileMention("/sessions/a.jsonl"));
+		await act(async () => {});
+		expect(mockInvoke).toHaveBeenCalledWith("get_workspace", { sessionFile: "/sessions/a.jsonl" });
+	});
+
+	it("skips loading when the session file is empty", async () => {
+		renderHook(() => useFileMention(""));
+		await act(async () => {});
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("gives each session its own workspace readDir and results", async () => {
+		mockInvoke.mockImplementation(async (_cmd: string, args: { sessionFile: string }) => {
+			if (args.sessionFile === "/sessions/a.jsonl") return "/work/a";
+			return "/work/b";
+		});
+		const { result, rerender } = renderHook(
+			({ sessionFile }: { sessionFile: string }) => useFileMention(sessionFile),
+			{ initialProps: { sessionFile: "/sessions/a.jsonl" } },
+		);
+		await act(async () => {});
+		act(() => {
+			result.current.onInput("@", 1);
+		});
+		expect(result.current.results).toHaveLength(5);
+
+		rerender({ sessionFile: "/sessions/b.jsonl" });
+		await act(async () => {});
+		act(() => {
+			result.current.onInput("@", 1);
+		});
+		expect(result.current.results).toHaveLength(5);
+		expect(mockInvoke).toHaveBeenCalledWith("get_workspace", { sessionFile: "/sessions/b.jsonl" });
 	});
 
 	it("starts in idle state with empty results and loading true", () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		expect(result.current.state).toBe("idle");
 		expect(result.current.results).toEqual([]);
 		expect(result.current.triggerPosition).toBeNull();
@@ -32,7 +70,7 @@ describe("useFileMention", () => {
 	});
 
 	it("transitions to active when @ is typed with whitespace before it", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("check @", 7);
@@ -41,7 +79,7 @@ describe("useFileMention", () => {
 	});
 
 	it("stays idle when @ is mid-word (not a mention trigger)", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		// "email@example.com" → the @ is mid-word, should not trigger
 		act(() => {
@@ -51,7 +89,7 @@ describe("useFileMention", () => {
 	});
 
 	it("stays idle when @ is at start of a word without preceding space", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		// "file@name" → @ is mid-word
 		act(() => {
@@ -61,7 +99,7 @@ describe("useFileMention", () => {
 	});
 
 	it("filters results as user types after @", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@src", 4);
@@ -72,7 +110,7 @@ describe("useFileMention", () => {
 	});
 
 	it("filters case-insensitively", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@README", 7);
@@ -82,7 +120,7 @@ describe("useFileMention", () => {
 	});
 
 	it("shows all files when query is empty", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@", 1);
@@ -92,7 +130,7 @@ describe("useFileMention", () => {
 	});
 
 	it("shows empty results when nothing matches query", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@zzz_not_found", 15);
@@ -101,7 +139,7 @@ describe("useFileMention", () => {
 	});
 
 	it("transitions back to idle on cancel", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@", 1);
@@ -116,7 +154,7 @@ describe("useFileMention", () => {
 	});
 
 	it("selectFile returns path and name and resets state", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@", 1);
@@ -138,7 +176,7 @@ describe("useFileMention", () => {
 	});
 
 	it("sets triggerPosition to the index of @ character", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("look at @file", 11);
@@ -147,7 +185,7 @@ describe("useFileMention", () => {
 	});
 
 	it("handles multiple @ symbols — uses the last one before cursor", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			// "@old and @new" — indices: @=0, @=9 (before "new"), cursor at end
@@ -159,7 +197,7 @@ describe("useFileMention", () => {
 	});
 
 	it("handles backspace deleting past @ — returns to idle", async () => {
-		const { result } = renderHook(() => useFileMention());
+		const { result } = renderHook(() => useFileMention("/sessions/a.jsonl"));
 		await act(async () => {});
 		act(() => {
 			result.current.onInput("@", 1);

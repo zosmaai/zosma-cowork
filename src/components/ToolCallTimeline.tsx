@@ -22,14 +22,24 @@ import { ArtifactPreview } from "./ArtifactPreview";
 interface ToolCallTimelineProps {
 	toolCalls: ToolCallInfo[];
 	detailsExpanded?: boolean;
+	workspaceCwd?: string | null;
 }
 
-export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelineProps) {
+export function ToolCallTimeline({
+	toolCalls,
+	detailsExpanded,
+	workspaceCwd,
+}: ToolCallTimelineProps) {
 	if (toolCalls.length === 0) return null;
 	return (
 		<div className="flex flex-col gap-1 my-1.5">
 			{toolCalls.map((tc) => (
-				<ToolCallBlock key={tc.id} toolCall={tc} detailsExpanded={detailsExpanded} />
+				<ToolCallBlock
+					key={tc.id}
+					toolCall={tc}
+					detailsExpanded={detailsExpanded}
+					workspaceCwd={workspaceCwd}
+				/>
 			))}
 		</div>
 	);
@@ -40,7 +50,12 @@ export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelin
 function ToolCallBlock({
 	toolCall,
 	detailsExpanded,
-}: { toolCall: ToolCallInfo; detailsExpanded?: boolean }) {
+	workspaceCwd,
+}: {
+	toolCall: ToolCallInfo;
+	detailsExpanded?: boolean;
+	workspaceCwd?: string | null;
+}) {
 	const [localExpanded, setLocalExpanded] = useState(false);
 	const isRunning = toolCall.status === "running";
 	const isError = toolCall.status === "error";
@@ -62,11 +77,14 @@ function ToolCallBlock({
 
 	// Extract file path for artifact preview after completed write/edit tools
 	const artifactPath = extractWriteFilePath(toolCall);
-	const artifact = useArtifactLoader(artifactPath);
+	const load = useArtifactLoader(
+		artifactPath && workspaceCwd ? artifactPath : null,
+		workspaceCwd ?? "",
+	);
 
 	return (
 		<div
-			className="text-xs font-mono"
+			className="text-sm font-mono"
 			style={{
 				background: bgColor,
 				borderLeft: `2px solid ${accentColor}`,
@@ -87,7 +105,7 @@ function ToolCallBlock({
 				)}
 				<span className="opacity-90 flex-1">{header}</span>
 				{!showContent && !isRunning && (
-					<span className="text-[10px] opacity-40 flex-shrink-0">Ctrl+O</span>
+					<span className="text-[0.8125rem] opacity-40 flex-shrink-0">Ctrl+O</span>
 				)}
 			</button>
 
@@ -102,14 +120,17 @@ function ToolCallBlock({
 			)}
 
 			{/* Artifact preview (shown after completed write/edit tools) */}
-			{artifact && (
+			{load.artifact && (
 				<div className="px-2 pb-1.5">
 					<ArtifactPreview
-						filePath={artifact.filePath}
-						fileContent={artifact.fileContent}
-						artifactType={artifact.artifactType}
-						onOpenFolder={(dir) => {
-							invoke("open_url", { url: `file://${dir}` }).catch(() => {});
+						filePath={load.artifact.filePath}
+						fileContent={load.artifact.fileContent}
+						artifactType={load.artifact.artifactType}
+						onOpenFolder={() => {
+							invoke("open_workspace_folder", {
+								path: load.artifact.filePath,
+								workspace: workspaceCwd ?? "",
+							}).catch(() => {});
 						}}
 						onCopyPath={(path) => {
 							navigator.clipboard.writeText(path).catch(() => {});
@@ -230,7 +251,7 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 		// No partial output yet — show a running indicator so user sees activity
 		const runningLabel = getRunningLabel(toolCall.name);
 		return (
-			<div className="flex items-center gap-1.5 text-[11px] opacity-70">
+			<div className="flex items-center gap-1.5 text-[0.8125rem] opacity-70">
 				<span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse-dot bg-tool-running-fg" />
 				<span>{runningLabel}</span>
 			</div>
@@ -262,7 +283,7 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 	// Bash error
 	if (toolCall.name === "bash" && toolCall.status === "error") {
 		return (
-			<pre className="text-[11px] whitespace-pre-wrap text-destructive">
+			<pre className="text-sm whitespace-pre-wrap text-destructive">
 				{truncate(toolCall.result, 3000)}
 			</pre>
 		);
@@ -307,7 +328,7 @@ function TruncatedOutput({ text, limit }: { text: string; limit: number }) {
 	const needsTruncation = text.length > limit;
 
 	if (!needsTruncation || expanded) {
-		return <pre className="text-[11px] whitespace-pre-wrap opacity-80">{text}</pre>;
+		return <pre className="text-sm whitespace-pre-wrap opacity-80">{text}</pre>;
 	}
 
 	const lines = text.split("\n");
@@ -316,11 +337,11 @@ function TruncatedOutput({ text, limit }: { text: string; limit: number }) {
 
 	return (
 		<div>
-			<pre className="text-[11px] whitespace-pre-wrap opacity-80">{truncated}</pre>
+			<pre className="text-sm whitespace-pre-wrap opacity-80">{truncated}</pre>
 			<button
 				type="button"
 				onClick={() => setExpanded(true)}
-				className="text-[10px] opacity-50 hover:opacity-90 transition-opacity mt-0.5"
+				className="text-[0.8125rem] opacity-50 hover:opacity-90 transition-opacity mt-0.5"
 			>
 				{hiddenLines > 0
 					? `··· ${hiddenLines} more line${hiddenLines !== 1 ? "s" : ""} · Click to expand`
@@ -446,19 +467,19 @@ function SplitDiff({ diffText }: { diffText: string }) {
 				<div key={hunk[0]?.text || hunk[0]?.type} className="min-w-[500px]">
 					{/* Hunk header */}
 					{hunk[0]?.type === "hunk" && (
-						<div className="text-[10px] opacity-50 py-0.5">{hunk[0].text}</div>
+						<div className="text-[0.8125rem] opacity-50 py-0.5">{hunk[0].text}</div>
 					)}
 					{/* Side-by-side rows */}
 					<div className="grid" style={{ gridTemplateColumns: isNewFile ? "1fr" : "1fr 1fr" }}>
 						{/* Column headers */}
 						{!isNewFile && (
 							<>
-								<div className="text-[10px] opacity-40 px-1 border-b border-border/30">old</div>
-								<div className="text-[10px] opacity-40 px-1 border-b border-border/30">new</div>
+								<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">old</div>
+								<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">new</div>
 							</>
 						)}
 						{isNewFile && (
-							<div className="text-[10px] opacity-40 px-1 border-b border-border/30">new file</div>
+							<div className="text-[0.8125rem] opacity-40 px-1 border-b border-border/30">new file</div>
 						)}
 						{/* Lines */}
 						{hunk
@@ -555,7 +576,7 @@ export function ToolCallSummary({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
 	if (errors > 0) parts.push(`${errors} failed`);
 
 	return (
-		<span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+		<span className="inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground">
 			<span className="text-muted-foreground/60">●</span>
 			{toolCalls.length} tool{toolCalls.length !== 1 ? "s" : ""}
 			{parts.length > 0 && (
@@ -578,7 +599,7 @@ function extractWriteFilePath(toolCall: ToolCallInfo): string | null {
 	if (toolCall.status !== "completed") return null;
 	if (toolCall.name !== "write" && toolCall.name !== "edit") return null;
 
-	const path = str(toolCall.args.path) || str(toolCall.args.file_path);
+	const path = toolCall.outputPath?.path || str(toolCall.args.path) || str(toolCall.args.file_path);
 	return path || null;
 }
 

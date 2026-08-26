@@ -1,5 +1,6 @@
 import { type InstallContext, type UpdatePolicy, resolveUpdatePolicy } from "@/lib/updateChannel";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
  * In-app auto-update orchestration (issue #271).
@@ -63,7 +64,7 @@ interface DownloadEvent {
 const DEFAULT_DELAY_MS = 10_000;
 
 async function loadInstallContext(): Promise<InstallContext> {
-	const { invoke } = await import("@tauri-apps/api/core");
+	// invoke imported statically
 	return invoke<InstallContext>("get_install_context");
 }
 

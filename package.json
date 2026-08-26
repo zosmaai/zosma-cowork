@@ -42,7 +42,9 @@
 		"react-dom": "^19.1.0",
 		"react-markdown": "^10.1.0",
 		"remark-gfm": "^4.0.1",
+		"remark-parse": "^11.0.0",
 		"tailwind-merge": "^3.5.0",
+		"unified": "^11.0.5",
 		"unist-util-visit": "^5.1.0"
 	},
 	"devDependencies": {
@@ -59,7 +61,7 @@
 		"@vitejs/plugin-react": "^4.4.0",
 		"autoprefixer": "^10.4.21",
 		"jsdom": "^29.1.0",
-		"postcss": "^8.5.3",
+		"postcss": "^8.5.26",
 		"tailwindcss": "^4.1.4",
 		"typescript": "^5.8.3",
 		"vite": "^6.4.3",
@@ -69,5 +71,14 @@
 	"allowScripts": {
 		"esbuild@0.25.12": true,
 		"fsevents@2.3.3": true
+	},
+	"pnpm": {
+		"overrides": {
+			"brace-expansion@2": "2.1.4",
+			"brace-expansion@5": "5.0.9",
+			"fast-uri@3": "3.1.5",
+			"nanoid@3": "3.3.17",
+			"undici@7": "7.29.0"
+		}
 	}
 }

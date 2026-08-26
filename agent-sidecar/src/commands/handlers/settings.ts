@@ -52,10 +52,10 @@ export async function handleSaveInstructions(deps: HandlerDependencies, cmd: any
 	try {
 		saveInstructions(zosmaAgentDir(deps.zosmaDir), cmd.content ?? "");
 		try {
-			if (deps.session) await deps.session.reload();
+			await deps.runtimeManager.reloadAll();
 		} catch (reloadErr) {
 			log(
-				"save_instructions: session.reload() failed (applies on next new chat): %s",
+				"save_instructions: runtime reload failed (applies on next new chat): %s",
 				reloadErr instanceof Error ? reloadErr.message : String(reloadErr),
 			);
 		}

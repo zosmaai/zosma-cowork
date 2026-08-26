@@ -49,6 +49,8 @@ export interface ToolCallInfo {
 	isError?: boolean;
 	/** Structured details from pi tool execution (diff, truncation, etc.) */
 	details?: Record<string, unknown>;
+	/** Derived canonical output path for completed write/edit calls. */
+	outputPath?: { path: string; displayPath: string };
 	/** Partial/streaming output while tool is running */
 	partialOutput?: string;
 }

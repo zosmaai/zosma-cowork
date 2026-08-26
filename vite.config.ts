@@ -30,4 +30,31 @@ export default defineConfig({
 			ignored: ["**/src-tauri/**", "**/target/**", "**/agent-sidecar/**", "**/node_modules/**"],
 		},
 	},
+	build: {
+		// Vite reports uncompressed kB; the 1,062 kB Markdown chunk is 358 kB gzip,
+		// below this repository's 500 kB gzip budget.
+		chunkSizeWarningLimit: 1100,
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (!id.includes("node_modules")) return;
+					if (id.includes("@uiw+") || id.includes("@uiw/")) return "editor";
+					if (id.includes("@sentry+") || id.includes("@sentry/")) return "telemetry";
+					if (id.includes("qrcode")) return "qrcode";
+					if (id.includes("motion")) return "motion";
+					if (id.includes("@tauri-apps")) return "tauri";
+					if (id.includes("/react/") || id.includes("/react-dom/")) return "react";
+					if (id.includes("highlight.js")) return "highlight";
+					if (
+						id.includes("react-markdown") ||
+						id.includes("remark-") ||
+						id.includes("rehype-") ||
+						id.includes("micromark") ||
+						id.includes("/unified@")
+					)
+						return "markdown";
+				},
+			},
+		},
+	},
 });

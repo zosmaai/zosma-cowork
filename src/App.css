@@ -11,6 +11,14 @@
    ═══════════════════════════════════════════════ */
 
 /* ── Brand constants (shared across themes) ── */
+/*
+ * Rem base: all --font-* size tokens resolve against this single root
+ * font-size, so one knob (browser/OS/zoom) scales the whole UI.
+ */
+html {
+	font-size: 16px;
+}
+
 :root {
 	--brand: 210 99% 48%;
 	--brand-2: 217 100% 59%;
@@ -44,6 +52,17 @@
 	--font-space-grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
 		sans-serif;
 	--font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, monospace;
+	--font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+		sans-serif;
+	--font-response: 1.1875rem;
+	--font-user-message: 1.125rem;
+	--font-composer: 1.125rem;
+	--font-empty-heading: 1.875rem;
+	--font-task-header: 1.125rem;
+	--font-session-title: 0.9375rem;
+	--font-secondary: 0.875rem;
+	--font-code: 0.9375rem;
+	--font-control: 0.9375rem;
 
 	/* ── Elevation / glass depth (per-theme) ── */
 	--elev-bg: 0 0% 100%;
@@ -440,7 +459,7 @@ body {
 	color: hsl(var(--foreground));
 	font-family: var(--font-sans);
 	-webkit-font-smoothing: antialiased;
-	font-size: 13px;
+	font-size: 0.875rem;
 	line-height: 1.5;
 	overflow: hidden;
 }
@@ -719,8 +738,25 @@ body[data-wallpaper]::before {
 
 /* ── Chat font override ── */
 .chat-font,
-.chat-font * {
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+.session-shell {
+	font-family: var(--font-reading);
+}
+
+/* ── Semantic Chat/Work typography tokens ── */
+.session-empty-heading {
+	font-size: var(--font-empty-heading);
+}
+.session-composer {
+	font-size: var(--font-composer);
+}
+.session-row-title {
+	font-size: var(--font-session-title);
+}
+.session-secondary {
+	font-size: var(--font-secondary);
+}
+.session-control {
+	font-size: var(--font-control);
 }
 
 /* ── Code blocks ── */
@@ -754,11 +790,19 @@ body[data-wallpaper]::before {
    we re-establish a clean vertical rhythm here.
    ═══════════════════════════════════════════════ */
 .chat-markdown {
-	font-size: 14px;
-	line-height: 1.72;
+	font-size: var(--font-response);
+	line-height: 1.65;
 	color: inherit;
 	word-break: break-word;
 	overflow-wrap: anywhere;
+}
+.chat-markdown-user {
+	font-size: var(--font-user-message);
+}
+.chat-markdown code,
+.chat-markdown pre code,
+.session-shell pre {
+	font-size: var(--font-code);
 }
 
 /* ── In-thread find: match highlighting ── */
@@ -959,7 +1003,7 @@ body[data-wallpaper]::before {
 
 /* ── SKILL.md reader typography ── */
 .skill-md {
-	font-size: 13px;
+	font-size: 0.8125rem;
 	line-height: 1.65;
 	color: hsl(var(--foreground));
 }
@@ -1175,7 +1219,7 @@ body[data-wallpaper]::before {
    footer (context % · cost · cache-hit · r/w · model · thinking).
    ═══════════════════════════════════ */
 .status-line {
-	font-size: 11px;
+	font-size: 0.6875rem;
 	color: hsl(var(--muted-foreground));
 	scrollbar-width: none;
 }
@@ -1204,7 +1248,7 @@ body[data-wallpaper]::before {
 }
 .status-activity-elapsed {
 	font-variant-numeric: tabular-nums;
-	font-size: 10px;
+	font-size: 0.625rem;
 	color: hsl(var(--muted-foreground) / 0.7);
 }
 .status-metric {
@@ -1228,7 +1272,7 @@ body[data-wallpaper]::before {
 	color: hsl(var(--primary) / 0.75);
 }
 .status-metric-label {
-	font-size: 9px;
+	font-size: 0.5625rem;
 	font-weight: 700;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -1244,7 +1288,7 @@ body[data-wallpaper]::before {
 	color: hsl(var(--muted-foreground) / 0.7);
 }
 .status-metric-model {
-	font-size: 10px;
+	font-size: 0.625rem;
 	font-family: var(--font-mono);
 	color: hsl(var(--muted-foreground) / 0.7);
 	white-space: nowrap;
@@ -1273,7 +1317,7 @@ body[data-wallpaper]::before {
 	border: 1px solid hsl(var(--primary) / 0.22);
 	background: hsl(var(--primary) / 0.07);
 	color: hsl(var(--foreground) / 0.82);
-	font-size: 10px;
+	font-size: 0.625rem;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 	max-width: 200px;
@@ -1307,7 +1351,7 @@ body[data-wallpaper]::before {
 	gap: 0.3rem;
 	padding: 0.12rem 0.55rem;
 	border-radius: 9999px;
-	font-size: 10px;
+	font-size: 0.625rem;
 	font-weight: 600;
 	letter-spacing: 0.01em;
 	border: 1px solid hsl(var(--primary) / 0.3);
@@ -1336,8 +1380,133 @@ body[data-wallpaper]::before {
 	color: hsl(var(--muted-foreground));
 }
 
+/* ── Active Work document shell ── */
+.session-work-container {
+	container-name: work-session;
+	container-type: inline-size;
+}
+.session-layout,
+.session-center {
+	min-width: 0;
+	min-height: 0;
+}
+.session-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	height: 100%;
+}
+.session-center {
+	display: flex;
+	flex-direction: column;
+}
+.work-header {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 56px;
+	padding: 0.65rem 1rem;
+	border-bottom: 1px solid hsl(var(--border) / 0.65);
+}
+.work-result-stack {
+	width: min(100%, 760px);
+	margin-inline: auto;
+	padding: 1.5rem 1.25rem 3rem;
+}
+.work-result-document {
+	border: 0;
+	background: transparent;
+	padding: 0;
+}
+.work-direction-row {
+	margin: 1rem 0;
+	padding: 0.55rem 0.8rem;
+	border-left: 2px solid hsl(var(--border));
+	color: hsl(var(--muted-foreground));
+	font-size: var(--font-user-message);
+}
+.mobile-sidebar-layer {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+}
+.drawer-backdrop {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+	background: hsl(var(--background) / 0.52);
+	backdrop-filter: blur(2px);
+}
+.work-panel,
+.mobile-sidebar-drawer {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: min(320px, calc(100% - 2rem));
+	max-width: 320px;
+	background: hsl(var(--sidebar-background));
+	border-left: 1px solid hsl(var(--border));
+	overflow-y: auto;
+	transition: transform 180ms ease, opacity 180ms ease;
+}
+.mobile-sidebar-drawer {
+	left: 0;
+	right: auto;
+	z-index: 41;
+	width: min(288px, calc(100% - 2rem));
+}
+.work-panel {
+	z-index: 41;
+	visibility: hidden;
+	pointer-events: none;
+	opacity: 0;
+	transform: translateX(100%);
+}
+.work-panel[data-open="true"] {
+	visibility: visible;
+	pointer-events: auto;
+	opacity: 1;
+	transform: translateX(0);
+}
+
+@container work-session (min-width: 1280px) {
+	.session-layout[data-active-work="true"]:has(.work-panel[data-open="false"]) {
+		grid-template-columns: minmax(0, 1fr) 304px;
+	}
+	.work-panel[data-open="false"] {
+		position: static;
+		width: 304px;
+		min-width: 304px;
+		max-width: none;
+		visibility: visible;
+		pointer-events: auto;
+		opacity: 1;
+		transform: none;
+	}
+	.work-panel-toggle {
+		display: none;
+	}
+}
+
+@media (min-width: 768px) {
+	.work-sidebar-toggle {
+		display: none;
+	}
+}
+
+@media (max-width: 767px) {
+	.mobile-sidebar-drawer {
+		max-width: calc(100% - 2rem);
+	}
+}
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
+	.work-panel,
+	.mobile-sidebar-drawer,
+	.drawer-backdrop {
+		transition: none;
+	}
 	body::before {
 		animation: none;
 	}
@@ -1349,4 +1518,65 @@ body[data-wallpaper]::before {
 	.animate-pulse-dot {
 		animation: none !important;
 	}
+}
+
+/* ── Selection actions toolbar ── */
+.selection-actions {
+	position: fixed;
+	z-index: 70;
+	display: flex;
+	align-items: center;
+	padding: 0.25rem;
+	border: 1px solid hsl(var(--border));
+	border-radius: 0.75rem;
+	background: hsl(var(--popover));
+	box-shadow: 0 10px 30px hsl(var(--background) / 0.35);
+	transform: translate(-50%, calc(-100% - 0.5rem));
+}
+.selection-actions[data-placement="below"] {
+	transform: translate(-50%, 0.5rem);
+}
+.selection-actions button {
+	min-height: 36px;
+	padding: 0.4rem 0.7rem;
+	border-radius: 0.5rem;
+	font-size: 0.875rem;
+	color: hsl(var(--foreground));
+}
+.selection-actions button:hover,
+.selection-actions button:focus-visible {
+	background: hsl(var(--muted));
+}
+.selection-actions button:focus-visible {
+	outline: 2px solid hsl(var(--ring));
+	outline-offset: 1px;
+}
+
+/* ── Composer quote card ── */
+.composer-quote {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 0.5rem;
+	margin: 0.65rem 0.75rem 0;
+	padding: 0.55rem 0.65rem;
+	border-left: 2px solid hsl(var(--primary));
+	border-radius: 0.5rem;
+	background: hsl(var(--muted) / 0.55);
+	color: hsl(var(--muted-foreground));
+	font-size: 0.8125rem;
+}
+.composer-quote blockquote {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+}
+.composer-quote button {
+	border-radius: 0.35rem;
+	padding: 0.2rem;
+}
+.composer-quote button:focus-visible {
+	outline: 2px solid hsl(var(--ring));
+	outline-offset: 1px;
 }

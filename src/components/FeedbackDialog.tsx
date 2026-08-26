@@ -62,7 +62,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
 				<DialogStagger className="space-y-4">
 					{/* Category */}
 					<DialogStaggerItem>
-						<p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+						<p className="text-[0.6875rem] font-medium text-muted-foreground uppercase tracking-wider mb-2">
 							What's this about?
 						</p>
 						<div
@@ -120,7 +120,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
 								disabled={submitted}
 								className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-all placeholder:text-muted-foreground/60 disabled:opacity-60"
 							/>
-							<div className="absolute bottom-2 right-3 text-[10px] tabular-nums text-muted-foreground/60 pointer-events-none">
+							<div className="absolute bottom-2 right-3 text-[0.625rem] tabular-nums text-muted-foreground/60 pointer-events-none">
 								{message.length}/{MAX_MESSAGE}
 							</div>
 						</div>

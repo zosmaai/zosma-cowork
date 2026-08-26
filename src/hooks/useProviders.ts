@@ -47,10 +47,6 @@ export function useProviders() {
 		};
 	}, []);
 
-	const setModel = useCallback(async (provider: string, modelId: string) => {
-		await invoke("set_active_model", { provider, model: modelId });
-	}, []);
-
 	const modelsForProvider = useCallback(
 		(providerId: string): ModelInfo[] => {
 			return models.filter((m) => m.provider === providerId);
@@ -70,7 +66,6 @@ export function useProviders() {
 		providers,
 		loading,
 		refresh,
-		setModel,
 		modelsForProvider,
 	};
 }

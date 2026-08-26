@@ -1,5 +1,5 @@
-import { type ArtifactType, parentDir } from "@/lib/artifacts";
-import { useEffect, useRef } from "react";
+import { type ArtifactType, parentDir, sandboxedHtml, sanitizeSvg } from "@/lib/artifacts";
+import { useMemo } from "react";
 
 interface ArtifactPreviewProps {
 	filePath: string;
@@ -7,6 +7,7 @@ interface ArtifactPreviewProps {
 	artifactType: ArtifactType;
 	onOpenFolder?: (dir: string) => void;
 	onCopyPath?: (path: string) => void;
+	openFolderLabel?: string;
 }
 
 export function ArtifactPreview({
@@ -15,19 +16,17 @@ export function ArtifactPreview({
 	artifactType,
 	onOpenFolder,
 	onCopyPath,
+	openFolderLabel,
 }: ArtifactPreviewProps) {
 	const fileName = filePath.split("/").pop() || filePath;
-	const svgContainerRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (artifactType === "svg" && svgContainerRef.current) {
-			svgContainerRef.current.innerHTML = fileContent;
-		}
-	}, [artifactType, fileContent]);
+	const safeSvg = useMemo(
+		() => (artifactType === "svg" ? sanitizeSvg(fileContent) : null),
+		[artifactType, fileContent],
+	);
 
 	return (
 		<div className="mt-2 rounded-lg border overflow-hidden border-border bg-card">
-			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[11px] border-border bg-muted">
+			<div className="flex items-center justify-between px-3 py-1.5 border-b text-[0.8125rem] border-border bg-muted">
 				<span className="font-mono truncate" data-testid="artifact-filename">
 					{fileName}
 				</span>
@@ -42,6 +41,7 @@ export function ArtifactPreview({
 					<button
 						type="button"
 						onClick={() => onOpenFolder?.(parentDir(filePath))}
+						aria-label={openFolderLabel}
 						className="text-muted-foreground hover:text-foreground transition-colors"
 					>
 						📁 Open folder
@@ -52,19 +52,29 @@ export function ArtifactPreview({
 			<div className="p-0 max-h-[400px] overflow-auto">
 				{artifactType === "html" && (
 					<iframe
-						srcDoc={fileContent}
+						srcDoc={sandboxedHtml(fileContent)}
 						title={fileName}
-						sandbox="allow-scripts"
+						sandbox=""
 						className="w-full border-0"
 						style={{ minHeight: 200, background: "white" }}
 					/>
 				)}
-				{artifactType === "svg" && (
+				{artifactType === "svg" && safeSvg && (
 					<div
-						ref={svgContainerRef}
 						className="p-3 flex items-center justify-center"
 						style={{ minHeight: 100, background: "white" }}
-					/>
+					>
+						<img
+							src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`}
+							alt={fileName}
+							className="max-w-full max-h-[350px] object-contain"
+						/>
+					</div>
+				)}
+				{artifactType === "svg" && !safeSvg && (
+					<div className="p-3 text-[0.8125rem] text-muted-foreground text-center">
+						File unavailable
+					</div>
 				)}
 				{artifactType === "image" && (
 					<div
@@ -79,12 +89,12 @@ export function ArtifactPreview({
 					</div>
 				)}
 				{artifactType === "code" && (
-					<pre className="text-[11px] p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+					<pre className="text-sm p-3 overflow-x-auto font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
 						{fileContent}
 					</pre>
 				)}
 				{artifactType === "unknown" && (
-					<div className="p-3 text-[11px] text-muted-foreground text-center">
+					<div className="p-3 text-[0.8125rem] text-muted-foreground text-center">
 						Unknown file type. File written to <code className="font-mono">{filePath}</code>
 					</div>
 				)}

@@ -151,14 +151,14 @@ export function ModelSelector({
 				aria-haspopup="listbox"
 				aria-expanded={open}
 				onClick={open ? () => setOpen(false) : handleOpen}
-				className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors
+				className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors
 				           text-muted-foreground hover:text-foreground hover:bg-accent/60"
 			>
 				<Sparkles className="w-3 h-3 shrink-0 text-primary/70" />
 				<span className="max-w-[110px] truncate">{label}</span>
 				{shortProvider && (
 					<span
-						className="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wider
+						className="shrink-0 rounded px-1 py-px text-xs font-semibold uppercase tracking-wider
 					                 bg-primary/10 text-primary"
 					>
 						{shortProvider}
@@ -201,10 +201,10 @@ export function ModelSelector({
 									onChange={(e) => setQuery(e.target.value)}
 									onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
 									aria-label="Search models"
-									className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+									className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
 								/>
 								{query && (
-									<span className="text-[10px] text-muted-foreground/50 tabular-nums">
+									<span className="text-xs text-muted-foreground/50 tabular-nums">
 										{totalFiltered}
 									</span>
 								)}
@@ -213,7 +213,7 @@ export function ModelSelector({
 							{/* List */}
 							<div className="flex-1 min-h-0 overflow-y-auto">
 								{grouped.size === 0 ? (
-									<p className="px-3 py-6 text-center text-xs text-muted-foreground/50">
+									<p className="px-3 py-6 text-center text-sm text-muted-foreground/50">
 										No models found
 									</p>
 								) : (
@@ -221,7 +221,7 @@ export function ModelSelector({
 										<div key={provider}>
 											{/* Provider heading */}
 											<div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-												<span className="text-[9px] font-bold uppercase tracking-widest text-primary/80">
+												<span className="text-xs font-bold uppercase tracking-widest text-primary/80">
 													{providerShort(provider)}
 												</span>
 												<div className="flex-1 h-px bg-primary/15" />
@@ -257,12 +257,12 @@ export function ModelSelector({
 														{/* Name + context window */}
 														<div className="flex-1 min-w-0">
 															<span
-																className={`text-xs truncate block ${isActive ? "font-semibold text-foreground" : ""}`}
+																className={`text-sm truncate block ${isActive ? "font-semibold text-foreground" : ""}`}
 															>
 																{model.name}
 															</span>
 															{model.contextWindow > 0 && (
-																<span className="text-[10px] text-muted-foreground/50 block">
+																<span className="text-xs text-muted-foreground/50 block">
 																	{model.contextWindow >= 1000
 																		? `${Math.round(model.contextWindow / 1000)}k ctx`
 																		: `${model.contextWindow} ctx`}

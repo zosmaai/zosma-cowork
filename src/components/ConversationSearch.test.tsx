@@ -19,7 +19,14 @@ beforeAll(() => {
 });
 
 const mockSessions = [
-	{ id: "1", title: "React project setup", lastMessage: "How do I init", timestamp: 1000 },
+	{
+		id: "1",
+		title: "React project setup",
+		lastMessage: "How do I init",
+		timestamp: 1000,
+		runtimeStatus: "running" as const,
+		runtimeError: undefined,
+	},
 	{ id: "2", title: "API design patterns", lastMessage: "Best practices", timestamp: 2000 },
 	{ id: "3", title: "Debugging memory leaks", lastMessage: "Node process", timestamp: 3000 },
 ];
@@ -145,6 +152,46 @@ describe("ConversationSearch", () => {
 		const items = screen.getAllByRole("button");
 		const activeItem = items.find((item) => item.textContent?.includes("API design patterns"));
 		expect(activeItem?.className).toContain("bg-sidebar-accent");
+	});
+
+	it("shows a labeled running indicator without replacing active styling", () => {
+		render(
+			<ConversationSearch
+				sessions={[
+					{
+						...mockSessions[0],
+						runtimeStatus: "running",
+					},
+				]}
+				activeSessionId="1"
+				onSelect={noop}
+				onNewSession={noop}
+				onOpenSession={noop}
+				onDeleteSession={noop}
+			/>,
+		);
+		expect(screen.getByLabelText("React project setup is running")).toBeInTheDocument();
+		const row = screen.getByRole("button", { name: /^React project setup/ });
+		expect(row.className).toContain("bg-sidebar-accent");
+	});
+
+	it("shows a labeled session error", () => {
+		render(
+			<ConversationSearch
+				sessions={[
+					{
+						...mockSessions[1],
+						runtimeStatus: "error",
+						runtimeError: "Rate limited",
+					},
+				]}
+				onSelect={noop}
+				onNewSession={noop}
+				onOpenSession={noop}
+				onDeleteSession={noop}
+			/>,
+		);
+		expect(screen.getByLabelText("API design patterns failed: Rate limited")).toBeInTheDocument();
 	});
 });
 
@@ -324,5 +371,22 @@ describe("ConversationSearch — deep content search", () => {
 		expect(screen.getByText(/explain ownership and lifetimes/i)).toBeDefined();
 		// Non-matching session is filtered out.
 		expect(screen.queryByText("React")).toBeNull();
+	});
+
+	it("shows each session's durable Chat or Work label", () => {
+		render(
+			<ConversationSearch
+				sessions={[
+					{ ...mockSessions[0], mode: "work" },
+					{ ...mockSessions[1], mode: "chat" },
+				]}
+				onSelect={noop}
+				onNewSession={noop}
+				onOpenSession={noop}
+				onDeleteSession={noop}
+			/>,
+		);
+		expect(screen.getByRole("button", { name: /React project setup.*Work/ })).toHaveTextContent("Work");
+		expect(screen.getByRole("button", { name: /API design patterns.*Chat/ })).toHaveTextContent("Chat");
 	});
 });

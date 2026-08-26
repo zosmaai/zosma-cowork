@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -33,11 +32,54 @@ struct SidecarState {
     ready: Arc<AtomicBool>,
 }
 
-struct PendingPrompt {
-    channel: Channel<Value>,
-}
 struct PendingRequest {
     sender: oneshot::Sender<Result<Value, String>>,
+}
+
+/// Normalize a prompt-channel `done`/`error` message into a complete
+/// `session_event` envelope so the frontend's keyed reducer receives a
+/// uniform transport for every event type.
+///
+/// Returns `None` for untagged global messages (`ready`, non-session `done`).
+fn normalize_session_stream_message(message: &Value) -> Option<Value> {
+    let session_file = message.get("sessionFile")?.as_str()?;
+    match message.get("type").and_then(Value::as_str) {
+        Some("event") => Some(message.clone()),
+        Some("done") => Some(serde_json::json!({
+            "type": "event",
+            "sessionFile": session_file,
+            "event": { "type": "done" }
+        })),
+        Some("error") => Some(serde_json::json!({
+            "type": "event",
+            "sessionFile": session_file,
+            "event": {
+                "type": "error",
+                "code": message.get("code").cloned().unwrap_or(Value::Null),
+                "message": message.get("message").cloned().unwrap_or(Value::Null),
+                "retryable": message.get("retryable").cloned().unwrap_or(Value::Bool(false)),
+                "details": message.get("details").cloned().unwrap_or(Value::Null)
+            }
+        })),
+        _ => None,
+    }
+}
+
+/// Drain all pending request promises so a dead sidecar process cannot hang
+/// or resolve against a replacement process.
+async fn fail_pending_requests(
+    pending: &Arc<Mutex<HashMap<String, PendingRequest>>>,
+    message: &str,
+) {
+    let requests: Vec<PendingRequest> = pending
+        .lock()
+        .await
+        .drain()
+        .map(|(_, request)| request)
+        .collect();
+    for request in requests {
+        let _ = request.sender.send(Err(message.to_string()));
+    }
 }
 
 struct TelemetryState {
@@ -47,7 +89,6 @@ struct TelemetryState {
 #[derive(Default)]
 struct AppState {
     sidecar: SidecarState,
-    pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
     // Captured before the sidecar can create models.json. Prevents a fresh
     // install from being reclassified as an existing user during startup.
@@ -546,7 +587,6 @@ use std::process::Stdio;
 
 async fn read_stdout(
     mut out: tokio::process::ChildStdout,
-    pp: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pr: Arc<Mutex<HashMap<String, PendingRequest>>>,
     rd: Arc<AtomicBool>,
     app: AppHandle,
@@ -568,52 +608,33 @@ async fn read_stdout(
             }
             "event" => {
                 if let Some(e) = m.get("event") {
-                    // Surface OAuth-flow events as Tauri events so the React
-                    // UI can listen for them globally (separate from prompt
-                    // streaming channels which are scoped to active prompts).
+                    // Surface OAuth-flow, reload, and extension-UI requests as
+                    // Tauri events so the React UI can listen globally. OAuth
+                    // events aren't bound to a session, but ui_request/
+                    // ui_cancel carry a sessionFile for stale-dialog dismissal.
                     if let Some(kind) = e.get("kind").and_then(|v| v.as_str()) {
-                        // Surface OAuth, reload, and extension-UI requests as
-                        // global Tauri events. `ui_request` carries ctx.ui
-                        // dialog calls (e.g. pi-ask-user) so the React UI can
-                        // render them regardless of which prompt is active.
-                        // `ui_cancel` tells the UI to dismiss a dialog the
-                        // sidecar already resolved itself (timeout/abort).
                         if kind.starts_with("oauth_")
                             || kind == "agent_reload_failed"
                             || kind == "ui_request"
                             || kind == "ui_cancel"
                         {
-                            let _ = app.emit(kind, e.clone());
+                            // Preserve the existing event name; add sessionFile
+                            // without removing kind/id/method fields.
+                            let mut payload = e.clone();
+                            if let Some(sf) = m.get("sessionFile") {
+                                payload["sessionFile"] = sf.clone();
+                            }
+                            let _ = app.emit(kind, payload);
                         }
                     }
-                    // Pi SDK session-level events (queue_update,
-                    // session_info_changed, etc.) use `type` instead of
-                    // `kind`. The composer (#201 PR 3) needs to know about
-                    // queue mutations EVEN WHEN NO PROMPT IS ACTIVE — e.g.
-                    // after the agent finishes and a follow-up dequeues.
-                    // Emit those globally so a `listen("queue_update", ...)`
-                    // in React works regardless of streaming state.
-                    if let Some(t) = e.get("type").and_then(|v| v.as_str()) {
-                        if t == "queue_update" {
-                            let _ = app.emit("queue_update", e.clone());
-                        }
-                    }
-                    for p in pp.lock().await.values() {
-                        let _ = p.channel.send(e.clone());
-                    }
+                }
+                if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             "done" => {
-                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
-                    // Forward a terminal `done` to the prompt channel BEFORE
-                    // dropping it. The UI ends a turn on `agent_end` OR `done`;
-                    // without this forward the only completion signal is
-                    // `agent_end`, so any turn that doesn't emit one (incl. the
-                    // sidecar's prompt-timeout abort, which only sends `done`)
-                    // leaves the UI stuck in "thinking" forever.
-                    if let Some(p) = pp.lock().await.remove(id) {
-                        let _ = p.channel.send(serde_json::json!({"type":"done"}));
-                    }
+                if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             "result" => {
@@ -626,18 +647,16 @@ async fn read_stdout(
                 }
             }
             "error" => {
-                let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let t = m.get("message").and_then(|v| v.as_str()).unwrap_or("err");
-                // Surface sidecar command errors. Previously these were relayed
-                // to the frontend as a rejected Promise and never logged, so a
-                // failing command (e.g. load_session) was invisible in the logs.
-                log::warn!("sidecar error response id={id}: {t}");
-                if let Some(p) = pr.lock().await.remove(id) {
-                    let _ = p.sender.send(Err(t.into()));
-                } else if let Some(p) = pp.lock().await.get(id) {
-                    let _ = p
-                        .channel
-                        .send(serde_json::json!({"type":"error","message":t}));
+                let id = m.get("id").and_then(Value::as_str).unwrap_or("");
+                let message = m.get("message").and_then(Value::as_str).unwrap_or("err");
+                log::warn!("sidecar error response id={id}: {message}");
+                if let Some(request) = pr.lock().await.remove(id) {
+                    // One-shot request error: return the FULL envelope string so
+                    // structured fields (code/retryable/details) survive Tauri's
+                    // rejection instead of collapsing to the message alone.
+                    let _ = request.sender.send(Err(m.to_string()));
+                } else if let Some(envelope) = normalize_session_stream_message(&m) {
+                    let _ = app.emit("session_event", envelope);
                 }
             }
             _ => {}
@@ -694,9 +713,13 @@ async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<V
 
 #[tauri::command]
 async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
+    // Unique id per call — see get_auth_status: a hardcoded id collides in
+    // `pending_requests`, so a concurrent get_models resolves "closed" and
+    // models never load (leaving the splash up forever).
+    let id = format!("gm-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"get_models","id":"gm"}),
+        &serde_json::json!({"type":"get_models","id":id}),
         std::time::Duration::from_secs(30),
     )
     .await
@@ -707,11 +730,11 @@ async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
 /// `{provider, id, name}` or null. The frontend mirrors this on startup so the
 /// model shown near the input matches the model that actually answers.
 #[tauri::command]
-async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
+async fn get_active_model(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
     let id = format!("gam-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"get_active_model","id":id}),
+        &serde_json::json!({"type":"get_active_model","id":id,"sessionFile":session_file}),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -719,28 +742,26 @@ async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
 
 #[tauri::command]
 async fn send_prompt(
+    session_file: String,
     text: String,
-    ch: Channel<Value>,
     s: State<'_, AppState>,
 ) -> Result<(), String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("p-{}", uuid_v4());
-    s.pending_prompts
-        .lock()
-        .await
-        .insert(id.clone(), PendingPrompt { channel: ch });
-    scmd(
-        &s,
-        &serde_json::json!({"type":"prompt","id":id,"text":text}),
-    )
-    .await
+    scmd(&s, &build_prompt_payload(&id, &session_file, &text)).await
 }
 
 #[tauri::command]
-async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
-    scmd(&s, &serde_json::json!({"type":"abort","id":"ab"})).await
+async fn abort_prompt(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("ab-{}", uuid_v4());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"abort","id":id,"sessionFile":session_file}),
+        std::time::Duration::from_secs(5),
+    )
+    .await
 }
 
 /// Build the JSONL payload sent to the sidecar for a `steer` command.
@@ -754,10 +775,21 @@ async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
 /// pi-coding-agent's `docs/rpc.md` for the protocol reference (cowork
 /// uses `text` rather than pi's `message` to stay internally consistent
 /// with the existing `prompt` command).
-fn build_steer_payload(id: &str, text: &str) -> Value {
+fn build_steer_payload(id: &str, session_file: &str, text: &str) -> Value {
     serde_json::json!({
         "type": "steer",
         "id": id,
+        "sessionFile": session_file,
+        "text": text,
+    })
+}
+
+/// Build the JSONL payload sent to the sidecar for a `prompt` command.
+fn build_prompt_payload(id: &str, session_file: &str, text: &str) -> Value {
+    serde_json::json!({
+        "type": "prompt",
+        "id": id,
+        "sessionFile": session_file,
         "text": text,
     })
 }
@@ -800,19 +832,30 @@ fn get_install_context() -> Value {
 /// Issue #201 PR 3 — atomically drains the SDK queue. No `text` field: this
 /// command takes no input. The sidecar replies with the drained
 /// `{steering, followUp}` arrays in a `result` envelope.
-fn build_clear_queue_payload(id: &str) -> Value {
+fn build_clear_queue_payload(id: &str, session_file: &str) -> Value {
     serde_json::json!({
         "type": "clear_queue",
         "id": id,
+        "sessionFile": session_file,
+    })
+}
+
+fn build_set_session_mode_payload(id: &str, session_file: &str, mode: &str) -> Value {
+    serde_json::json!({
+        "type": "set_session_mode",
+        "id": id,
+        "sessionFile": session_file,
+        "mode": mode,
     })
 }
 
 /// Build the JSONL payload sent to the sidecar for a `follow_up` command.
 /// See [`build_steer_payload`] for rationale.
-fn build_follow_up_payload(id: &str, text: &str) -> Value {
+fn build_follow_up_payload(id: &str, session_file: &str, text: &str) -> Value {
     serde_json::json!({
         "type": "follow_up",
         "id": id,
+        "sessionFile": session_file,
         "text": text,
     })
 }
@@ -824,14 +867,18 @@ fn build_follow_up_payload(id: &str, text: &str) -> Value {
 /// streaming channel — streaming events keep flowing on the existing
 /// prompt channel).
 #[tauri::command]
-async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+async fn steer_prompt(
+    session_file: String,
+    text: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("st-{}", uuid_v4());
     scmd_r(
         &s,
-        &build_steer_payload(&id, &text),
+        &build_steer_payload(&id, &session_file, &text),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -840,14 +887,18 @@ async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, Str
 /// Queue a follow-up message on the active session. Delivered after the
 /// agent has no more tool calls or steering messages pending.
 #[tauri::command]
-async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+async fn follow_up_prompt(
+    session_file: String,
+    text: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("fu-{}", uuid_v4());
     scmd_r(
         &s,
-        &build_follow_up_payload(&id, &text),
+        &build_follow_up_payload(&id, &session_file, &text),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -858,14 +909,14 @@ async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value,
 /// composer calls this when the user presses Ctrl+↑ to recall pending
 /// queued messages for editing. Idempotent on an empty queue.
 #[tauri::command]
-async fn clear_queue(s: State<'_, AppState>) -> Result<Value, String> {
+async fn clear_queue(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("cq-{}", uuid_v4());
     scmd_r(
         &s,
-        &build_clear_queue_payload(&id),
+        &build_clear_queue_payload(&id, &session_file),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -898,13 +949,15 @@ async fn send_ui_response(
 
 #[tauri::command]
 async fn set_active_model(
+    session_file: String,
     provider: String,
     model: String,
     s: State<'_, AppState>,
 ) -> Result<Value, String> {
+    let id = format!("sm-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"set_model","id":"sm","provider":provider,"model":model}),
+        &serde_json::json!({"type":"set_model","id":id,"sessionFile":session_file,"provider":provider,"model":model}),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -1372,13 +1425,22 @@ fn get_username() -> String {
 }
 
 #[tauri::command]
-async fn list_sessions(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"list_sessions","id":"ls"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
+async fn list_sessions(
+    s: State<'_, AppState>,
+    all_folders: Option<bool>,
+    cwd: Option<String>,
+) -> Result<Value, String> {
+    let id = format!("ls-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"list_sessions","id":id});
+    if let Some(a) = all_folders {
+        payload["allFolders"] = serde_json::json!(a);
+    }
+    if let Some(c) = cwd {
+        if !c.trim().is_empty() {
+            payload["cwd"] = serde_json::json!(c);
+        }
+    }
+    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
 }
 
 #[tauri::command]
@@ -1467,15 +1529,43 @@ async fn set_session_pinned(
     .await
 }
 
-/// Deep content search across all session bodies (not just titles).
+/// Set the durable Chat/Work mode for an empty session. The sidecar rejects
+/// any change once the first prompt has started, keeping mode a pre-first-
+/// prompt choice.
 #[tauri::command]
-async fn search_sessions(query: String, s: State<'_, AppState>) -> Result<Value, String> {
+async fn set_session_mode(
+    session_file: String,
+    mode: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("sm-{}", uuid_v4());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"search_sessions","id":"ss","query": query}),
+        &build_set_session_mode_payload(&id, &session_file, &mode),
         std::time::Duration::from_secs(10),
     )
     .await
+}
+
+/// Deep content search across all session bodies (not just titles).
+#[tauri::command]
+async fn search_sessions(
+    query: String,
+    s: State<'_, AppState>,
+    all_folders: Option<bool>,
+    cwd: Option<String>,
+) -> Result<Value, String> {
+    let id = format!("ss-{}", uuid_v4());
+    let mut payload = serde_json::json!({"type":"search_sessions","id":id,"query":query});
+    if let Some(a) = all_folders {
+        payload["allFolders"] = serde_json::json!(a);
+    }
+    if let Some(c) = cwd {
+        if !c.trim().is_empty() {
+            payload["cwd"] = serde_json::json!(c);
+        }
+    }
+    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
 }
 
 #[tauri::command]
@@ -1494,16 +1584,25 @@ async fn new_session(cwd: Option<String>, s: State<'_, AppState>) -> Result<Valu
     scmd_r(&s, &payload, std::time::Duration::from_secs(60)).await
 }
 
-/// Report the sidecar's active workspace folder (and the default), so the UI
-/// can display "where am I working" and pre-fill the folder picker.
+/// Report the workspace folder for the explicitly selected session (and the
+/// default), so the UI can display "where am I working" and pre-fill the
+/// folder picker. Maps the sidecar result to only its `cwd` string because
+/// `useFileMention` consumes a path; the initial `defaultWorkspace` comes
+/// from the ready payload.
 #[tauri::command]
-async fn get_workspace(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
+async fn get_workspace(session_file: String, s: State<'_, AppState>) -> Result<String, String> {
+    let id = format!("gw-{}", uuid_v4());
+    let result = scmd_r(
         &s,
-        &serde_json::json!({"type":"get_workspace","id":"gw"}),
+        &serde_json::json!({"type":"get_workspace","id":id,"sessionFile":session_file}),
         std::time::Duration::from_secs(10),
     )
-    .await
+    .await?;
+    Ok(result
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string())
 }
 
 #[tauri::command]
@@ -2115,48 +2214,133 @@ async fn get_file_info(path: String) -> Result<FileInfo, String> {
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
-    // Per-platform browser opener. Previous implementation shelled out to
-    // `sh -c "xdg-open ... || open ... || start '' ..."` which silently
-    // fails on Windows: GUI Tauri processes don't have `sh` on PATH, and
-    // even when Git Bash is installed `start` is a cmd.exe builtin, not
-    // a real executable. That broke every OAuth flow (Claude Pro, GitHub
-    // Copilot, OpenAI Codex) on Windows — the UI stuck at "Opening
-    // browser…" with no error because the React side `.catch(() => {})`s
-    // the rejection.
+    open_target(&url)
+}
+
+/// Launch the platform browser/file-manager for an already-validated target.
+fn open_target(target: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let result = {
-        // `cmd /c start "" "<url>"`. Two things are load-bearing here:
-        //   1. The empty `""` is the window title `start` expects as its first
-        //      quoted arg.
-        //   2. The URL MUST be wrapped in double quotes, appended via `raw_arg`
-        //      so Rust doesn't re-escape it. Without the quotes, cmd.exe treats
-        //      `&` as a command separator and truncates the URL at the FIRST
-        //      `&` — so an OAuth URL like
-        //        …/auth?client_id=X&redirect_uri=…&response_type=code&scope=…
-        //      collapses to just `client_id=X`, and Google rejects it with
-        //      "Access blocked: Authorisation error — Required parameter is
-        //      missing: response_type" (Error 400: invalid_request). Quoting
-        //      also stops `%` in percent-encoded params being read as a cmd
-        //      variable reference. This mirrors how the `open` crate (used by
-        //      tauri-plugin-shell) opens URLs on Windows.
-        // CREATE_NO_WINDOW (0x08000000) prevents a brief console-window flash.
+        // `cmd /c start "" "<target>"`. Quoting prevents `&` being read as a
+        // command separator and `%` being read as a variable reference, and
+        // CREATE_NO_WINDOW (0x08000000) prevents a console-window flash.
         use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
             .args(["/c", "start", ""])
-            .raw_arg(format!("\"{url}\""))
+            .raw_arg(format!("\"{target}\""))
             .creation_flags(0x0800_0000)
             .status()
     };
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&url).status();
+    let result = std::process::Command::new("open").arg(target).status();
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&url).status();
+    let result = std::process::Command::new("xdg-open").arg(target).status();
 
     let st = result.map_err(|e| format!("open: {e}"))?;
     if !st.success() {
         return Err(format!("exit: {}", st));
     }
     Ok(())
+}
+
+const MAX_ARTIFACT_BYTES: u64 = 5 * 1024 * 1024;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtifactFile {
+    bytes: Vec<u8>,
+    mime_type: String,
+}
+
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, File as CapFile};
+
+fn workspace_relative_path(workspace: &Path, requested: &Path) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let candidate = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        root.join(requested)
+    };
+    let target = std::fs::canonicalize(candidate).map_err(|_| "File unavailable".to_string())?;
+    let relative = target
+        .strip_prefix(&root)
+        .map_err(|_| "File unavailable".to_string())?
+        .to_path_buf();
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err("File unavailable".to_string());
+    }
+    Ok(relative)
+}
+
+fn open_authorized_artifact(workspace: &Path, requested: &Path) -> Result<CapFile, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let relative = workspace_relative_path(&root, requested)?;
+    let directory = Dir::open_ambient_dir(&root, ambient_authority())
+        .map_err(|_| "Workspace unavailable".to_string())?;
+    let handle = directory
+        .open(&relative)
+        .map_err(|_| "File unavailable".to_string())?;
+    if !handle
+        .metadata()
+        .map_err(|_| "File unavailable".to_string())?
+        .is_file()
+    {
+        return Err("File unavailable".to_string());
+    }
+    Ok(handle)
+}
+
+fn read_authorized_artifact(workspace: &Path, requested: &Path) -> Result<ArtifactFile, String> {
+    use std::io::Read;
+    let mut handle = open_authorized_artifact(workspace, requested)?;
+    let mut bytes = Vec::new();
+    handle
+        .by_ref()
+        .take(MAX_ARTIFACT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "File unavailable".to_string())?;
+    if bytes.len() as u64 > MAX_ARTIFACT_BYTES {
+        return Err("File unavailable".to_string());
+    }
+    Ok(ArtifactFile {
+        mime_type: mime_guess::from_path(requested)
+            .first_or(mime_guess::mime::APPLICATION_OCTET_STREAM)
+            .to_string(),
+        bytes,
+    })
+}
+
+#[tauri::command]
+async fn read_workspace_artifact(path: String, workspace: String) -> Result<ArtifactFile, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_authorized_artifact(Path::new(&workspace), Path::new(&path))
+    })
+    .await
+    .map_err(|_| "File unavailable".to_string())?
+}
+
+fn canonical_workspace_parent(workspace: &Path, path: &Path) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace).map_err(|_| "Workspace unavailable".to_string())?;
+    let requested_parent = path
+        .parent()
+        .ok_or_else(|| "Folder unavailable".to_string())?;
+    let parent =
+        std::fs::canonicalize(requested_parent).map_err(|_| "Folder unavailable".to_string())?;
+    if !parent.starts_with(&root) || !parent.is_dir() {
+        return Err("Folder unavailable".to_string());
+    }
+    Ok(parent)
+}
+
+#[tauri::command]
+async fn open_workspace_folder(path: String, workspace: String) -> Result<(), String> {
+    let parent = canonical_workspace_parent(Path::new(&workspace), Path::new(&path))?;
+    open_target(parent.to_string_lossy().as_ref())
 }
 
 // ── Zosma Router Auth relay commands ────────────────────────────
@@ -2408,7 +2592,6 @@ pub fn run() {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
                 format!("{}/.zosmaai", home)
             });
-            let pp = st.pending_prompts.clone();
             let pr = st.pending_requests.clone();
             let rd = Arc::clone(&st.sidecar.ready);
             app.manage(st);
@@ -2444,9 +2627,13 @@ pub fn run() {
                                     Err(e) => log::error!("Sidecar pid={pid_watch:?} wait error: {e}"),
                                 }
                             });
-                            read_stdout(o, pp.clone(), pr.clone(), rd.clone(), h.clone()).await;
-                            // Sidecar died — mark not ready so commands fail
-                            // fast with "not ready" instead of hanging.
+                            read_stdout(o, pr.clone(), rd.clone(), h.clone()).await;
+                            // Sidecar died — drain pending request promises
+                            // BEFORE emitting sidecar_lost / respawning so no
+                            // request hangs or resolves against the replacement.
+                            fail_pending_requests(&pr, "sidecar lost").await;
+                            // Mark not ready so commands fail fast with "not
+                            // ready" instead of hanging.
                             rd.store(false, Ordering::Release);
                             let _ = h.emit("sidecar_lost", ());
                             if attempt < max_retries - 1 {
@@ -2522,6 +2709,7 @@ pub fn run() {
             delete_session,
             rename_session,
             set_session_pinned,
+            set_session_mode,
             search_sessions,
             new_session,
             get_workspace,
@@ -2537,6 +2725,8 @@ pub fn run() {
             remove_skill,
             write_user_file,
             open_url,
+            read_workspace_artifact,
+            open_workspace_folder,
             get_file_info,
             crate::analytics::track_analytics_event,
             crate::analytics::set_analytics_enabled,
@@ -2552,8 +2742,111 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload, has_pi_state_files, is_fresh_start,
+        build_set_session_mode_payload, build_steer_payload, canonical_workspace_parent,
+        fail_pending_requests, has_pi_state_files, is_fresh_start,
+        normalize_session_stream_message, open_authorized_artifact, read_authorized_artifact,
+        PendingRequest, MAX_ARTIFACT_BYTES,
     };
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[test]
+    fn workspace_artifact_guard_accepts_a_file_inside_root() {
+        let base = std::env::temp_dir().join(format!("cowork-artifact-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("report.md");
+        std::fs::write(&file, "ok").unwrap();
+        assert!(open_authorized_artifact(&root, &file).is_ok());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_artifact_guard_rejects_parent_escape() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-escape-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = base.join("secret.txt");
+        std::fs::write(&outside, "no").unwrap();
+        assert!(open_authorized_artifact(&root, &outside).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_artifact_guard_accepts_symlinked_workspace_alias() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-workspace-alias-{}",
+            std::process::id()
+        ));
+        let root = base.join("workspace");
+        let alias = base.join("workspace-alias");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("report.md"), "ok").unwrap();
+        symlink(&root, &alias).unwrap();
+        assert!(open_authorized_artifact(&alias, &alias.join("report.md")).is_ok());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_artifact_guard_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-symlink-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = base.join("secret.txt");
+        std::fs::write(&outside, "no").unwrap();
+        let link = root.join("linked.txt");
+        symlink(&outside, &link).unwrap();
+        assert!(open_authorized_artifact(&root, &link).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn authorized_artifact_read_rejects_oversized_files() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-size-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("big.txt");
+        std::fs::write(&file, vec![b'x'; (MAX_ARTIFACT_BYTES + 1) as usize]).unwrap();
+        let result = read_authorized_artifact(&root, &file);
+        assert!(result.is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_parent_guard_accepts_missing_file_inside_root() {
+        let base =
+            std::env::temp_dir().join(format!("cowork-artifact-missing-{}", std::process::id()));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let missing = root.join("missing.md");
+        assert_eq!(
+            canonical_workspace_parent(&root, &missing).unwrap(),
+            std::fs::canonicalize(&root).unwrap()
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn workspace_parent_guard_rejects_parent_escape() {
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-parent-escape-{}",
+            std::process::id()
+        ));
+        let root = base.join("workspace");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        assert!(canonical_workspace_parent(&root, &outside.join("missing.md")).is_err());
+        std::fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn fresh_agent_directory_has_no_pi_state() {
@@ -2624,17 +2917,19 @@ mod tests {
 
     #[test]
     fn steer_payload_uses_steer_type_with_text_and_id() {
-        let p = build_steer_payload("st-abc", "hi there");
+        let p = build_steer_payload("st-abc", "/sessions/a.jsonl", "hi there");
         assert_eq!(p["type"], "steer");
         assert_eq!(p["id"], "st-abc");
+        assert_eq!(p["sessionFile"], "/sessions/a.jsonl");
         assert_eq!(p["text"], "hi there");
     }
 
     #[test]
     fn follow_up_payload_uses_follow_up_type_with_text_and_id() {
-        let p = build_follow_up_payload("fu-xyz", "after you finish");
+        let p = build_follow_up_payload("fu-xyz", "/sessions/b.jsonl", "after you finish");
         assert_eq!(p["type"], "follow_up");
         assert_eq!(p["id"], "fu-xyz");
+        assert_eq!(p["sessionFile"], "/sessions/b.jsonl");
         assert_eq!(p["text"], "after you finish");
     }
 
@@ -2644,7 +2939,7 @@ mod tests {
         // be mangled by serialization. The Tauri → sidecar transport is
         // LF-delimited JSONL so embedded `\n` and Unicode line separators
         // must round-trip via JSON escaping.
-        let p = build_steer_payload("id", "line one\nline two — café");
+        let p = build_steer_payload("id", "/sessions/a.jsonl", "line one\nline two — café");
         let serialized = serde_json::to_string(&p).unwrap();
         // The newline inside the user's text is escaped, never raw.
         assert!(
@@ -2660,27 +2955,193 @@ mod tests {
         // No text field — clear_queue takes no input from the user. The
         // sidecar reads `type` to dispatch and `id` to route the response
         // envelope back through `pending_requests`.
-        let p = build_clear_queue_payload("cq-abc");
+        let p = build_clear_queue_payload("cq-abc", "/sessions/a.jsonl");
         assert_eq!(p["type"], "clear_queue");
         assert_eq!(p["id"], "cq-abc");
+        assert_eq!(p["sessionFile"], "/sessions/a.jsonl");
         // Defensive: ensure no extra fields snuck in that the sidecar
         // doesn't expect (sidecar's strict TS Command union would refuse).
         let obj = p.as_object().expect("clear_queue payload is an object");
         assert_eq!(
             obj.len(),
-            2,
+            3,
             "unexpected fields in clear_queue payload: {p}"
+        );
+    }
+
+    #[test]
+    fn set_session_mode_payload_preserves_identity_and_mode() {
+        assert_eq!(
+            build_set_session_mode_payload("sm-1", "/sessions/a.jsonl", "work"),
+            serde_json::json!({
+                "type": "set_session_mode",
+                "id": "sm-1",
+                "sessionFile": "/sessions/a.jsonl",
+                "mode": "work",
+            })
         );
     }
 
     #[test]
     fn payloads_are_pure_no_shared_state_between_calls() {
         // Two calls with the same id must produce byte-identical JSON.
-        let a = build_steer_payload("same", "hello");
-        let b = build_steer_payload("same", "hello");
+        let a = build_steer_payload("same", "/s/a.jsonl", "hello");
+        let b = build_steer_payload("same", "/s/a.jsonl", "hello");
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()
         );
+    }
+
+    // ── Session identity (Phase 1) ───────────────────────────────────────
+
+    #[test]
+    fn prompt_payload_carries_session_identity() {
+        let p = super::build_prompt_payload("p-1", "/sessions/a.jsonl", "hello");
+        assert_eq!(p["type"], "prompt");
+        assert_eq!(p["id"], "p-1");
+        assert_eq!(p["sessionFile"], "/sessions/a.jsonl");
+        assert_eq!(p["text"], "hello");
+    }
+
+    #[test]
+    fn queue_payloads_carry_session_identity() {
+        let steer = build_steer_payload("s-1", "/sessions/a.jsonl", "change");
+        let follow = build_follow_up_payload("f-1", "/sessions/b.jsonl", "later");
+        let clear = build_clear_queue_payload("c-1", "/sessions/a.jsonl");
+        assert_eq!(steer["sessionFile"], "/sessions/a.jsonl");
+        assert_eq!(follow["sessionFile"], "/sessions/b.jsonl");
+        assert_eq!(clear["sessionFile"], "/sessions/a.jsonl");
+    }
+
+    #[test]
+    fn session_stream_keeps_complete_event_envelope() {
+        let message = serde_json::json!({
+            "type": "event",
+            "sessionFile": "/sessions/a.jsonl",
+            "event": { "type": "text_delta", "delta": "A" }
+        });
+        assert_eq!(normalize_session_stream_message(&message), Some(message));
+    }
+
+    #[test]
+    fn session_stream_normalizes_prompt_done() {
+        let message = serde_json::json!({
+            "type": "done",
+            "id": "p-1",
+            "sessionFile": "/sessions/a.jsonl"
+        });
+        assert_eq!(
+            normalize_session_stream_message(&message),
+            Some(serde_json::json!({
+                "type": "event",
+                "sessionFile": "/sessions/a.jsonl",
+                "event": { "type": "done" }
+            }))
+        );
+    }
+
+    #[test]
+    fn session_stream_preserves_structured_prompt_error() {
+        let message = serde_json::json!({
+            "type": "error",
+            "id": "p-1",
+            "sessionFile": "/sessions/a.jsonl",
+            "code": "provider_error",
+            "message": "rate limited",
+            "retryable": true,
+            "details": "429"
+        });
+        assert_eq!(
+            normalize_session_stream_message(&message),
+            Some(serde_json::json!({
+                "type": "event",
+                "sessionFile": "/sessions/a.jsonl",
+                "event": {
+                    "type": "error",
+                    "code": "provider_error",
+                    "message": "rate limited",
+                    "retryable": true,
+                    "details": "429"
+                }
+            }))
+        );
+    }
+
+    #[test]
+    fn session_stream_ignores_untagged_global_messages() {
+        assert_eq!(
+            normalize_session_stream_message(&serde_json::json!({ "type": "ready" })),
+            None
+        );
+        assert_eq!(
+            normalize_session_stream_message(&serde_json::json!({
+                "type": "done",
+                "id": "save-session"
+            })),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn sidecar_loss_rejects_pending_requests() {
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .await
+            .insert("r-1".to_string(), PendingRequest { sender });
+        fail_pending_requests(&pending, "sidecar lost").await;
+        assert_eq!(receiver.await.unwrap(), Err("sidecar lost".to_string()));
+        assert!(pending.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn duplicate_request_id_drops_the_earlier_caller() {
+        // Regression for `get_models` (previously hardcoded id "gm"): a
+        // duplicate id in `pending_requests` overwrites the first sender, so
+        // the first caller's oneshot resolves Err and the relay surfaces it as
+        // "closed" — while models are mandatory for startup, the splash stays
+        // up forever when get_models never returns. Every request must mint a
+        // unique id so each concurrent caller keeps its own pending entry.
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let (tx_first, rx_first) = tokio::sync::oneshot::channel();
+        let (tx_second, _rx_second) = tokio::sync::oneshot::channel();
+        pending
+            .lock()
+            .await
+            .insert("gm".to_string(), PendingRequest { sender: tx_first });
+        pending
+            .lock()
+            .await
+            .insert("gm".to_string(), PendingRequest { sender: tx_second });
+        // Only the last registration survives the id collision.
+        assert_eq!(pending.lock().await.len(), 1);
+        // The overwritten first caller's promise is dropped unfulfilled -> "closed".
+        assert!(rx_first.await.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn authorized_artifact_handle_stays_bound_after_path_replacement() {
+        let base = std::env::temp_dir().join(format!(
+            "cowork-artifact-handle-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let root = base.join("workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("report.md");
+        std::fs::write(&file, "inside").unwrap();
+
+        let mut handle = open_authorized_artifact(&root, &file).unwrap();
+        std::fs::rename(&file, root.join("original.md")).unwrap();
+        std::fs::write(&file, "replacement").unwrap();
+
+        let mut content = String::new();
+        use std::io::Read;
+        handle.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "inside");
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

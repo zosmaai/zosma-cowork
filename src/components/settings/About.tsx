@@ -35,14 +35,14 @@ export function About() {
 						draggable={false}
 					/>
 					<div>
-						<p className="text-[13px] font-semibold text-foreground leading-tight">
+						<p className="text-[0.8125rem] font-semibold text-foreground leading-tight">
 							Zosma Cowork
 						</p>
-						<p className="text-[11px] text-muted-foreground mt-0.5">Desktop AI coworker</p>
+						<p className="text-[0.6875rem] text-muted-foreground mt-0.5">Desktop AI coworker</p>
 					</div>
 					{appVersion && (
 						<span
-							className="ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full"
+							className="ml-auto text-[0.625rem] font-mono px-2 py-0.5 rounded-full"
 							style={{
 								background: "hsl(var(--primary) / 0.1)",
 								color: "hsl(var(--primary))",
@@ -107,7 +107,7 @@ export function About() {
 				/>
 			</div>
 
-			<p className="mt-6 text-[11px] text-muted-foreground">
+			<p className="mt-6 text-[0.6875rem] text-muted-foreground">
 				Made with care by the Zosma team. © {new Date().getFullYear()} Zosma AI. All rights
 				reserved.
 			</p>
@@ -140,8 +140,8 @@ function HelpTile({
 				<Icon className="w-4 h-4 text-primary" />
 			</div>
 			<div className="min-w-0">
-				<p className="text-[12.5px] font-medium text-foreground leading-tight">{title}</p>
-				<p className="text-[11px] text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+				<p className="text-[0.78125rem] font-medium text-foreground leading-tight">{title}</p>
+				<p className="text-[0.6875rem] text-muted-foreground mt-0.5 truncate">{subtitle}</p>
 			</div>
 			<ExternalLink className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-foreground transition-colors shrink-0" />
 		</motion.a>
@@ -151,8 +151,8 @@ function HelpTile({
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex items-center gap-3">
-			<span className="text-[11px] text-muted-foreground w-16 shrink-0">{label}</span>
-			<span className="text-[12px]">{children}</span>
+			<span className="text-[0.6875rem] text-muted-foreground w-16 shrink-0">{label}</span>
+			<span className="text-[0.75rem]">{children}</span>
 		</div>
 	);
 }

@@ -2,6 +2,7 @@ import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage as ChatMessageType, FileAttachment, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Clipboard, Download, FolderOpen, User } from "lucide-react";
 import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
@@ -22,6 +23,8 @@ interface ChatMessageProps {
 	findTerm?: string;
 	/** Index (within THIS message) of the occurrence to mark active, if any. */
 	activeFindIndex?: number;
+	/** Active workspace used to authorize artifact previews. */
+	workspaceCwd?: string | null;
 }
 
 /**
@@ -64,6 +67,7 @@ export function ChatMessageItem({
 	models,
 	findTerm,
 	activeFindIndex,
+	workspaceCwd,
 }: ChatMessageProps) {
 	const [copied, setCopied] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -91,7 +95,7 @@ export function ChatMessageItem({
 
 	const saveToFile = useCallback(async (content: string) => {
 		try {
-			const { save } = await import("@tauri-apps/plugin-dialog");
+			// save imported statically
 			const path = await save({
 				defaultPath: "zosma-export.md",
 				filters: [
@@ -178,8 +182,8 @@ export function ChatMessageItem({
 				<div className="flex-1 min-w-0">
 					{/* Header row */}
 					<div className="flex items-center gap-2 mb-0.5">
-						<span className="text-xs font-medium text-foreground">{isUser ? "You" : "Zosma"}</span>
-						<span className="text-[10px] text-muted-foreground tabular-nums">
+						<span className="text-[0.8125rem] font-medium text-foreground">{isUser ? "You" : "Zosma"}</span>
+						<span className="text-[0.8125rem] text-muted-foreground tabular-nums">
 							{new Date(message.timestamp).toLocaleTimeString([], {
 								hour: "2-digit",
 								minute: "2-digit",
@@ -190,17 +194,17 @@ export function ChatMessageItem({
 					    turn. Live queued items still render inline via ChatView. */}
 						{(message.kind === "queued-steer" ||
 							message.kind === "queued-follow-up") && (
-							<span className="text-[10px] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
+							<span className="text-[0.8125rem] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
 								{message.kind === "queued-steer" ? "Steering" : "Follow-up"}
 							</span>
 						)}
 						{message.model && (
-							<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
+							<span className="text-[0.8125rem] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
 								{modelLabel(message, models)}
 							</span>
 						)}
 						{message.isStreaming && (
-							<span className="inline-flex items-center gap-1 text-[10px] font-medium text-status-active-fg">
+							<span className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-status-active-fg">
 								<span className="w-1.5 h-1.5 rounded-full animate-pulse-dot bg-primary" />
 								streaming
 							</span>
@@ -230,7 +234,11 @@ export function ChatMessageItem({
 						message.toolCalls &&
 						message.toolCalls.length > 0 &&
 						(detailsExpanded ? (
-							<ToolCallTimeline toolCalls={message.toolCalls} detailsExpanded={detailsExpanded} />
+							<ToolCallTimeline
+								toolCalls={message.toolCalls}
+								detailsExpanded={detailsExpanded}
+								workspaceCwd={workspaceCwd}
+							/>
 						) : message.isStreaming ? (
 							<ActivityBlock toolCalls={message.toolCalls} active />
 						) : (
@@ -240,7 +248,8 @@ export function ChatMessageItem({
 					{/* Content */}
 					{(message.content || message.isStreaming) && (
 						<div
-							className="chat-markdown"
+							data-assistant-response={!isUser ? message.id : undefined}
+							className={`chat-markdown ${isUser ? "chat-markdown-user" : ""}`}
 							style={{
 								color: isUser ? "hsl(var(--chat-user-fg))" : "hsl(var(--chat-assistant-fg))",
 							}}
@@ -282,7 +291,7 @@ export function ChatMessageItem({
 									type="button"
 									onClick={() => copyToClipboard(message.content)}
 									aria-label="Copy content"
-									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+									className="flex items-center gap-1 rounded px-1.5 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
 								>
 									<Clipboard size={12} />
 									{copied ? "Copied!" : "Copy"}
@@ -292,7 +301,7 @@ export function ChatMessageItem({
 									onClick={() => saveToFile(message.content)}
 									disabled={saving}
 									aria-label="Save to file"
-									className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+									className="flex items-center gap-1 rounded px-1.5 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
 								>
 									<Download size={12} />
 									{saving ? "Saving..." : "Save"}
@@ -302,7 +311,7 @@ export function ChatMessageItem({
 										type="button"
 										onClick={() => openFolder(filePath)}
 										aria-label="Open folder"
-										className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+										className="flex items-center gap-1 rounded px-1.5 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
 									>
 										<FolderOpen size={12} />
 										Open Folder

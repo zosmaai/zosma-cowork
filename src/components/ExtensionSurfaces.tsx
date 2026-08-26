@@ -80,11 +80,11 @@ export function ExtensionWidgets({ widgets }: { widgets: ExtensionWidget[] }) {
 				>
 					<div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/30 px-2.5 py-1">
 						<span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
-						<span className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+						<span className="truncate text-[0.625rem] font-semibold uppercase tracking-wide text-muted-foreground">
 							{w.key}
 						</span>
 					</div>
-					<pre className="whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] leading-relaxed text-foreground/90">
+					<pre className="whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[0.6875rem] leading-relaxed text-foreground/90">
 						{w.lines.join("\n")}
 					</pre>
 				</div>
@@ -99,7 +99,7 @@ export function ExtensionWorkingBadge({ working }: { working: ExtensionWorking }
 	const text = working.message ?? working.label ?? "Working…";
 	return (
 		<div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[55] pointer-events-none">
-			<span className="inline-flex items-center gap-2 rounded-full border border-border bg-background/90 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-md">
+			<span className="inline-flex items-center gap-2 rounded-full border border-border bg-background/90 px-3 py-1 text-[0.6875rem] text-muted-foreground shadow-sm backdrop-blur-md">
 				<Loader2 className="h-3 w-3 animate-spin" />
 				{text}
 			</span>

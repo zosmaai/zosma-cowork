@@ -31,6 +31,16 @@ export function friendlyToolPhrase(toolName: string): string {
 	if (name === "subagent") return "Delegating a task";
 	if (name === "ask_user") return "Asking you a question";
 	if (name.startsWith("schedule")) return "Setting a reminder";
+	if (
+		name.startsWith("web_search") ||
+		name.startsWith("web_answer") ||
+		name.startsWith("web_research")
+	) {
+		return "Searching the web";
+	}
+	if (name.startsWith("web_fetch") || name.startsWith("web_find_similar")) {
+		return "Reading a web page";
+	}
 
 	switch (name) {
 		case "write":
