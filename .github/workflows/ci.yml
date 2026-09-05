@@ -11,75 +11,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend:
-    name: Frontend Lint & Test
+  web:
+    name: Web UI Lint & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: Port contract guard
+        # SHARED_PORT (shell) and the next scripts (web) must agree on 30141.
+        run: node scripts/check-shared-port.mjs
 
       - name: Lint
-        run: pnpm run lint
-
-      - name: Lint styles (inline token-color guardrail)
-        run: pnpm run lint:styles
+        run: pnpm -C web lint
 
       - name: Type check
-        run: pnpm run typecheck
+        run: pnpm -C web exec tsc --noEmit
 
       - name: Test
-        run: pnpm run test
-
-      - name: Build frontend
-        run: pnpm run build:frontend
-        env:
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
-
-  agent-sidecar:
-    name: Agent Sidecar Lint & Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: agent-sidecar
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: agent-sidecar/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Test
-        run: pnpm run test
-
-      - name: Build
-        run: pnpm run build
+        run: pnpm -C web test
 
   docs:
     name: Docs Site Build
@@ -92,8 +54,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -110,15 +70,13 @@ jobs:
         run: pnpm build
 
   tauri:
-    name: Tauri Build Check
+    name: Tauri Shell Build Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -126,27 +84,20 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Build agent-sidecar
-        run: node scripts/prebuild.mjs
-
       - name: Fetch bundled Node.js binary
-        # Tauri's build.rs validates that `binaries/node` (declared in
-        # tauri.conf.json's bundle.resources) exists at compile time.
-        # The file is gitignored (it's a ~50MB platform binary), so CI
-        # must fetch it before the cargo build runs.
+        # tauri.conf.json's bundle.resources declares binaries/node*, so the
+        # build script needs it at compile time (the binary itself is
+        # gitgenerated at build time by fetch-node.mjs).
         run: node src-tauri/scripts/fetch-node.mjs
 
-      - name: Ensure bundled gh/git resource paths exist
-        # tauri.conf.json's bundle.resources also declares binaries/gh/* and
-        # binaries/git/* (fetched via fetch-gh/fetch-git in beforeBuildCommand
-        # for real builds). This compile-only check never runs the app, so
-        # lightweight stubs are enough to satisfy build.rs's resource-existence
-        # validation. ensure-dev-resources only writes paths that don't already
-        # exist, so it won't clobber the real index.cjs/node produced above.
-        run: node scripts/ensure-dev-resources.mjs
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Build web server (standalone dist-server resource)
+        # tauri.conf.json's bundle.resources also declares
+        # ../web/dist-server/**/* — build it so compile-time resource
+        # validation passes (same commands as beforeBuildCommand).
+        run: |
+          pnpm -C web install --frozen-lockfile
+          pnpm -C web build
+          pnpm -C web package-server
 
       - name: Setup Rust
         run: |
@@ -170,6 +121,3 @@ jobs:
 
       - name: Build check
         run: cargo build --workspace
-        env:
-          APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}

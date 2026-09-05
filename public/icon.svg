@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="64" fill="#1a1a2e"/>
-  <text x="256" y="280" font-family="system-ui" font-size="280" font-weight="bold" text-anchor="middle" fill="#e0e0e0">Z</text>
-  <circle cx="380" cy="160" r="48" fill="#6366f1" opacity="0.8"/>
-</svg>

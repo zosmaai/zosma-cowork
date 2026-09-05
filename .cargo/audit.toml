@@ -1,19 +1,15 @@
 # cargo-audit configuration
 #
-# Temporary ignores for two DoS-class advisories in `quick-xml`, which enters the
-# dependency graph only as a deep transitive dep of the Tauri desktop stack:
-#   * RUSTSEC-2026-0194 — quadratic run time when checking a start tag for
-#     duplicate attribute names
-#   * RUSTSEC-2026-0195 — unbounded namespace-declaration allocation in `NsReader`
-#     (memory-exhaustion DoS)
-# Both are fixed only in quick-xml >= 0.41.0. Our lockfile pins two older majors
-# that we do not control directly:
-#   * 0.37.5  via  tauri-winrt-notification
-#   * 0.39.2  via  the Tauri bundler / plist stack
-# Advancing past them requires a Tauri upgrade. Neither path parses untrusted XML
-# in zosma-cowork, so real-world exploitability here is negligible.
+# RUSTSEC-2026-0235 — rkyv 0.7.46 archive validation bypass (memory-exposure).
+# Transitive via: tauri-plugin-log -> byte-unit -> rust_decimal -> rkyv 0.7.46
+# Fixed in rkyv >= 0.8.17, but rust_decimal's rkyv feature still pins 0.7.
+# We don't archive/validate untrusted rkyv data in zosma-cowork — the Tauri
+# log plugin only measures byte units. Bumping requires rust_decimal ->
+# rkyv 0.8 migration. Ignore until upstream moves.
 #
-# TODO: remove these ignores once Tauri is bumped to a release that pulls
-# quick-xml >= 0.41.0, then re-run `cargo audit` to confirm a clean bill.
+# RUSTSEC-2026-0194/0195 — quick-xml DoS (quadratic / memory exhaustion).
+# Transitive via Tauri stack (tauri-winrt-notification 0.37.5 and bundler 0.39.2).
+# Fixed in quick-xml >= 0.41.0; needs Tauri upgrade. Not exploitable — we
+# don't parse untrusted XML. TODO: remove once Tauri pulls >=0.41.0.
 [advisories]
-ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195", "RUSTSEC-2026-0235"]

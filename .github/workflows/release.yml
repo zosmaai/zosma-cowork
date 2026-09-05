@@ -58,8 +58,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -103,28 +101,11 @@ jobs:
             console.log('Cargo.toml updated');
           "
 
-      - name: Build agent-sidecar
-        shell: bash
-        run: |
-          cd agent-sidecar
-          pnpm install --frozen-lockfile
-          pnpm run bundle
-          # Patch import_meta.url for CJS compatibility (cross-platform node, not sed)
-          node -e "
-            const fs = require('fs');
-            let code = fs.readFileSync('dist/bundle.cjs', 'utf-8');
-            code = code.replace(/var (import_meta\\d*) = \{\\};/g, (_, m) => 'var ' + m + ' = { url: require(\"url\").pathToFileURL(__filename).href };');
-            fs.writeFileSync('dist/bundle.cjs', code, 'utf-8');
-          "
-          # Copy bundle into src-tauri/ for Tauri resource bundling
-          mkdir -p "$GITHUB_WORKSPACE/src-tauri/agent-sidecar"
-          cp dist/bundle.cjs "$GITHUB_WORKSPACE/src-tauri/agent-sidecar/index.cjs"
-
       - name: Fetch bundled Node.js
         shell: bash
         run: node src-tauri/scripts/fetch-node.mjs
 
-      - name: Install frontend dependencies
+      - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
       # ── Code Signing & Notarization ──────────────────────────────
@@ -246,20 +227,6 @@ jobs:
           # When unset, tauri-action skips updater artifacts + latest.json.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Google Workspace/Gmail broker config baked into the sidecar by
-          # scripts/prebuild.mjs (run here via tauri-action's beforeBuildCommand).
-          # These are PUBLIC values; NO secret is baked. Zosma Router's own
-          # Google login client is configured by llm-reseller, not this bundle.
-          # Repo VARIABLES (not secrets). Release builds read all values from
-          # variables; staging-build.yml supplies staging values.
-          ZOSMA_GOOGLE_CLIENT_ID: ${{ vars.ZOSMA_GOOGLE_CLIENT_ID }}
-          ZOSMA_OAUTH_BROKER_URL: ${{ vars.ZOSMA_OAUTH_BROKER_URL }}
-          ZOSMA_AUTH_BASE_URL: ${{ vars.ZOSMA_AUTH_BASE_URL }}
-          ZOSMA_ROUTER_BASE_URL: ${{ vars.ZOSMA_ROUTER_BASE_URL }}
-          ZOSMA_RELEASE_CONFIG_FINGERPRINT: ${{ secrets.ZOSMA_RELEASE_CONFIG_FINGERPRINT }}
-          # Makes prebuild fail closed if release variables are not passed into
-          # the Tauri build command; it must never fall back to staging.
-          ZOSMA_RELEASE: "1"
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "${{ github.ref_name }}"

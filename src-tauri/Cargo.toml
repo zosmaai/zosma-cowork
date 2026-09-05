@@ -1,7 +1,7 @@
 [package]
 name = "zosma-cowork"
 version = "0.3.0"
-description = "Zosma Cowork — desktop AI coworker (pi-mono engine)"
+description = "Zosma Cowork — thin Tauri shell around the Zosma Harness web UI"
 authors = ["zosmaai"]
 edition.workspace = true
 rust-version.workspace = true
@@ -16,27 +16,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-sys-locale = "0.3"
-humantime = "2"
-rand = "0.8"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "io-util", "process"] }
 log = "0.4"
-tauri = { version = "2", features = ["devtools"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
 tauri-plugin-deep-link = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-log = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-reqwest = { version = "0.12", features = ["json"] }
-git2 = { version = "0.19", features = ["vendored-openssl"] }
-walkdir = "2"
-dir-diff = "0.3"
-mime_guess = "2"
-
-[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-updater = "2"

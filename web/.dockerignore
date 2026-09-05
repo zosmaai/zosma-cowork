@@ -1,0 +1,12 @@
+node_modules
+.next
+.next/cache
+.next/dev
+.git
+.gitignore
+.llm-wiki
+.pi
+coverage
+dist-server
+*.log
+.env.local

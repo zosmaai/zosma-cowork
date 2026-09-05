@@ -1,33 +1,38 @@
+# Dependencies
 /node_modules
+web/node_modules
+
+# Builds / generated
 /dist
-/.cache
-/.tmp
-*.log
-.DS_Store
-.env
-.env.local
-.zosma-google.env
-agent-sidecar/zosma-google-client.json
-agent-sidecar/node_modules
-agent-sidecar/dist
-agent-sidecar/src/vendor
-src-tauri/agent-sidecar
-# Cargo build artifacts
-/target
-/src-tauri/target
 /src-tauri/gen
 *.tsbuildinfo
 /coverage
-/playwright-report
-/test-results
-/.pi-lens
-src-tauri/.pi/
-SHOW_HN.md
-.worktrees/
+/.cache
+/.tmp
+
+# Rust
+/target
+/src-tauri/target
+
+# Web artifacts (web/ is its own workspace package; see web/.gitignore)
+web/.next/
+web/dist-server/
+
+# Local env + agent/editor state
+.env
+.env.local
+.zosma-google.env
+.pi/
+!web/.pi/
+!web/.pi/extensions/
+!web/.pi/extensions/zosma-ui-audit.ts
 .llm-wiki/
 .obsidian/
-.pi/
-
-# Antigravity OAuth client secret (injected into the sidecar bundle at build time; not committed)
-agent-sidecar/antigravity-client-secret
+.worktrees/
 .superpowers/
+
+# Misc
+*.log
+.DS_Store
+/.pi-lens
+SHOW_HN.md

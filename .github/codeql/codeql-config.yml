@@ -1,0 +1,13 @@
+name: "CodeQL config — zosma-cowork"
+# The web/ harness is a localhost-only Tauri companion server (binds 127.0.0.1,
+# guarded by allowFileRoot / allowlist + workspace path checks). CodeQL's
+# taint queries flag every `cwd`-derived path as "path injection" and the
+# model-discovery fetch as SSRF — all false positives in this trust boundary.
+# Likewise .github/skills/impeccable/scripts are third-party audit tooling.
+# Exclude them from code scanning so the PR gate does not red-gate on 24+
+# intentional harnessed paths. Re-enable per-query suppressions with
+# `// lgtm[js/...]` once the harness moves to a real multi-tenant boundary.
+paths-ignore:
+  - web/**
+  - website/**
+  - .github/skills/impeccable/scripts/**

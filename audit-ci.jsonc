@@ -52,6 +52,22 @@
 		// GHSA-r28c-9q8g-f849 — postcss line-parser ReDoS.
 		// postcss is a build-only devDependency (via Tailwind, autoprefixer).
 		// Never shipped.
-		"GHSA-r28c-9q8g-f849"
+		"GHSA-r28c-9q8g-f849",
+
+		// GHSA-2v37-7h3g-55p8 — nanoid infinite loop when size is 0 (high,
+		// CVE-2026-67213). Transitive via postcss>nanoid 3.3.17 -> patched 3.3.18.
+		// Build-time only (postcss), never ships in tauri binary. REMOVE once
+		// postcss bumps nanoid past 3.3.17.
+		"GHSA-2v37-7h3g-55p8",
+
+		// GHSA-73wf-gq98-2v4g, GHSA-c83g-rgw3-j3cx — browserslist 4.28.6 DoS via
+		// poisoned browserslist-stats.json (high, CVE-2026-73088). Transitive via
+		// web>eslint-config-next>eslint-plugin-react-hooks>@babel/*>browserslist.
+		// Build-time lint tooling only, never ships in tauri binary. Patched in
+		// browserslist 4.28.7; web/pnpm-lock now pins 4.28.8 but the advisory DB
+		// lags the pnpm store until the next `pnpm -C web update`. REMOVE once
+		// `pnpm audit` is clean (2026-09-01 advisory).
+		"GHSA-73wf-gq98-2v4g",
+		"GHSA-c83g-rgw3-j3cx"
 	]
 }

@@ -1,58 +1,72 @@
-//! Zosma Cowork — Tauri backend
+//! Zosma Cowork shell.
 //!
-//! A thin relay between the React frontend and the Node.js agent sidecar.
+//! The app is a browser, not an app: one window pinned to
+//! `http://127.0.0.1:{SHARED_PORT}` serving the Zosma Harness web UI (`web/`).
+//! All UI, API, and agent logic lives in that Next.js server (the pi SDK runs
+//! in-process there). This process does exactly three things:
+//!
+//! 1. Probe `127.0.0.1:30141`. If a server is already there, attach to it
+//!    ("borrowed") and never kill it on quit.
+//! 2. If nothing listens (production build), spawn the bundled Node running
+//!    the web server launcher (`bin/pi-web.js`) and wait for the port
+//!    (≤ 30 s), showing the captured log tail on failure.
+//! 3. On quit, kill the server it spawned ("owned"), wait ≤ 5 s, then exit.
 
-mod analytics;
-
-use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader};
+use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
-use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_deep_link::DeepLinkExt;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
-use tokio::sync::{oneshot, Mutex};
+use tauri::Manager;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_updater::UpdaterExt;
 
-// Skill management imports
-use std::fs;
-use std::io;
-use std::path::Path;
-use walkdir::WalkDir;
+/// The single port contract, shared with `web/package.json` (CI guards it).
+pub const SHARED_PORT: u16 = 30141;
 
+const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
+const SPAWN_WAIT: Duration = Duration::from_secs(30);
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+const LOG_RING: usize = 200;
+
+/// Shared server-lifecycle state: the child we may own, plus a bounded log
+/// tail of its output (for the startup-failure dialog).
 #[derive(Default)]
-struct SidecarState {
-    // The Child handle is owned by the exit-watcher task spawned in setup()
-    // (not stored here) so we can wait() on it and log unexpected deaths.
-    // tokio's kill_on_drop ensures it's reaped on app shutdown when the
-    // watcher task is aborted.
-    stdin: Mutex<Option<tokio::process::ChildStdin>>,
-    ready: Arc<AtomicBool>,
+struct Shared {
+    child: Mutex<Option<Child>>,
+    owned: AtomicBool,
+    log_tail: Mutex<VecDeque<String>>,
 }
 
-struct PendingPrompt {
-    channel: Channel<Value>,
-}
-struct PendingRequest {
-    sender: oneshot::Sender<Result<Value, String>>,
+impl Shared {
+    fn push_log(&self, line: &str) {
+        log::info!("[web-server] {line}");
+        let mut tail = self.log_tail.lock().unwrap();
+        if tail.len() >= LOG_RING {
+            tail.pop_front();
+        }
+        tail.push_back(line.to_string());
+    }
+
+    fn tail(&self, n: usize) -> String {
+        let guard = self.log_tail.lock().unwrap();
+        guard
+            .iter()
+            .skip(guard.len().saturating_sub(n))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
-struct TelemetryState {
-    enabled: Arc<AtomicBool>,
-}
-
-#[derive(Default)]
-struct AppState {
-    sidecar: SidecarState,
-    pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
-    pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
-    // Captured before the sidecar can create models.json. Prevents a fresh
-    // install from being reclassified as an existing user during startup.
-    fresh_start: Arc<AtomicBool>,
-}
+// ---------------------------------------------------------------------------
+// Reused verbatim from the sidecar-era lib.rs: bundled-Node resolution.
+// ---------------------------------------------------------------------------
 
 /// Strip the Windows `\\?\` extended-length path prefix.
 ///
@@ -64,7 +78,7 @@ struct AppState {
 /// path component-by-component starting from the prefix — it ends up
 /// calling `lstat('C:')`, which on Windows returns EISDIR, and Node
 /// crashes with `Error: EISDIR: illegal operation on a directory` before
-/// the sidecar's first line runs. The crash is invisible because the
+/// the server's first line runs. The crash is invisible because the
 /// Tauri parent has no console and stderr is normally inherited.
 ///
 /// Strip the prefix unconditionally — `dunce::simplified` does the same
@@ -77,94 +91,6 @@ fn strip_unc_prefix(p: PathBuf) -> PathBuf {
     } else {
         p
     }
-}
-
-fn find_sidecar_path(app: &tauri::AppHandle) -> PathBuf {
-    // In debug/dev mode, prefer the TypeScript source via tsx.
-    // This avoids resource copying issues and lets typebox resolve
-    // naturally from agent-sidecar/node_modules/.
-    if cfg!(debug_assertions) {
-        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("agent-sidecar")
-            .join("src")
-            .join("index.ts");
-        if dev_path.exists() {
-            return dev_path;
-        }
-    }
-
-    // Try production resource dir — works on macOS .app bundles
-    // and Linux AppImage/dpkg builds.
-    let resource = app
-        .path()
-        .resource_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("agent-sidecar")
-        .join("index.cjs");
-    if resource.exists() {
-        return strip_unc_prefix(resource);
-    }
-
-    // Check common system paths for distro-packaged installations.
-    // Linux: /usr/lib/zosma-cowork/agent-sidecar/index.cjs
-    // Windows: %PROGRAMFILES%\ZosmaAI\ZosmaCowork\agent-sidecar\index.cjs
-    #[cfg(target_os = "windows")]
-    {
-        let program_files =
-            std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".into());
-        let win_path = PathBuf::from(format!(
-            "{}\\ZosmaAI\\ZosmaCoWork\\agent-sidecar\\index.cjs",
-            program_files
-        ));
-        if win_path.exists() {
-            return win_path;
-        }
-        // Also check %LOCALAPPDATA% (per-user installs)
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        if !local_app_data.is_empty() {
-            let local_path = PathBuf::from(format!(
-                "{}\\ZosmaAI\\ZosmaCoWork\\agent-sidecar\\index.cjs",
-                local_app_data
-            ));
-            if local_path.exists() {
-                return local_path;
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let lib_path = PathBuf::from("/usr/lib/zosma-cowork/agent-sidecar/index.cjs");
-        if lib_path.exists() {
-            return lib_path;
-        }
-    }
-
-    // Try relative to the current executable (works for portable installs,
-    // manual unpack, or any non-standard layout).
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let rel_path = exe_dir.join("../lib/zosma-cowork/agent-sidecar/index.cjs");
-            if rel_path.exists() {
-                return rel_path;
-            }
-            // Also try plain relative (e.g. portable extraction)
-            let plain_path = exe_dir.join("agent-sidecar/index.cjs");
-            if plain_path.exists() {
-                return plain_path;
-            }
-        }
-    }
-
-    // Last resort — dev fallback (only useful during development)
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("agent-sidecar")
-        .join("src")
-        .join("index.ts")
 }
 
 /// Pick the first candidate that exists and is NOT a stub placeholder.
@@ -313,1833 +239,309 @@ fn find_node(app: &tauri::AppHandle) -> PathBuf {
     }
 }
 
-/// Split a sidecar stderr line `[sidecar:LEVEL] message` into (level, message).
-/// Returns ("info", line) when the prefix is missing or malformed.
-fn parse_sidecar_level(line: &str) -> (&str, &str) {
-    if let Some(rest) = line.strip_prefix("[sidecar:") {
-        if let Some(end) = rest.find("] ") {
-            let level = &rest[..end];
-            let msg = &rest[end + 2..];
-            if matches!(level, "error" | "warn" | "info" | "debug") {
-                return (level, msg);
-            }
-        }
-    }
-    ("info", line)
-}
+// ---------------------------------------------------------------------------
+// Web-server launcher resolution.
+// ---------------------------------------------------------------------------
 
-async fn spawn_sidecar(
-    app: tauri::AppHandle,
-    zm: &str,
-) -> Result<
-    (
-        Child,
-        tokio::process::ChildStdout,
-        tokio::process::ChildStdin,
-    ),
-    String,
-> {
-    let p = find_sidecar_path(&app);
-    let p_str = p.to_string_lossy().to_string();
+const WEB_ENTRY_REL: &str = "web/dist-server/bin/pi-web.js";
 
-    // Determine runtime: tsx for .ts (dev), node for .cjs (production)
-    let run_cmd: String;
-    let run_args: Vec<String>;
-    let is_dev = p.extension().map(|e| e == "ts").unwrap_or(false);
-
-    if is_dev {
-        // Dev mode: use tsx from agent-sidecar's node_modules.
-        // On Windows, npm creates THREE files per bin: a POSIX shell wrapper
-        // (`tsx`, no extension) for Git Bash, plus `tsx.cmd` for cmd.exe and
-        // `tsx.ps1` for PowerShell. Rust's Command/CreateProcessW cannot
-        // execute the POSIX wrapper (it's not a PE binary), so picking it
-        // makes spawn fail with ERROR_BAD_EXE_FORMAT and the sidecar never
-        // starts. Prefer `tsx.cmd` on Windows.
-        let sidecar_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+/// Resolve the web server launcher (`pi-web.js`): dev repo source in debug
+/// builds, bundled resource layout (`web/dist-server/**`) in production,
+/// then system install paths, then the path relative to the executable.
+fn find_web_entry(app: &tauri::AppHandle) -> PathBuf {
+    if cfg!(debug_assertions) {
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
-            .join("agent-sidecar");
-        let bin_dir = sidecar_dir.join("node_modules").join(".bin");
-        #[cfg(target_os = "windows")]
-        let tsx_bin = {
-            let cmd = bin_dir.join("tsx.cmd");
-            if cmd.exists() {
-                cmd
-            } else {
-                bin_dir.join("tsx")
-            }
-        };
-        #[cfg(not(target_os = "windows"))]
-        let tsx_bin = bin_dir.join("tsx");
-        if tsx_bin.exists() {
-            run_cmd = tsx_bin.to_string_lossy().to_string();
-            run_args = vec![p_str];
-            log::info!("Sidecar: {} {}", run_cmd, run_args[0]);
-        } else {
-            // npx is also a .cmd on Windows — let cmd.exe resolve it via PATH.
-            #[cfg(target_os = "windows")]
-            {
-                run_cmd = "npx.cmd".to_string();
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                run_cmd = "npx".to_string();
-            }
-            run_args = vec!["tsx".to_string(), p_str];
-            log::info!("Sidecar: {} tsx {}", run_cmd, run_args[1]);
+            .join("web")
+            .join("bin")
+            .join("pi-web.js");
+        if dev.exists() {
+            return dev;
         }
-    } else {
-        let node_path = find_node(&app);
-        run_cmd = node_path.to_string_lossy().to_string();
-        // `--use-system-ca` (Node 22.15+/24) makes Node consult the OS trust
-        // store for OAuth token exchange behind corporate MITM proxies. We pass
-        // it as a real Node CLI ARG (not via NODE_OPTIONS) on purpose: child
-        // Node processes inherit the parent's NODE_OPTIONS. Older child Nodes
-        // reject unknown flags in NODE_OPTIONS and exit with code 9. A CLI arg
-        // is consumed by THIS Node only and never leaks to child processes.
-        // See the NODE_OPTIONS block below.
-        run_args = vec!["--use-system-ca".to_string(), p_str];
-        log::info!("Sidecar: {} {} {}", run_cmd, run_args[0], run_args[1]);
     }
-    // True when `--use-system-ca` was handed to Node as a CLI arg above (the
-    // production/bundled-Node path). Dev mode runs via tsx and still relies on
-    // NODE_OPTIONS below.
-    let system_ca_via_arg = !is_dev;
 
-    let mut c = Command::new(&run_cmd);
-    for a in &run_args {
-        c.arg(a);
+    // Production resource dir — works on macOS .app bundles
+    // and Linux AppImage/dpkg builds, and Windows installers.
+    let resource = app
+        .path()
+        .resource_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(WEB_ENTRY_REL);
+    if resource.exists() {
+        return strip_unc_prefix(resource);
     }
-    // Use normal Pi state directory (~/.pi/agent) in production so existing
-    // Pi users are recognized. The sidecar defaults there via piAgentDir().
-    // An explicitly exported ZOSMA_PI_AGENT_DIR is inherited automatically for
-    // development and tests; do not force a private directory here.
-    // Set the sidecar log verbosity unless the caller already exported it.
-    // Release builds default to `warn` (errors + warnings only) so production
-    // stays quiet; dev builds default to `debug` for full tracing.
-    if std::env::var("SIDECAR_LOG_LEVEL").is_err() {
-        let default_level = if cfg!(debug_assertions) {
-            "debug"
-        } else {
-            "warn"
-        };
-        c.env("SIDECAR_LOG_LEVEL", default_level);
-    }
-    // macOS GUI apps launched via Finder don't inherit a terminal's env
-    // vars, and our bundled Node 24's stock CA bundle doesn't include
-    // corporate MITM root certs (ZScaler / Cloudflare WARP / Fortinet /
-    // etc.). `--use-system-ca` (Node 22.4+) makes Node consult the OS
-    // trust store — macOS keychain, Windows cert store, Linux
-    // ca-certificates — in addition to its built-in CAs, so any root the
-    // browser already trusts becomes valid for OAuth token exchange too.
-    // Falls back gracefully when the OS store has no extras. Preserve any
-    // pre-existing NODE_OPTIONS the user has set.
-    let existing_node_opts = std::env::var("NODE_OPTIONS").unwrap_or_default();
-    if system_ca_via_arg {
-        // Production: `--use-system-ca` is already a Node CLI arg (see above), so
-        // we must NOT add it to NODE_OPTIONS — doing so would re-introduce the
-        // exit-code-9 leak into the child `npm` process. Preserve any
-        // user-provided NODE_OPTIONS untouched.
-        if !existing_node_opts.is_empty() {
-            c.env("NODE_OPTIONS", existing_node_opts);
+
+    // Check common system paths for distro-packaged installations.
+    // Linux: /usr/lib/zosma-cowork/web/dist-server/bin/pi-web.js
+    // Windows: %PROGRAMFILES%\ZosmaAI\ZosmaCoWork\web\dist-server\bin\pi-web.js
+    #[cfg(target_os = "windows")]
+    for root in [
+        std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".into()),
+        std::env::var("LOCALAPPDATA").unwrap_or_default(),
+    ] {
+        if root.is_empty() {
+            continue;
         }
-    } else {
-        // Dev (tsx): pass `--use-system-ca` via NODE_OPTIONS. Dev machines run a
-        // modern Node that accepts it, and installs there use the dev toolchain.
-        let node_options = if existing_node_opts.contains("--use-system-ca") {
-            existing_node_opts
-        } else if existing_node_opts.is_empty() {
-            "--use-system-ca".to_string()
-        } else {
-            format!("{existing_node_opts} --use-system-ca")
-        };
-        c.env("NODE_OPTIONS", node_options);
+        let p = PathBuf::from(format!(
+            "{}\\ZosmaAI\\ZosmaCoWork\\web\\dist-server\\bin\\pi-web.js",
+            root
+        ));
+        if p.exists() {
+            return p;
+        }
     }
-    // Dev mode: parse the repo-root .env and inject each var directly onto
-    // the child process. This is the only safe approach — Node.js explicitly
-    // disallows --env-file inside NODE_OPTIONS (exits with code 9).
-    // Skipped in production where secrets are baked in by prebuild.mjs.
-    if is_dev {
-        let env_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|p| p.join(".env"))
-            .filter(|p| p.exists());
-        if let Some(env_path) = &env_file {
-            log::info!("Sidecar: .env file found at {}", env_path.display());
-            if let Ok(contents) = std::fs::read_to_string(env_path) {
-                log::info!("Sidecar: loading dev .env from {}", env_path.display());
-                for line in contents.lines() {
-                    let line = line.trim();
-                    // skip blanks and comments
-                    if line.is_empty() || line.starts_with('#') {
-                        continue;
-                    }
-                    if let Some((key, val)) = line.split_once('=') {
-                        let key = key.trim();
-                        let val = val.trim().trim_matches('"').trim_matches('\'');
-                        if !key.is_empty() && std::env::var(key).is_err() {
-                            c.env(key, val);
-                            log::info!("Sidecar: injected env var {}", key);
-                        }
-                    }
-                }
+
+    #[cfg(target_os = "linux")]
+    {
+        let p = PathBuf::from("/usr/lib/zosma-cowork/web/dist-server/bin/pi-web.js");
+        if p.exists() {
+            return p;
+        }
+    }
+
+    // Try relative to the current executable (portable installs, manual
+    // unpack, or any non-standard layout).
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let rel = exe_dir.join("../lib/zosma-cowork").join(WEB_ENTRY_REL);
+            if rel.exists() {
+                return rel;
             }
-        } else {
-            log::info!(
-                "Sidecar: .env file NOT FOUND at {:?}/../.env",
-                env!("CARGO_MANIFEST_DIR")
-            );
         }
     }
-    c.stdin(Stdio::piped())
+
+    // Last resort — dev fallback (only useful during development)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("web")
+        .join("bin")
+        .join("pi-web.js")
+}
+
+// ---------------------------------------------------------------------------
+// Port probe + server lifecycle.
+// ---------------------------------------------------------------------------
+
+fn probe_addr() -> SocketAddr {
+    format!("127.0.0.1:{SHARED_PORT}")
+        .parse()
+        .expect("static loopback address")
+}
+
+fn port_open() -> bool {
+    TcpStream::connect_timeout(&probe_addr(), PROBE_TIMEOUT).is_ok()
+}
+
+fn wait_until_open() -> bool {
+    let deadline = Instant::now() + SPAWN_WAIT;
+    loop {
+        if port_open() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn show_dialog(app: &tauri::AppHandle, kind: MessageDialogKind, message: &str) {
+    // blocking_show must not run on the main thread — every call site runs
+    // on a dedicated std thread or a tokio worker.
+    let _ = app
+        .dialog()
+        .message(message)
+        .title("Zosma Cowork")
+        .kind(kind)
+        .blocking_show();
+}
+
+/// Kill the owned server and wait for a clean exit (≤ 5 s).
+fn stop_owned_server(shared: &Shared) {
+    let mut child = match shared.child.lock().unwrap().take() {
+        Some(c) => c,
+        None => {
+            shared.owned.store(false, Ordering::SeqCst);
+            return;
+        }
+    };
+    let pid = child.id();
+    if cfg!(target_os = "windows") {
+        // No portable SIGTERM on Windows — taskkill /T takes down pi-web and
+        // its `next start` child together, so neither is orphaned.
+        let id = pid.to_string();
+        let _ = Command::new("taskkill")
+            .args(["/PID", &id, "/T", "/F"])
+            .status();
+    } else {
+        // SIGTERM: pi-web's process-lifecycle handler forwards it to `next`
+        // itself and force-kills after 5 s, so the tree cleans up on its own.
+        let _ = child.kill();
+    }
+    let deadline = Instant::now() + SHUTDOWN_GRACE;
+    while Instant::now() < deadline {
+        if child.try_wait().ok().flatten().is_some() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    log::info!("web server stopped (pid {pid})");
+    shared.owned.store(false, Ordering::SeqCst);
+}
+
+fn drain_pipe(stream: impl std::io::Read + Send + 'static, shared: Arc<Shared>) {
+    thread::spawn(move || {
+        for line in BufReader::new(stream).lines() {
+            match line {
+                Ok(l) => shared.push_log(&l),
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+/// Spawn the bundled web server and wait for the port to come up.
+fn start_owned_server(app: &tauri::AppHandle, shared: &Arc<Shared>) {
+    let node = find_node(app);
+    let entry = find_web_entry(app);
+    log::info!("spawning web server: {node:?} {entry:?} --port {SHARED_PORT}");
+    let spawned = Command::new(&node)
+        .arg(&entry)
+        .args(["--port", &SHARED_PORT.to_string(), "--no-open"])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    // Without CREATE_NO_WINDOW (0x08000000), spawning a console-subsystem
-    // child (node.exe / npx.cmd / tsx.cmd are all console-subsystem) from a
-    // windows-subsystem GUI parent makes Windows allocate a brand new
-    // console window for the child — a black cmd.exe popup that sits open
-    // for the entire lifetime of the sidecar. CREATE_NO_WINDOW suppresses
-    // it and is the universal Windows-GUI-spawning-CLI-child fix.
-    #[cfg(target_os = "windows")]
-    {
-        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    log::info!("Sidecar: spawning cmd={run_cmd:?} args={run_args:?} zosmaDir={zm}");
-    let mut c = c.spawn().map_err(|e| format!("spawn: {e}"))?;
-    let o = c.stdout.take().ok_or("no stdout")?;
-    let mut i = c.stdin.take().ok_or("no stdin")?;
-    // Pipe sidecar stderr into our logger so crashes are visible.
-    // Without this, on Windows GUI apps stderr inherit() silently
-    // discards everything because windows-subsystem parents have no
-    // console attached. See issue #140.
-    if let Some(err) = c.stderr.take() {
-        tauri::async_runtime::spawn(async move {
-            use tokio::io::AsyncBufReadExt as _;
-            let mut lines = tokio::io::BufReader::new(err).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                // Sidecar prefixes lines `[sidecar:LEVEL] ...` — map to the
-                // matching Rust log severity so the file log keeps real levels
-                // (previously every sidecar line was logged as a warning).
-                let (level, msg) = parse_sidecar_level(&line);
-                match level {
-                    "error" => log::error!("sidecar: {msg}"),
-                    "warn" => log::warn!("sidecar: {msg}"),
-                    "debug" => log::debug!("sidecar: {msg}"),
-                    _ => log::info!("sidecar: {msg}"),
-                }
-            }
-            log::warn!("sidecar: stderr EOF");
-        });
-    }
-    let msg = serde_json::json!({"type":"init","zosmaDir":zm});
-    let l = format!("{}\n", serde_json::to_string(&msg).unwrap());
-    i.write_all(l.as_bytes())
-        .await
-        .map_err(|e| format!("init: {e}"))?;
-    i.flush().await.map_err(|e| format!("flush: {e}"))?;
-    log::info!("Sidecar: init sent, pid={:?}", c.id());
-    Ok((c, o, i))
-}
-
-use std::process::Stdio;
-
-async fn read_stdout(
-    mut out: tokio::process::ChildStdout,
-    pp: Arc<Mutex<HashMap<String, PendingPrompt>>>,
-    pr: Arc<Mutex<HashMap<String, PendingRequest>>>,
-    rd: Arc<AtomicBool>,
-    app: AppHandle,
-) {
-    let mut lines = BufReader::new(&mut out).lines();
-    while let Ok(Some(l)) = lines.next_line().await {
-        if l.trim().is_empty() {
-            continue;
-        }
-        let m: Value = match serde_json::from_str(&l) {
-            Ok(v) => v,
-            _ => continue,
-        };
-        match m.get("type").and_then(|v| v.as_str()).unwrap_or("") {
-            "ready" => {
-                rd.store(true, Ordering::Release);
-                log::info!("Ready");
-                let _ = app.emit("ready", m);
-            }
-            "event" => {
-                if let Some(e) = m.get("event") {
-                    // Surface OAuth-flow events as Tauri events so the React
-                    // UI can listen for them globally (separate from prompt
-                    // streaming channels which are scoped to active prompts).
-                    if let Some(kind) = e.get("kind").and_then(|v| v.as_str()) {
-                        // Surface OAuth, reload, and extension-UI requests as
-                        // global Tauri events. `ui_request` carries ctx.ui
-                        // dialog calls (e.g. pi-ask-user) so the React UI can
-                        // render them regardless of which prompt is active.
-                        // `ui_cancel` tells the UI to dismiss a dialog the
-                        // sidecar already resolved itself (timeout/abort).
-                        if kind.starts_with("oauth_")
-                            || kind == "agent_reload_failed"
-                            || kind == "ui_request"
-                            || kind == "ui_cancel"
-                        {
-                            let _ = app.emit(kind, e.clone());
-                        }
-                    }
-                    // Pi SDK session-level events (queue_update,
-                    // session_info_changed, etc.) use `type` instead of
-                    // `kind`. The composer (#201 PR 3) needs to know about
-                    // queue mutations EVEN WHEN NO PROMPT IS ACTIVE — e.g.
-                    // after the agent finishes and a follow-up dequeues.
-                    // Emit those globally so a `listen("queue_update", ...)`
-                    // in React works regardless of streaming state.
-                    if let Some(t) = e.get("type").and_then(|v| v.as_str()) {
-                        if t == "queue_update" {
-                            let _ = app.emit("queue_update", e.clone());
-                        }
-                    }
-                    for p in pp.lock().await.values() {
-                        let _ = p.channel.send(e.clone());
-                    }
-                }
-            }
-            "done" => {
-                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
-                    // Forward a terminal `done` to the prompt channel BEFORE
-                    // dropping it. The UI ends a turn on `agent_end` OR `done`;
-                    // without this forward the only completion signal is
-                    // `agent_end`, so any turn that doesn't emit one (incl. the
-                    // sidecar's prompt-timeout abort, which only sends `done`)
-                    // leaves the UI stuck in "thinking" forever.
-                    if let Some(p) = pp.lock().await.remove(id) {
-                        let _ = p.channel.send(serde_json::json!({"type":"done"}));
-                    }
-                }
-            }
-            "result" => {
-                if let Some(id) = m.get("id").and_then(|v| v.as_str()) {
-                    if let Some(p) = pr.lock().await.remove(id) {
-                        let _ = p
-                            .sender
-                            .send(Ok(m.get("data").cloned().unwrap_or(Value::Null)));
-                    }
-                }
-            }
-            "error" => {
-                let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let t = m.get("message").and_then(|v| v.as_str()).unwrap_or("err");
-                // Surface sidecar command errors. Previously these were relayed
-                // to the frontend as a rejected Promise and never logged, so a
-                // failing command (e.g. load_session) was invisible in the logs.
-                log::warn!("sidecar error response id={id}: {t}");
-                if let Some(p) = pr.lock().await.remove(id) {
-                    let _ = p.sender.send(Err(t.into()));
-                } else if let Some(p) = pp.lock().await.get(id) {
-                    let _ = p
-                        .channel
-                        .send(serde_json::json!({"type":"error","message":t}));
-                }
-            }
-            _ => {}
-        }
-    }
-    log::warn!("Sidecar stdout closed");
-}
-
-async fn scmd(state: &AppState, m: &Value) -> Result<(), String> {
-    let mut s = state.sidecar.stdin.lock().await;
-    let i = s.as_mut().ok_or_else(|| {
-        log::error!("scmd: no sidecar (stdin is None) for msg={m}");
-        "no sidecar".to_string()
-    })?;
-    let l = format!("{}\n", serde_json::to_string(m).map_err(|e| e.to_string())?);
-    let kind = m.get("type").and_then(|v| v.as_str()).unwrap_or("?");
-    let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("-");
-    if let Err(e) = i.write_all(l.as_bytes()).await {
-        log::error!(
-            "scmd[{kind}/{id}]: write_all FAILED: {e} (raw os err: {:?})",
-            e.raw_os_error()
-        );
-        return Err(e.to_string());
-    }
-    if let Err(e) = i.flush().await {
-        log::error!(
-            "scmd[{kind}/{id}]: flush FAILED: {e} (raw os err: {:?})",
-            e.raw_os_error()
-        );
-        return Err(e.to_string());
-    }
-    log::debug!("scmd[{kind}/{id}]: sent ({} bytes)", l.len());
-    Ok(())
-}
-
-async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<Value, String> {
-    let id = m
-        .get("id")
-        .and_then(|v| v.as_str())
-        .ok_or("no id")?
-        .to_string();
-    let (tx, rx) = oneshot::channel();
-    state
-        .pending_requests
-        .lock()
-        .await
-        .insert(id, PendingRequest { sender: tx });
-    scmd(state, m).await?;
-    tokio::time::timeout(t, rx)
-        .await
-        .map_err(|_| "timeout".to_string())?
-        .map_err(|_| "closed".to_string())?
-}
-
-#[tauri::command]
-async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_models","id":"gm"}),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-    .map(|r| r.get("models").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-/// Returns the model the engine will actually run (`session.model`) as
-/// `{provider, id, name}` or null. The frontend mirrors this on startup so the
-/// model shown near the input matches the model that actually answers.
-#[tauri::command]
-async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gam-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_active_model","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn send_prompt(
-    text: String,
-    ch: Channel<Value>,
-    s: State<'_, AppState>,
-) -> Result<(), String> {
-    if !s.sidecar.ready.load(Ordering::Acquire) {
-        return Err("not ready".into());
-    }
-    let id = format!("p-{}", uuid_v4());
-    s.pending_prompts
-        .lock()
-        .await
-        .insert(id.clone(), PendingPrompt { channel: ch });
-    scmd(
-        &s,
-        &serde_json::json!({"type":"prompt","id":id,"text":text}),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
-    scmd(&s, &serde_json::json!({"type":"abort","id":"ab"})).await
-}
-
-/// Build the JSONL payload sent to the sidecar for a `steer` command.
-///
-/// Factored out as a pure function so the wire shape is unit-testable
-/// without spinning up a real sidecar process. The Tauri command
-/// [`steer_prompt`] is a thin wrapper that generates an id and forwards
-/// the payload via [`scmd_r`].
-///
-/// See `agent-sidecar/src/steering.ts` for the matching handler and
-/// pi-coding-agent's `docs/rpc.md` for the protocol reference (cowork
-/// uses `text` rather than pi's `message` to stay internally consistent
-/// with the existing `prompt` command).
-fn build_steer_payload(id: &str, text: &str) -> Value {
-    serde_json::json!({
-        "type": "steer",
-        "id": id,
-        "text": text,
-    })
-}
-
-/// Build the install context the frontend uses to decide whether the in-app
-/// updater may self-update or should defer to a package manager (issue #271).
-///
-/// Pure so it can be unit-tested without touching real env/OS state.
-fn build_install_context(target_os: &str, is_appimage: bool, channel: &str) -> Value {
-    // `std::env::consts::OS` already yields "macos"/"windows"/"linux"/…, which
-    // matches the platform strings the frontend's resolveUpdatePolicy expects,
-    // so we forward it as-is.
-    let channel = if channel.is_empty() {
-        "direct"
-    } else {
-        channel
-    };
-    serde_json::json!({
-        "platform": target_os,
-        "isAppImage": is_appimage,
-        "channel": channel,
-    })
-}
-
-/// Tauri command: report the running install context to the frontend.
-///
-/// - `isAppImage` is true when launched from an AppImage (`APPIMAGE` env set);
-///   only then can the Tauri updater self-replace on Linux.
-/// - `channel` is a compile-time marker baked by CI: package-manager builds
-///   (Homebrew/AUR/Winget) are built with `ZOSMA_UPDATE_CHANNEL=managed` so the
-///   app never tries to self-update binaries the package manager owns.
-#[tauri::command]
-fn get_install_context() -> Value {
-    let is_appimage = std::env::var_os("APPIMAGE").is_some();
-    let channel = option_env!("ZOSMA_UPDATE_CHANNEL").unwrap_or("direct");
-    build_install_context(std::env::consts::OS, is_appimage, channel)
-}
-
-/// Build the JSONL payload sent to the sidecar for a `clear_queue` command.
-/// Issue #201 PR 3 — atomically drains the SDK queue. No `text` field: this
-/// command takes no input. The sidecar replies with the drained
-/// `{steering, followUp}` arrays in a `result` envelope.
-fn build_clear_queue_payload(id: &str) -> Value {
-    serde_json::json!({
-        "type": "clear_queue",
-        "id": id,
-    })
-}
-
-/// Build the JSONL payload sent to the sidecar for a `follow_up` command.
-/// See [`build_steer_payload`] for rationale.
-fn build_follow_up_payload(id: &str, text: &str) -> Value {
-    serde_json::json!({
-        "type": "follow_up",
-        "id": id,
-        "text": text,
-    })
-}
-
-/// Queue a steering message on the active session. Delivered after the
-/// current assistant turn finishes its tool calls, before the next LLM
-/// call. Round-trips through `scmd_r` with a short timeout because the
-/// sidecar replies with a one-shot `result` / `error` envelope (no
-/// streaming channel — streaming events keep flowing on the existing
-/// prompt channel).
-#[tauri::command]
-async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
-    if !s.sidecar.ready.load(Ordering::Acquire) {
-        return Err("not ready".into());
-    }
-    let id = format!("st-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &build_steer_payload(&id, &text),
-        std::time::Duration::from_secs(5),
-    )
-    .await
-}
-
-/// Queue a follow-up message on the active session. Delivered after the
-/// agent has no more tool calls or steering messages pending.
-#[tauri::command]
-async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
-    if !s.sidecar.ready.load(Ordering::Acquire) {
-        return Err("not ready".into());
-    }
-    let id = format!("fu-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &build_follow_up_payload(&id, &text),
-        std::time::Duration::from_secs(5),
-    )
-    .await
-}
-
-/// Drain the active session's steer + follow-up queue and return the
-/// drained `{steering, followUp}` arrays. Issue #201 PR 3 — the desktop
-/// composer calls this when the user presses Ctrl+↑ to recall pending
-/// queued messages for editing. Idempotent on an empty queue.
-#[tauri::command]
-async fn clear_queue(s: State<'_, AppState>) -> Result<Value, String> {
-    if !s.sidecar.ready.load(Ordering::Acquire) {
-        return Err("not ready".into());
-    }
-    let id = format!("cq-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &build_clear_queue_payload(&id),
-        std::time::Duration::from_secs(5),
-    )
-    .await
-}
-
-/// Answer an extension UI dialog (ctx.ui.select/confirm/input/editor). `id` is
-/// the UI-request id from the `ui_request` event. Exactly one of `value`/
-/// `confirmed` is set, or `cancelled` is true. Fire-and-forget: the sidecar
-/// resolves the pending dialog promise and sends no response.
-#[tauri::command]
-async fn send_ui_response(
-    id: String,
-    value: Option<String>,
-    confirmed: Option<bool>,
-    cancelled: Option<bool>,
-    s: State<'_, AppState>,
-) -> Result<(), String> {
-    let mut msg = serde_json::json!({ "type": "ui_response", "id": id });
-    if let Some(v) = value {
-        msg["value"] = serde_json::Value::String(v);
-    }
-    if let Some(c) = confirmed {
-        msg["confirmed"] = serde_json::Value::Bool(c);
-    }
-    if let Some(c) = cancelled {
-        msg["cancelled"] = serde_json::Value::Bool(c);
-    }
-    scmd(&s, &msg).await
-}
-
-#[tauri::command]
-async fn set_active_model(
-    provider: String,
-    model: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"set_model","id":"sm","provider":provider,"model":model}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn save_auth_key(
-    provider: String,
-    key: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let result = scmd_r(
-        &s,
-        &serde_json::json!({"type":"save_auth","id":"sa","provider":provider,"key":key}),
-        std::time::Duration::from_secs(30),
-    )
-    .await;
-    if result.is_ok() {
-        s.fresh_start.store(false, Ordering::Release);
-    }
-    result
-}
-
-/// Validate a provider API key via format check + optional live probe.
-/// Forwards to the sidecar's validate_provider_key IPC command.
-/// Uses a 10s timeout (5s for probe + buffer).
-#[tauri::command]
-async fn validate_provider_key(
-    provider: String,
-    key: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"validate_provider_key","id":"vpk","provider":provider,"key":key}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-// ─── Custom OpenAI-compatible providers (issue #207) ───────────────────────
-// Thin forwarders for the three sidecar commands that read/write the
-// `providers.<id>` section of models.json. The UI never touches models.json
-// directly; pi-coding-agent's ModelRegistry owns that file and we re-init it
-// inside the sidecar on every save/delete so the model selector refreshes.
-
-#[tauri::command]
-async fn list_custom_providers(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"list_custom_providers","id":"lcp"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn save_custom_provider(provider: Value, s: State<'_, AppState>) -> Result<Value, String> {
-    // initAgent() reloads the agent from disk; allow the same 30s budget as
-    // save_auth_key. Validation errors come back via the sidecar `error`
-    // channel and surface as Err here.
-    let result = scmd_r(
-        &s,
-        &serde_json::json!({"type":"save_custom_provider","id":"scp","provider":provider}),
-        std::time::Duration::from_secs(30),
-    )
-    .await;
-    if result.is_ok() {
-        s.fresh_start.store(false, Ordering::Release);
-    }
-    result
-}
-
-#[tauri::command]
-async fn delete_custom_provider(
-    provider_id: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"delete_custom_provider","id":"dcp","providerId":provider_id}),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn test_custom_provider_connection(
-    base_url: String,
-    api_key: Option<String>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    // 10s timeout — enough for a probe without being indefinite.
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"test_custom_provider_connection","id":"tcpc","baseUrl":base_url,"apiKey":api_key}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn start_oauth(provider: String, s: State<'_, AppState>) -> Result<Value, String> {
-    // OAuth involves the user completing a browser flow — generous timeout.
-    // Use a unique id per call so that a re-entrant `start_oauth` (e.g. after
-    // the user closed the browser without completing) cannot have its reply
-    // swallowed by the previous flow's cancellation message.
-    let id = format!("so-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"start_oauth","id":id,"provider":provider}),
-        std::time::Duration::from_secs(300),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn cancel_oauth(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"cancel_oauth","id":"co"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn logout_provider(provider: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"logout","id":"lo","provider":provider}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn get_auth_status(s: State<'_, AppState>) -> Result<Value, String> {
-    // Unique id per call: a hardcoded id collides in `pending_requests` when
-    // several callers invoke the same command concurrently (the map insert
-    // overwrites, so all-but-one request resolves as "closed" and errors).
-    let id = format!("gas-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_auth_status","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-fn pi_agent_dir_path() -> PathBuf {
-    if let Ok(explicit) = std::env::var("ZOSMA_PI_AGENT_DIR") {
-        if !explicit.trim().is_empty() {
-            return PathBuf::from(explicit);
-        }
-    }
-
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    PathBuf::from(home).join(".pi").join("agent")
-}
-
-fn has_pi_state_files(agent_dir: &Path) -> bool {
-    agent_dir.join("auth.json").is_file() || agent_dir.join("models.json").is_file()
-}
-
-/// Baseline Pi files are created during startup and do not mean user setup.
-/// Only stored credentials or custom model providers count here.
-fn has_local_user_setup(agent_dir: &Path) -> bool {
-    let auth_has_entries = fs::read_to_string(agent_dir.join("auth.json"))
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-        .and_then(|value| value.as_object().map(|entries| !entries.is_empty()))
-        .unwrap_or(false);
-    if auth_has_entries {
-        return true;
-    }
-
-    fs::read_to_string(agent_dir.join("models.json"))
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-        .and_then(|value| {
-            value
-                .get("providers")?
-                .as_object()
-                .map(|providers| !providers.is_empty())
-        })
-        .unwrap_or(false)
-}
-
-fn is_fresh_start(fresh_start: bool, agent_dir: &Path) -> bool {
-    !has_local_user_setup(agent_dir) || (fresh_start && !agent_dir.join("auth.json").is_file())
-}
-
-/// Non-secret startup status for onboarding routing.
-/// Returns `{ hasExistingSetup, zosmaConnected }` and no credentials.
-#[tauri::command]
-async fn get_onboarding_status(s: State<'_, AppState>) -> Result<Value, String> {
-    // Fresh installs do not need Pi/sidecar readiness. This lets the login
-    // screen replace startup splash immediately while returning users still
-    // use sidecar classification for saved providers and models.
-    let agent_dir = pi_agent_dir_path();
-    if is_fresh_start(s.fresh_start.load(Ordering::Acquire), &agent_dir) {
-        return Ok(serde_json::json!({
-            "hasExistingSetup": false,
-            "zosmaConnected": false,
-        }));
-    }
-
-    let id = format!("gos-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_onboarding_status","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn has_credentials(s: State<'_, AppState>) -> Result<bool, String> {
-    if !s.sidecar.ready.load(Ordering::Acquire) {
-        return Ok(false);
-    }
-    // "Has credentials" must mean the user has actually AUTHENTICATED at least
-    // one provider — not that the model catalog is non-empty. Shared pi
-    // extensions (e.g. `pi-crofai`) register provider model catalogs WITHOUT
-    // any stored credential, so counting `get_models` made a freshly-wiped
-    // install look authenticated and skipped onboarding, dropping the user into
-    // chat with non-working models. Count authenticated providers from auth
-    // storage instead (the same list the onboarding/Connect screen reflects).
-    let id = format!("hc-{}", uuid_v4());
-    let r = scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_auth_status","id":id}),
-        std::time::Duration::from_secs(30),
-    )
-    .await?;
-    let has_auth = r
-        .get("providers")
-        .and_then(|v| v.as_array())
-        .map(|a| !a.is_empty())
-        .unwrap_or(false);
-    if has_auth {
-        return Ok(true);
-    }
-    // A configured Zosma Router auth (zosmaai-router managed provider) is a
-    // complete, working setup even though it leaves no entry in auth storage.
-    // The managed provider appears in apiKeyProviders from modelRegistry but
-    // not in `providers` (auth.json). Check for it specifically.
-    let has_managed = r
-        .get("apiKeyProviders")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .any(|p| p.get("id").and_then(|id| id.as_str()) == Some("zosmaai-router"))
-        })
-        .unwrap_or(false);
-    if has_managed {
-        return Ok(true);
-    }
-    // A configured Custom Local LLM (issue #207) is a complete, working setup
-    // even though it leaves no entry in auth storage — Ollama / LM Studio need
-    // no API key, so `get_auth_status` reports zero providers for them. Without
-    // this, saving a local model on the Welcome screen flips nothing in
-    // `has_credentials`, `needsOnboarding` stays true, and the UI bounces the
-    // user straight back to the "Get started" onboarding screen they just left.
-    let cid = format!("hclcp-{}", uuid_v4());
-    let cr = scmd_r(
-        &s,
-        &serde_json::json!({"type":"list_custom_providers","id":cid}),
-        std::time::Duration::from_secs(30),
-    )
-    .await?;
-    Ok(cr
-        .get("providers")
-        .and_then(|v| v.as_array())
-        .map(|a| !a.is_empty())
-        .unwrap_or(false))
-}
-
-/// Google broker: run the consent flow (loopback+PKCE) for the selected scopes
-/// and fan out credentials to the real package config files. `prefs` is the
-/// per-product capability selection; `byo` an optional bring-your-own client.
-#[tauri::command]
-async fn google_connect(
-    s: State<'_, AppState>,
-    prefs: Option<Value>,
-    byo: Option<Value>,
-) -> Result<Value, String> {
-    let id = format!("cg-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"connect_google","id":id});
-    if let Some(p) = prefs {
-        payload["prefs"] = p;
-    }
-    // `byo` may be JSON null to explicitly clear; preserve that distinction.
-    if let Some(b) = byo {
-        payload["byo"] = b;
-    }
-    scmd_r(
-        &s,
-        &payload,
-        // Consent involves browser + user interaction — generous timeout.
-        std::time::Duration::from_secs(300),
-    )
-    .await
-}
-
-/// Google broker: read the capability matrix + saved scope prefs / BYO state.
-#[tauri::command]
-async fn google_get_prefs(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("ggp-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_google_prefs","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Google broker: persist scope prefs / BYO client without (re)running consent.
-#[tauri::command]
-async fn google_save_prefs(
-    s: State<'_, AppState>,
-    prefs: Option<Value>,
-    byo: Option<Value>,
-) -> Result<Value, String> {
-    let id = format!("gsp-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"save_google_prefs","id":id});
-    if let Some(p) = prefs {
-        payload["prefs"] = p;
-    }
-    if let Some(b) = byo {
-        payload["byo"] = b;
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
-}
-
-/// Google app: which extensions the selection needs + whether they're installed.
-#[tauri::command]
-async fn google_get_app_status(
-    s: State<'_, AppState>,
-    prefs: Option<Value>,
-) -> Result<Value, String> {
-    let id = format!("ggas-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"get_google_app_status","id":id});
-    if let Some(p) = prefs {
-        payload["prefs"] = p;
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(15)).await
-}
-
-/// Google app: install (via pi's package manager) any missing app extensions.
-#[tauri::command]
-async fn google_install_app(s: State<'_, AppState>, prefs: Option<Value>) -> Result<Value, String> {
-    let id = format!("gia-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"install_google_app","id":id});
-    if let Some(p) = prefs {
-        payload["prefs"] = p;
-    }
-    // package install over the network — generous timeout.
-    scmd_r(&s, &payload, std::time::Duration::from_secs(300)).await
-}
-
-/// Google broker: probe both token destinations and report connected state.
-#[tauri::command]
-async fn google_get_status(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("ggs-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_google_status","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// GitHub: probe gh auth status.
-#[tauri::command]
-async fn gh_auth_status(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gas-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"gh_auth_status","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// GitHub: list organizations for the authenticated user.
-#[tauri::command]
-async fn gh_organizations(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("go-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"gh_organizations","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// GitHub: drive `gh auth login --web` device flow; returns {code, url}.
-#[tauri::command]
-async fn gh_auth_login(s: State<'_, AppState>, scopes: Option<String>) -> Result<Value, String> {
-    let id = format!("gal-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"gh_auth_login","id":id});
-    if let Some(sc) = scopes {
-        payload["scopes"] = serde_json::json!(sc);
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(20)).await
-}
-
-/// GitHub: cancel an in-flight device-flow login.
-#[tauri::command]
-async fn gh_auth_cancel(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gac-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"gh_auth_cancel","id":id}),
-        std::time::Duration::from_secs(5),
-    )
-    .await
-}
-
-/// GitHub: sign out (gh auth logout for github.com).
-#[tauri::command]
-async fn gh_auth_logout(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("glo-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"gh_auth_logout","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Google broker: revoke the refresh token and delete all local token files.
-#[tauri::command]
-async fn google_disconnect(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("dg-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"disconnect_google","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn reload_sidecar(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"reload","id":"rl"}),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-/// Lightweight env-read for the system username — used in the empty-state
-/// greeting. Microseconds, non-blocking, always returns something.
-#[tauri::command]
-fn get_username() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_default()
-}
-
-#[tauri::command]
-async fn list_sessions(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"list_sessions","id":"ls"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn save_session(
-    sid: String,
-    title: String,
-    messages: Value,
-    model: Option<String>,
-    provider: Option<String>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type":"save_session",
-            "id": sid,
-            "title": title,
-            "messages": messages,
-            "model": model,
-            "provider": provider,
-        }),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn load_session(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("ld-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"load_session","id":id,"sessionFile": session_file}),
-        std::time::Duration::from_secs(60),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn delete_session(session_file: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"delete_session","id":"dl","sessionFile": session_file}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Give a chat session a user-chosen title. The sidecar marks the header
-/// `titleLocked` so auto-derived titles never overwrite it again.
-#[tauri::command]
-async fn rename_session(
-    session_file: String,
-    title: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type":"rename_session",
-            "id":"rn",
-            "sessionFile": session_file,
-            "title": title,
-        }),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Pin or unpin a chat session (floats it to the top of the sidebar).
-#[tauri::command]
-async fn set_session_pinned(
-    session_file: String,
-    pinned: bool,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type":"set_session_pinned",
-            "id":"pn",
-            "sessionFile": session_file,
-            "pinned": pinned,
-        }),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Deep content search across all session bodies (not just titles).
-#[tauri::command]
-async fn search_sessions(query: String, s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"search_sessions","id":"ss","query": query}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn new_session(cwd: Option<String>, s: State<'_, AppState>) -> Result<Value, String> {
-    // `cwd` is the workspace folder the user picked (via the native folder
-    // picker). Forwarded to the sidecar, which rebinds the agent's file/bash
-    // tools and project-local resource discovery to it. Omitted => the sidecar
-    // keeps its current workspace (defaults to the user's home dir).
-    let id = format!("ns-{}", uuid_v4());
-    let mut payload = serde_json::json!({"type":"new_session","id":id});
-    if let Some(c) = cwd {
-        if !c.trim().is_empty() {
-            payload["cwd"] = serde_json::Value::String(c);
-        }
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(60)).await
-}
-
-/// Report the sidecar's active workspace folder (and the default), so the UI
-/// can display "where am I working" and pre-fill the folder picker.
-#[tauri::command]
-async fn get_workspace(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_workspace","id":"gw"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-#[tauri::command]
-async fn get_settings(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("gs-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_settings","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| {
-        r.get("settings")
-            .cloned()
-            .unwrap_or(Value::Object(Default::default()))
-    })
-}
-
-#[tauri::command]
-async fn save_settings(settings: Value, s: State<'_, AppState>) -> Result<Value, String> {
-    let mut payload = serde_json::json!({"type":"save_settings","id":format!("ss-{}", uuid_v4())});
-    if let Some(obj) = settings.as_object() {
-        for (k, v) in obj {
-            payload[k] = v.clone();
-        }
-    }
-    scmd_r(&s, &payload, std::time::Duration::from_secs(10)).await
-}
-
-#[tauri::command]
-async fn get_instructions(s: State<'_, AppState>) -> Result<String, String> {
-    let id = format!("gi-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_instructions","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| {
-        r.get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()
-    })
-}
-
-#[tauri::command]
-async fn save_instructions(content: String, s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("si-{}", uuid_v4());
-    // session.reload() in the sidecar can take a moment; allow more headroom.
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"save_instructions","id":id,"content":content}),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-// ── Extension commands ────────────────────────────────────────────
-
-#[tauri::command]
-async fn list_extensions(s: State<'_, AppState>) -> Result<Value, String> {
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"list_extensions","id":"le"}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-    .map(|r| r.get("extensions").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-// ── Skills commands ──────────────────────────────────────────────
-
-#[tauri::command]
-async fn search_skills(query: String, s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("ssk-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"search_skills","id": id, "query": query}),
-        std::time::Duration::from_secs(35),
-    )
-    .await
-    .map(|r| r.get("results").cloned().unwrap_or(Value::Array(vec![])))
-}
-
-// ── Native skill listing (reads from same dir as install/remove) ────────
-
-#[tauri::command]
-async fn list_skills(_s: State<'_, AppState>) -> Result<Value, String> {
-    let skill_dirs = get_all_skill_dirs()?;
-    let cowork_skills_dir = get_skills_dir()?;
-    let mut seen_names = std::collections::HashSet::<String>::new();
-    let mut result = Vec::<serde_json::Value>::new();
-
-    for skills_dir in &skill_dirs {
-        if !skills_dir.exists() {
-            continue;
-        }
-
-        for entry in fs::read_dir(skills_dir)
-            .map_err(|e| format!("Failed to read skills directory {skills_dir:?}: {e}"))?
-        {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
-            let name = entry.file_name().to_string_lossy().to_string();
-
-            // Skip hidden dirs and node_modules
-            if name.starts_with('.') || name == "node_modules" {
-                continue;
-            }
-
-            // Deduplicate: skip if we already saw this skill name
-            if seen_names.contains(&name) {
-                continue;
-            }
-
-            let skill_path = entry.path();
-            if !skill_path.is_dir() {
-                continue;
-            }
-
-            // Check for SKILL.md
-            let skill_md = skill_path.join("SKILL.md");
-            if !skill_md.exists() {
-                continue;
-            }
-
-            seen_names.insert(name.clone());
-
-            // Determine if this skill is removable (only skills in the cowork dir)
-            let removable = *skills_dir == cowork_skills_dir;
-
-            // Try to extract description from frontmatter
-            let content = fs::read_to_string(&skill_md).unwrap_or_default();
-            let description = extract_field_from_frontmatter(&content, "description");
-
-            result.push(serde_json::json!({
-                "name": name,
-                "path": skill_path.to_string_lossy().to_string(),
-                "description": description,
-                "removable": removable,
-            }));
-        }
-    }
-
-    Ok(serde_json::json!(result))
-}
-
-/// Read the raw SKILL.md content for an installed skill directory.
-///
-/// `path` is the skill directory path (as returned by `list_skills`). The file
-/// `<path>/SKILL.md` is read and returned verbatim so the UI can render it.
-#[tauri::command]
-async fn read_skill_md(path: String, _s: State<'_, AppState>) -> Result<Value, String> {
-    let dir = PathBuf::from(&path);
-    // Accept either a directory (append SKILL.md) or a direct SKILL.md path.
-    let skill_md = if dir.is_dir() {
-        dir.join("SKILL.md")
-    } else if dir.file_name().map(|f| f == "SKILL.md").unwrap_or(false) {
-        dir
-    } else {
-        dir.join("SKILL.md")
-    };
-
-    if !skill_md.exists() {
-        return Err(format!("SKILL.md not found at {}", skill_md.display()));
-    }
-
-    let content =
-        fs::read_to_string(&skill_md).map_err(|e| format!("Failed to read SKILL.md: {e}"))?;
-
-    Ok(serde_json::json!({
-        "content": content,
-        "path": skill_md.to_string_lossy().to_string(),
-    }))
-}
-
-/// Extract a YAML frontmatter field from SKILL.md content
-fn extract_field_from_frontmatter(content: &str, field: &str) -> String {
-    let content = content.trim_start();
-    if !content.starts_with("---") {
-        return String::new();
-    }
-    let end_match = content[3..].find("---");
-    let frontmatter = match end_match {
-        Some(end) => &content[3..end + 3],
-        None => return String::new(),
-    };
-
-    for line in frontmatter.lines() {
-        let line = line.trim();
-        if let Some(val) = line.strip_prefix(&format!("{}:", field)) {
-            return val.trim().trim_matches('"').trim_matches('\'').to_string();
-        }
-    }
-    String::new()
-}
-
-// ── Skill management (direct in Rust — no npx needed) ────────────────
-
-/// Parse a skill source string into a git URL and optional sub-path.
-///
-/// Supports these formats:
-///   - `owner/repo` or `owner/repo/skill-name` (GitHub shorthand, no prefix)
-///   - `github/owner/repo` or `github/owner/repo/skill-name` (explicit GitHub prefix)
-///   - `https://github.com/owner/repo.git` (full URL)
-///   - `https://...` (any other full URL)
-fn parse_skill_source(source: &str) -> (String, Option<String>) {
-    // ── Full URLs ──────────────────────────────────────────────────
-    if source.starts_with("http://") || source.starts_with("https://") {
-        let url = source.to_string();
-        let parts: Vec<&str> = source.split('/').collect();
-        // Last non-empty segment might be a sub-directory path (no dots)
-        // or the repo name itself (may contain .git)
-        for p in parts.iter().rev() {
-            if !p.is_empty() {
-                if !p.contains('.') && !p.ends_with(".git") {
-                    return (url, Some(p.to_string()));
-                }
-                break;
-            }
-        }
-        return (url, None);
-    }
-
-    let parts: Vec<&str> = source.split('/').collect();
-
-    // ── github/owner/repo[/skill-name] ─────────────────────────────
-    if parts.len() >= 3 && parts[0] == "github" {
-        let url = format!("https://github.com/{}/{}.git", parts[1], parts[2]);
-        let sub_path = if parts.len() > 3 {
-            Some(parts[3..].join("/"))
-        } else {
-            None
-        };
-        return (url, sub_path);
-    }
-
-    // ── owner/repo[/skill-name]  (GitHub shorthand, no prefix) ────
-    if parts.len() >= 2 && !parts[0].is_empty() && !parts[0].contains('.') {
-        let url = format!("https://github.com/{}/{}.git", parts[0], parts[1]);
-        let sub_path = if parts.len() > 2 {
-            Some(parts[2..].join("/"))
-        } else {
-            None
-        };
-        return (url, sub_path);
-    }
-
-    // ── Single segment, treat as GitHub repo name ──────────────────
-    (
-        format!("https://github.com/{}/{}.git", source, source),
-        None,
-    )
-}
-
-/// Find SKILL.md files in a directory tree and return their parent directories
-fn find_skill_dirs(base: &PathBuf) -> Vec<PathBuf> {
-    let mut skills = Vec::new();
-    for entry in WalkDir::new(base)
-        .max_depth(4)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "SKILL.md" {
-            if let Some(parent) = entry.path().parent() {
-                skills.push(parent.to_path_buf());
-            }
-        }
-    }
-    skills
-}
-
-/// Extract skill name from SKILL.md frontmatter
-fn extract_skill_name(skill_dir: &std::path::Path) -> Option<String> {
-    let skill_md = skill_dir.join("SKILL.md");
-    let content = fs::read_to_string(&skill_md).ok()?;
-
-    // Parse YAML frontmatter (simple --- ... --- extraction)
-    let content = content.trim_start();
-    if !content.starts_with("---") {
-        return Some(skill_dir.file_name()?.to_str()?.to_string());
-    }
-
-    let end = content[3..].find("---")? + 3;
-    let frontmatter = &content[3..end];
-
-    for line in frontmatter.lines() {
-        let line = line.trim();
-        if let Some(val) = line.strip_prefix("name:") {
-            return Some(val.trim().to_string());
-        }
-    }
-    None
-}
-
-/// Get the skills directory path (~/.pi/agent/skills)
-fn get_skills_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|e| format!("Cannot find home directory: {e}"))?;
-    Ok(PathBuf::from(home)
-        .join(".zosmaai")
-        .join("cowork")
-        .join("skills"))
-}
-
-/// Returns all skill directories the sidecar AI agent discovers skills from.
-/// This ensures the Skills Panel shows the same skills the AI has access to.
-fn get_all_skill_dirs() -> Result<Vec<PathBuf>, String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|e| format!("Cannot find home directory: {e}"))?;
-    let mut dirs = Vec::new();
-
-    // 1. Primary cowork skills dir
-    let cowork_skills = PathBuf::from(&home)
-        .join(".zosmaai")
-        .join("cowork")
-        .join("skills");
-    dirs.push(cowork_skills);
-
-    // 2. Legacy ~/.agents/skills/
-    let agents_skills = PathBuf::from(&home).join(".agents").join("skills");
-    if agents_skills.exists() {
-        dirs.push(agents_skills);
-    }
-
-    // 3. Extension-installed skills from ~/.zosmaai/cowork/extensions/*/skills/
-    let extensions_dir = PathBuf::from(&home)
-        .join(".zosmaai")
-        .join("cowork")
-        .join("extensions");
-    if extensions_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&extensions_dir) {
-            for entry in entries.flatten() {
-                let ext_skills = entry.path().join("skills");
-                if ext_skills.is_dir() {
-                    dirs.push(ext_skills);
-                }
-            }
-        }
-    }
-
-    // 4. System pi skills dir
-    let pi_skills = PathBuf::from(&home)
-        .join(".pi")
-        .join("agent")
-        .join("skills");
-    if pi_skills.exists() {
-        dirs.push(pi_skills);
-    }
-
-    // 5. Project-level .pi/skills/ (relative to cwd)
-    if let Ok(cwd) = std::env::current_dir() {
-        let project_skills = cwd.join(".pi").join("skills");
-        if project_skills.exists() {
-            dirs.push(project_skills);
-        }
-    }
-
-    // 6. Project-level .agents/skills/ (relative to cwd)
-    if let Ok(cwd) = std::env::current_dir() {
-        let project_agents = cwd.join(".agents").join("skills");
-        if project_agents.exists() {
-            dirs.push(project_agents);
-        }
-    }
-
-    Ok(dirs)
-}
-
-/// Recursively copy a directory
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_type = entry.file_type()?;
-        let dst_path = dst.join(entry.file_name());
-        if src_type.is_dir() {
-            copy_dir_recursive(&entry.path(), &dst_path)?;
-        } else {
-            fs::copy(entry.path(), &dst_path)?;
-        }
-    }
-    Ok(())
-}
-
-/// Select which skills in a cloned repo to install.
-/// When a sub-path is specified (from search API 3-part IDs like owner/repo/skill-name),
-/// match by skill name first (the skill may live at repo root), then fall back to
-/// subdirectory lookup. When no sub-path, install all skills found.
-fn select_skills_to_install(
-    skill_dirs: &[PathBuf],
-    sub_path: Option<&str>,
-    repo_path: &std::path::Path,
-) -> Result<Vec<PathBuf>, String> {
-    let Some(sp) = sub_path else {
-        // No sub-path — install all skills in the repo
-        return Ok(skill_dirs.to_vec());
-    };
-
-    // Try matching by skill name first
-    let matched: Vec<PathBuf> = skill_dirs
-        .iter()
-        .filter(|sd| {
-            let name = extract_skill_name(sd)
-                .or_else(|| sd.file_name().and_then(|n| n.to_str()).map(String::from))
-                .unwrap_or_default();
-            name == sp
-        })
-        .cloned()
-        .collect();
-
-    if !matched.is_empty() {
-        return Ok(matched);
-    }
-
-    // Sub-path wasn't a skill name match; try as a subdirectory
-    let sub_dir = repo_path.join(sp);
-    if sub_dir.exists() && sub_dir.is_dir() {
-        let sub_skills = find_skill_dirs(&sub_dir);
-        if !sub_skills.is_empty() {
-            return Ok(sub_skills);
-        }
-    }
-
-    Err(format!("Skill '{}' not found in repo", sp))
-}
-
-#[tauri::command]
-async fn install_skill(source: String, _s: State<'_, AppState>) -> Result<Value, String> {
-    // Parse source into git URL + optional sub-path
-    let (git_url, sub_path) = parse_skill_source(&source);
-    log::info!(
-        "Installing skill from: {} (sub-path: {:?})",
-        git_url,
-        sub_path
-    );
-
-    // Create temp directory for clone
-    let temp_dir = std::env::temp_dir().join(format!("cowork-skill-install-{}", uuid_v4()));
-    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-
-    // Clone repository using git2 (blocking — run on threadpool)
-    let temp_dir_clone = temp_dir.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        let repo_path = temp_dir_clone.join("repo");
-
-        // Use git2::clone with default options
-        let repo = git2::Repository::clone(&git_url, &repo_path)
-            .map_err(|e| format!("Failed to clone {}: {e}", git_url))?;
-
-        // Always search the entire repo root for skills
-        let skill_dirs = find_skill_dirs(&repo_path);
-        if skill_dirs.is_empty() {
-            return Err(
-                "No valid skills found — repository contains no SKILL.md files".to_string(),
+        .spawn();
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("failed to spawn web server: {e}");
+            show_dialog(
+                app,
+                MessageDialogKind::Error,
+                &format!(
+                    "Failed to start the Zosma web server on 127.0.0.1:{SHARED_PORT}.\n\n\
+                     Bundled Node: {node:?}\nLauncher: {entry:?}\n\nDetails: {e}"
+                ),
             );
+            return;
         }
+    };
 
-        // Get destination skills directory
-        let dest_base = get_skills_dir()?;
-        fs::create_dir_all(&dest_base)
-            .map_err(|e| format!("Failed to create skills directory: {e}"))?;
-
-        // Determine which skills to install
-        let skills_to_install =
-            select_skills_to_install(&skill_dirs, sub_path.as_deref(), &repo_path)?;
-
-        let mut installed = Vec::new();
-        for skill_dir in skills_to_install {
-            // Extract skill name from SKILL.md or use directory name
-            let skill_name = extract_skill_name(&skill_dir)
-                .or_else(|| {
-                    skill_dir
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(String::from)
-                })
-                .ok_or("Cannot determine skill name")?;
-
-            let dest = dest_base.join(&skill_name);
-            log::info!("Installing skill '{}' to {:?}", skill_name, dest);
-
-            // Remove existing installation if present
-            if dest.exists() {
-                fs::remove_dir_all(&dest)
-                    .map_err(|e| format!("Failed to remove existing skill: {e}"))?;
-            }
-
-            // Copy skill directory
-            copy_dir_recursive(&skill_dir, &dest)
-                .map_err(|e| format!("Failed to copy skill files: {e}"))?;
-
-            installed.push(skill_name);
-        }
-
-        // Drop repo handle before cleanup
-        drop(repo);
-
-        Ok(installed)
-    })
-    .await;
-
-    // Cleanup temp dir
-    let _ = fs::remove_dir_all(temp_dir.clone());
-
-    match result {
-        Ok(Ok(installed)) => {
-            log::info!("Successfully installed skills: {:?}", installed);
-            Ok(serde_json::json!({
-                "success": true,
-                "installed": installed
-            }))
-        }
-        Ok(Err(e)) => Err(e),
-        Err(je) => Err(format!("Task join error: {je}")),
+    // Drain both pipes into the log ring: keeps the server from blocking on
+    // full pipe buffers, and the tail is surfaced in the failure dialog below.
+    if let Some(out) = child.stdout.take() {
+        drain_pipe(out, shared.clone());
     }
-}
-
-#[tauri::command]
-async fn remove_skill(name: String, _s: State<'_, AppState>) -> Result<Value, String> {
-    let skills_dir = get_skills_dir()?;
-    let skill_path = skills_dir.join(&name);
-
-    // Fast path: direct directory match (e.g., name = "pptx")
-    if skill_path.exists() && skill_path.is_dir() {
-        fs::remove_dir_all(&skill_path).map_err(|e| format!("Failed to remove skill: {e}"))?;
-        log::info!("Removed skill: {}", name);
-        return Ok(serde_json::json!({ "success": true, "removed": name }));
+    if let Some(err) = child.stderr.take() {
+        drain_pipe(err, shared.clone());
     }
 
-    // Fallback: name might be a source URL like "github/owner/repo/skill-name"
-    // Try matching against installed skill names (from SKILL.md or dir name)
-    let candidate = name.split('/').next_back().unwrap_or(&name).to_string();
-    let candidate_path = skills_dir.join(&candidate);
+    shared.child.lock().unwrap().replace(child);
+    shared.owned.store(true, Ordering::SeqCst);
 
-    if candidate_path.exists() && candidate_path.is_dir() {
-        fs::remove_dir_all(&candidate_path).map_err(|e| format!("Failed to remove skill: {e}"))?;
-        log::info!(
-            "Removed skill '{}' (matched from source '{}')",
-            candidate,
-            name
+    if wait_until_open() {
+        log::info!("web server up on 127.0.0.1:{SHARED_PORT}");
+    } else {
+        log::error!(
+            "web server did not open 127.0.0.1:{SHARED_PORT} within {:?}",
+            SPAWN_WAIT
         );
-        return Ok(serde_json::json!({ "success": true, "removed": candidate }));
+        let tail = shared.tail(50);
+        stop_owned_server(shared);
+        show_dialog(
+            app,
+            MessageDialogKind::Error,
+            &format!(
+                "The Zosma web server failed to start on 127.0.0.1:{SHARED_PORT}.\n\n\
+                 --- last log lines ---\n{tail}"
+            ),
+        );
     }
+}
 
-    // Final fallback: scan all installed skills for a name match
-    if skills_dir.exists() {
-        for entry in fs::read_dir(&skills_dir)
-            .map_err(|e| format!("Failed to read skills directory: {e}"))?
+// ---------------------------------------------------------------------------
+// Updater (endpoint + pubkey unchanged — in-place updates keep working).
+// ---------------------------------------------------------------------------
+
+fn check_for_updates(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let Some(updater) = app.updater().ok() else {
+            return;
+        };
+        let update = match updater.check().await {
+            Ok(Some(u)) => u,
+            Ok(None) => return,
+            Err(e) => {
+                log::warn!("update check failed: {e}");
+                return;
+            }
+        };
+        let version = update.version.to_string();
+        let current = app.package_info().version.to_string();
+        if version == current {
+            return;
+        }
+        let confirmed = app
+            .dialog()
+            .message(format!(
+                "Zosma Cowork {version} is available (running {current}). Install now?"
+            ))
+            .title("Zosma Cowork")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Install".into(),
+                "Later".into(),
+            ))
+            .blocking_show();
+        if !confirmed {
+            return;
+        }
+        match update
+            .download_and_install(
+                |done, total| {
+                    log::debug!("update downloaded {done}/{total:?}");
+                },
+                || {},
+            )
+            .await
         {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
-            let skill_name = entry.file_name().to_string_lossy().to_string();
-
-            // Check if the source URL contains this skill name
-            if name.contains(&skill_name) {
-                let target = skills_dir.join(&skill_name);
-                if target.exists() && target.is_dir() {
-                    fs::remove_dir_all(&target)
-                        .map_err(|e| format!("Failed to remove skill: {e}"))?;
-                    log::info!(
-                        "Removed skill '{}' (substring match from '{}')",
-                        skill_name,
-                        name
-                    );
-                    return Ok(serde_json::json!({ "success": true, "removed": skill_name }));
+            Ok(()) => {
+                // Install replaced the binary — spawn the fresh one and exit.
+                if let Ok(exe) = std::env::current_exe() {
+                    let _ = Command::new(&exe).spawn();
                 }
+                app.exit(0);
+            }
+            Err(e) => {
+                show_dialog(
+                    &app,
+                    MessageDialogKind::Error,
+                    &format!("Update failed: {e}"),
+                );
             }
         }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// App entry.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    // Per-platform browser opener. The Windows path is load-bearing (ported
+    // from the old sidecar-era shell): the URL MUST be wrapped in double
+    // quotes and appended via `raw_arg` so Rust doesn't re-escape it —
+    // cmd.exe treats `&` as a command separator and would truncate a PKCE
+    // authorization URL at the first `&`.
+    if url != url.trim() || !url.starts_with("http") {
+        return Err("Invalid URL".into());
     }
-
-    Err(format!("Skill '{}' not found in {:?}", name, skills_dir))
-}
-
-#[tauri::command]
-async fn write_user_file(path: String, content: String) -> Result<(), String> {
-    tokio::fs::write(&path, &content)
-        .await
-        .map_err(|e| format!("write_file: {e}"))
-}
-
-#[derive(serde::Serialize)]
-pub struct FileInfo {
-    pub name: String,
-    pub size: u64,
-    pub mime_type: String,
-}
-
-#[tauri::command]
-async fn get_file_info(path: String) -> Result<FileInfo, String> {
-    let p = Path::new(&path);
-    let name = p
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.clone());
-    let metadata = tokio::fs::metadata(&path)
-        .await
-        .map_err(|e| format!("get_file_info: {e}"))?;
-    let mime_type = mime_guess::from_path(&path)
-        .first_or(mime_guess::mime::APPLICATION_OCTET_STREAM)
-        .to_string();
-    Ok(FileInfo {
-        name,
-        size: metadata.len(),
-        mime_type,
-    })
-}
-
-#[tauri::command]
-async fn open_url(url: String) -> Result<(), String> {
-    // Per-platform browser opener. Previous implementation shelled out to
-    // `sh -c "xdg-open ... || open ... || start '' ..."` which silently
-    // fails on Windows: GUI Tauri processes don't have `sh` on PATH, and
-    // even when Git Bash is installed `start` is a cmd.exe builtin, not
-    // a real executable. That broke every OAuth flow (Claude Pro, GitHub
-    // Copilot, OpenAI Codex) on Windows — the UI stuck at "Opening
-    // browser…" with no error because the React side `.catch(() => {})`s
-    // the rejection.
     #[cfg(target_os = "windows")]
     let result = {
-        // `cmd /c start "" "<url>"`. Two things are load-bearing here:
-        //   1. The empty `""` is the window title `start` expects as its first
-        //      quoted arg.
-        //   2. The URL MUST be wrapped in double quotes, appended via `raw_arg`
-        //      so Rust doesn't re-escape it. Without the quotes, cmd.exe treats
-        //      `&` as a command separator and truncates the URL at the FIRST
-        //      `&` — so an OAuth URL like
-        //        …/auth?client_id=X&redirect_uri=…&response_type=code&scope=…
-        //      collapses to just `client_id=X`, and Google rejects it with
-        //      "Access blocked: Authorisation error — Required parameter is
-        //      missing: response_type" (Error 400: invalid_request). Quoting
-        //      also stops `%` in percent-encoded params being read as a cmd
-        //      variable reference. This mirrors how the `open` crate (used by
-        //      tauri-plugin-shell) opens URLs on Windows.
-        // CREATE_NO_WINDOW (0x08000000) prevents a brief console-window flash.
         use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
             .args(["/c", "start", ""])
@@ -2154,533 +556,62 @@ async fn open_url(url: String) -> Result<(), String> {
 
     let st = result.map_err(|e| format!("open: {e}"))?;
     if !st.success() {
-        return Err(format!("exit: {}", st));
+        return Err(format!("exit: {st}"));
     }
     Ok(())
 }
 
-// ── Zosma Router Auth relay commands ────────────────────────────
-
-/// Forward to sidecar start_zosma_auth command.
-/// Returns { authorizationUrl: string }.
-#[tauri::command]
-async fn start_zosma_auth(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("za-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"start_zosma_auth","id":id}),
-        std::time::Duration::from_secs(15),
-    )
-    .await
-}
-
-/// Forward to sidecar complete_zosma_auth command.
-/// code and state from the deep-link URL. The sidecar handles all
-/// PKCE exchange and provider save/reload.
-#[tauri::command]
-async fn complete_zosma_auth(
-    code: String,
-    state: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("zc-{}", uuid_v4());
-    let result = scmd_r(
-        &s,
-        &serde_json::json!({
-            "type": "complete_zosma_auth",
-            "id": id,
-            "code": code,
-            "state": state,
-        }),
-        std::time::Duration::from_secs(20),
-    )
-    .await;
-    if result.is_ok() {
-        s.fresh_start.store(false, Ordering::Release);
-    }
-    result
-}
-
-/// Cancel an in-progress Zosma auth flow. Deletes pending PKCE state.
-#[tauri::command]
-async fn cancel_zosma_auth(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("zcl-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"cancel_zosma_auth","id":id}),
-        std::time::Duration::from_secs(10),
-    )
-    .await
-}
-
-/// Refresh models for the managed zosmaai-router provider without
-/// rotating the device key.
-#[tauri::command]
-async fn refresh_zosma_models(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("zrm-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"refresh_zosma_models","id":id}),
-        std::time::Duration::from_secs(20),
-    )
-    .await
-}
-
-/// Disconnect Zosma Router auth: revoke server-side, remove local
-/// provider, reload registry.
-#[tauri::command]
-async fn disconnect_zosma_auth(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("zd-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"disconnect_zosma_auth","id":id}),
-        std::time::Duration::from_secs(15),
-    )
-    .await
-}
-
-/// Get Zosma account usage information (non-secret DTO only).
-#[tauri::command]
-async fn get_zosma_usage(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("zu-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({"type":"get_zosma_usage","id":id}),
-        std::time::Duration::from_secs(15),
-    )
-    .await
-}
-
-/// Configure the Zosma Router base URLs (auth + router).
-/// The sidecar will use these for all subsequent API calls.
-#[tauri::command]
-async fn configure_router(
-    auth_base_url: String,
-    router_base_url: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("cr-{}", uuid_v4());
-    scmd_r(
-        &s,
-        &serde_json::json!({
-            "type": "configure_router",
-            "id": id,
-            "authBaseUrl": auth_base_url,
-            "routerBaseUrl": router_base_url,
-        }),
-        std::time::Duration::from_secs(5),
-    )
-    .await
-}
-
-// ── Telemetry ────────────────────────────────────────────────
-
-#[tauri::command]
-async fn set_telemetry_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {
-    let state = app.state::<TelemetryState>();
-    state.enabled.store(enabled, Ordering::Release);
-    log::info!(
-        "Telemetry: {}",
-        if enabled { "enabled" } else { "disabled" }
-    );
-    Ok(())
-}
-
-static INSTALL_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Generate a unique temp directory suffix.
-/// Combines a timestamp with an atomic counter to guarantee uniqueness
-/// even under concurrent `install_skill` calls.
-fn uuid_v4() -> String {
-    use std::sync::atomic::Ordering;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let counter = INSTALL_COUNTER.fetch_add(1, Ordering::AcqRel);
-    let n = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!(
-        "{:016x}",
-        (n << 16 | u128::from(counter)) & 0xFFFF_FFFF_FFFF_FFFF
-    )
-}
-
-/// App log level from the ZOSMA_LOG_LEVEL env var (error/warn/info/debug/trace).
-/// Defaults to Debug in dev builds and Info in release, matching the sidecar's
-/// spawn defaults so the whole stack goes quiet in production by default.
-fn resolve_log_level() -> log::LevelFilter {
-    match std::env::var("ZOSMA_LOG_LEVEL").ok().as_deref() {
-        Some("error") => log::LevelFilter::Error,
-        Some("warn") => log::LevelFilter::Warn,
-        Some("info") => log::LevelFilter::Info,
-        Some("debug") => log::LevelFilter::Debug,
-        Some("trace") => log::LevelFilter::Trace,
-        _ if cfg!(debug_assertions) => log::LevelFilter::Debug,
-        _ => log::LevelFilter::Info,
-    }
-}
-
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let aptabase_key = option_env!("APTABASE_KEY").unwrap_or("");
-    let mut builder = tauri::Builder::default();
-    // Linux and Windows deliver a URL by launching another process. The
-    // single-instance plugin forwards that URL as deep-link://new-url to this
-    // window instead, so the renderer can finish the pending PKCE exchange.
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            log::debug!("Cowork already running; forwarded deep link: {:?}", argv);
-            if let Some(window) = app.get_webview_window("main") {
-                if let Err(error) = window.show().and_then(|_| window.set_focus()) {
-                    log::warn!("Failed to focus Cowork after deep link: {}", error);
-                }
-            }
-        }));
-    }
-    let builder = builder
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .clear_targets()
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("zosma".into()),
-                    },
-                ))
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Stdout,
-                ))
-                .level(resolve_log_level())
-                .max_file_size(5_000_000)
-                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
-                .build(),
-        )
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_notification::init())
+    tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .manage(TelemetryState {
-            enabled: Arc::new(AtomicBool::new(false)),
-        });
-
-    // Only set up our in-house analytics if a key is available at compile time.
-    // The analytics module uses tauri::async_runtime::spawn (safe in setup context)
-    // into a single .setup() since Tauri only calls the last one.
-    let ak = (!aptabase_key.is_empty()).then(|| aptabase_key.to_string());
-
-    builder
-        .setup(move |app| {
-            // Linux dev builds are not installed by a package manager, so
-            // register the configured URL schemes against the running binary.
-            #[cfg(all(debug_assertions, target_os = "linux"))]
-            app.deep_link().register_all()?;
-
-            // Initialize in-house analytics (runs within Tauri's tokio runtime)
-            if let Some(ref key) = ak {
-                if let Err(e) = analytics::setup(app, key) {
-                    log::warn!("Analytics setup failed: {}", e);
+        .manage(Arc::new(Shared::default()))
+        .setup(|app| {
+            let shared = app.state::<Arc<Shared>>().inner().clone();
+            let handle = app.handle().clone();
+            thread::spawn(move || {
+                if port_open() {
+                    log::info!(
+                        "127.0.0.1:{SHARED_PORT} already serving — borrowing (server is NOT killed on quit)"
+                    );
+                    return;
                 }
-                // Success is logged inside analytics::setup so the key presence
-                // is unambiguous in the log.
-            } else {
-                log::info!("Analytics: no key, disabled");
+                if cfg!(debug_assertions) {
+                    // In dev the web server belongs to the developer
+                    // (beforeDevCommand: `pnpm -C web dev`).
+                    show_dialog(
+                        &handle,
+                        MessageDialogKind::Warning,
+                        "No web server on 127.0.0.1:30141.\n\nStart the dev server:\n  pnpm -C web dev",
+                    );
+                    return;
+                }
+                start_owned_server(&handle, &shared);
+            });
+            if !cfg!(debug_assertions) {
+                check_for_updates(app.handle().clone());
             }
-
-            let h = app.handle().clone();
-            let st = AppState {
-                fresh_start: Arc::new(AtomicBool::new(!has_pi_state_files(&pi_agent_dir_path()))),
-                ..AppState::default()
-            };
-            // Resolve zosma dir. On Windows, GUI apps don't inherit HOME
-            // (that's a POSIX convention) — the equivalent is USERPROFILE.
-            // Falling through to /tmp/.zosmaai on Windows causes auth.json
-            // and models.json to land in C:\tmp\.zosmaai instead of the user's
-            // profile, so credentials silently "disappear" between runs and
-            // every release-installer user trips over it.
-            let zd = std::env::var("ZOSMA_DIR").unwrap_or_else(|_| {
-                #[cfg(target_os = "windows")]
-                let home = std::env::var("USERPROFILE")
-                    .or_else(|_| std::env::var("HOME"))
-                    .unwrap_or_else(|_| "C:\\Users\\Default".into());
-                #[cfg(not(target_os = "windows"))]
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-                format!("{}/.zosmaai", home)
-            });
-            let pp = st.pending_prompts.clone();
-            let pr = st.pending_requests.clone();
-            let rd = Arc::clone(&st.sidecar.ready);
-            app.manage(st);
-            tauri::async_runtime::spawn(async move {
-                // Retry loop: if the sidecar crashes (OOM, unhandled error,
-                // model-load failure) we restart it up to 3 times so the
-                // app keeps working without user intervention (#307).
-                let max_retries = 3;
-                for attempt in 0..max_retries {
-                    match spawn_sidecar(h.clone(), &zd).await {
-                        Ok((mut c, o, i)) => {
-                            let s: State<AppState> = h.state();
-                            let pid = c.id();
-                            *s.sidecar.stdin.lock().await = Some(i);
-                            rd.store(true, Ordering::Release);
-                            let _ = h.emit(
-                                "ready",
-                                serde_json::json!({
-                                    "sidecarRestarted": attempt > 0
-                                }),
-                            );
-                            // Watch the sidecar's exit so unexpected deaths are
-                            // diagnosable. Owns the Child for its lifetime;
-                            // tokio kill_on_drop ensures cleanup if this task
-                            // is aborted (app shutdown).
-                            let pid_watch = pid;
-                            tauri::async_runtime::spawn(async move {
-                                match c.wait().await {
-                                    Ok(status) => log::error!(
-                                        "Sidecar pid={pid_watch:?} EXITED: status={status:?} code={:?}",
-                                        status.code()
-                                    ),
-                                    Err(e) => log::error!("Sidecar pid={pid_watch:?} wait error: {e}"),
-                                }
-                            });
-                            read_stdout(o, pp.clone(), pr.clone(), rd.clone(), h.clone()).await;
-                            // Sidecar died — mark not ready so commands fail
-                            // fast with "not ready" instead of hanging.
-                            rd.store(false, Ordering::Release);
-                            let _ = h.emit("sidecar_lost", ());
-                            if attempt < max_retries - 1 {
-                                let delay = std::time::Duration::from_millis(
-                                    500 * (attempt as u64 + 1),
-                                );
-                                log::warn!(
-                                    "Sidecar: restarting (attempt {}) in {}ms",
-                                    attempt + 2,
-                                    delay.as_millis(),
-                                );
-                                tokio::time::sleep(delay).await;
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Sidecar: spawn failed (attempt {}): {}", attempt + 1, e);
-                            if attempt < max_retries - 1 {
-                                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                            }
-                        }
-                    }
-                }
-                log::error!("Sidecar: all {} restart attempts exhausted — app restart needed", max_retries);
-            });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            get_models,
-            get_active_model,
-            send_prompt,
-            abort_prompt,
-            steer_prompt,
-            follow_up_prompt,
-            clear_queue,
-            send_ui_response,
-            set_active_model,
-            save_auth_key,
-            validate_provider_key,
-            list_custom_providers,
-            save_custom_provider,
-            delete_custom_provider,
-            test_custom_provider_connection,
-            start_oauth,
-            cancel_oauth,
-            logout_provider,
-            start_zosma_auth,
-            complete_zosma_auth,
-            cancel_zosma_auth,
-            refresh_zosma_models,
-            disconnect_zosma_auth,
-            get_zosma_usage,
-            configure_router,
-            get_auth_status,
-            get_onboarding_status,
-            has_credentials,
-            google_connect,
-            gh_auth_status,
-            gh_organizations,
-            gh_auth_login,
-            gh_auth_cancel,
-            gh_auth_logout,
-            google_get_status,
-            google_disconnect,
-            google_get_prefs,
-            google_save_prefs,
-            google_get_app_status,
-            google_install_app,
-            reload_sidecar,
-            get_username,
-            list_sessions,
-            save_session,
-            load_session,
-            delete_session,
-            rename_session,
-            set_session_pinned,
-            search_sessions,
-            new_session,
-            get_workspace,
-            get_settings,
-            save_settings,
-            get_instructions,
-            save_instructions,
-            list_extensions,
-            search_skills,
-            list_skills,
-            read_skill_md,
-            install_skill,
-            remove_skill,
-            write_user_file,
-            open_url,
-            get_file_info,
-            crate::analytics::track_analytics_event,
-            crate::analytics::set_analytics_enabled,
-            crate::analytics::flush_analytics,
-            set_telemetry_enabled,
-            get_install_context,
-        ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let shared: Arc<Shared> = window.state::<Arc<Shared>>().inner().clone();
+                if shared.owned.load(Ordering::SeqCst) && shared.child.lock().unwrap().is_some()
+                {
+                    let handle = window.app_handle().clone();
+                    api.prevent_close();
+                    thread::spawn(move || {
+                        stop_owned_server(&shared);
+                        handle.exit(0);
+                    });
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![open_url])
         .run(tauri::generate_context!())
-        .expect("error running tauri");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload, has_pi_state_files, is_fresh_start,
-    };
-
-    #[test]
-    fn fresh_agent_directory_has_no_pi_state() {
-        let dir = std::env::temp_dir().join(format!("zosma-cowork-fresh-{}", super::uuid_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(!has_pi_state_files(&dir));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn agent_directory_with_models_is_not_fresh() {
-        let dir = std::env::temp_dir().join(format!("zosma-cowork-state-{}", super::uuid_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("models.json"), b"{}").unwrap();
-        assert!(has_pi_state_files(&dir));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn fresh_snapshot_stays_fresh_when_sidecar_creates_models_file() {
-        let dir = std::env::temp_dir().join(format!("zosma-cowork-startup-{}", super::uuid_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("models.json"), b"{}").unwrap();
-        assert!(is_fresh_start(true, &dir));
-        assert!(is_fresh_start(false, &dir));
-        std::fs::write(
-            dir.join("models.json"),
-            br#"{"providers":{"custom-local-llm":{"baseUrl":"http://localhost"}}}"#,
-        )
-        .unwrap();
-        assert!(!is_fresh_start(false, &dir));
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    // ── In-app updater install context (#271) ───────────────────────────
-
-    #[test]
-    fn install_context_maps_known_platforms_and_flags() {
-        let ctx = build_install_context("macos", false, "direct");
-        assert_eq!(ctx["platform"], "macos");
-        assert_eq!(ctx["isAppImage"], false);
-        assert_eq!(ctx["channel"], "direct");
-    }
-
-    #[test]
-    fn install_context_reports_appimage_on_linux() {
-        let ctx = build_install_context("linux", true, "direct");
-        assert_eq!(ctx["platform"], "linux");
-        assert_eq!(ctx["isAppImage"], true);
-    }
-
-    #[test]
-    fn install_context_defaults_empty_channel_to_direct() {
-        let ctx = build_install_context("windows", false, "");
-        assert_eq!(ctx["channel"], "direct");
-    }
-
-    #[test]
-    fn install_context_preserves_managed_channel_marker() {
-        let ctx = build_install_context("macos", false, "managed");
-        assert_eq!(ctx["channel"], "managed");
-    }
-
-    // Wire-format guards: the sidecar's `case "steer"` / `case "follow_up"` /
-    // `case "clear_queue"` handlers (agent-sidecar/src/index.ts) read these
-    // exact fields. Drift here = silent breakage on the React → Rust → sidecar
-    // path.
-
-    #[test]
-    fn steer_payload_uses_steer_type_with_text_and_id() {
-        let p = build_steer_payload("st-abc", "hi there");
-        assert_eq!(p["type"], "steer");
-        assert_eq!(p["id"], "st-abc");
-        assert_eq!(p["text"], "hi there");
-    }
-
-    #[test]
-    fn follow_up_payload_uses_follow_up_type_with_text_and_id() {
-        let p = build_follow_up_payload("fu-xyz", "after you finish");
-        assert_eq!(p["type"], "follow_up");
-        assert_eq!(p["id"], "fu-xyz");
-        assert_eq!(p["text"], "after you finish");
-    }
-
-    #[test]
-    fn steer_payload_preserves_text_with_newlines_and_unicode() {
-        // Steering messages are user-authored composer input — must not
-        // be mangled by serialization. The Tauri → sidecar transport is
-        // LF-delimited JSONL so embedded `\n` and Unicode line separators
-        // must round-trip via JSON escaping.
-        let p = build_steer_payload("id", "line one\nline two — café");
-        let serialized = serde_json::to_string(&p).unwrap();
-        // The newline inside the user's text is escaped, never raw.
-        assert!(
-            !serialized.contains("line one\nline two"),
-            "raw newline leaked into JSONL frame: {serialized}"
-        );
-        assert!(serialized.contains("line one\\nline two"));
-        assert!(serialized.contains("caf\u{00e9}"));
-    }
-
-    #[test]
-    fn clear_queue_payload_uses_clear_queue_type_with_id_only() {
-        // No text field — clear_queue takes no input from the user. The
-        // sidecar reads `type` to dispatch and `id` to route the response
-        // envelope back through `pending_requests`.
-        let p = build_clear_queue_payload("cq-abc");
-        assert_eq!(p["type"], "clear_queue");
-        assert_eq!(p["id"], "cq-abc");
-        // Defensive: ensure no extra fields snuck in that the sidecar
-        // doesn't expect (sidecar's strict TS Command union would refuse).
-        let obj = p.as_object().expect("clear_queue payload is an object");
-        assert_eq!(
-            obj.len(),
-            2,
-            "unexpected fields in clear_queue payload: {p}"
-        );
-    }
-
-    #[test]
-    fn payloads_are_pure_no_shared_state_between_calls() {
-        // Two calls with the same id must produce byte-identical JSON.
-        let a = build_steer_payload("same", "hello");
-        let b = build_steer_payload("same", "hello");
-        assert_eq!(
-            serde_json::to_string(&a).unwrap(),
-            serde_json::to_string(&b).unwrap()
-        );
-    }
+        .expect("error while running tauri application");
 }

@@ -1,0 +1,23 @@
+services:
+  cowork:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zosma-cowork:local
+    ports:
+      - "30141:30141"
+    environment:
+      PORT: "30141"
+      HOSTNAME: "0.0.0.0"
+      PI_WEB_HOSTNAME: "0.0.0.0"
+      PI_CODING_AGENT_DIR: "/data/pi-agent"
+      PI_WEB_PASSWORD: "${PI_WEB_PASSWORD:-}"
+      ZOSMA_AUTH_BASE_URL: "${ZOSMA_AUTH_BASE_URL:-}"
+      ZOSMA_ROUTER_BASE_URL: "${ZOSMA_ROUTER_BASE_URL:-}"
+    volumes:
+      - pi-data:/data/pi-agent
+      - /home/arjun/code:/home/arjun/code:ro
+    restart: unless-stopped
+
+volumes:
+  pi-data:
