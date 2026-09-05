@@ -40,7 +40,7 @@
 
 <img src="./assets/demo.png" width="100%" alt="Zosma Cowork demo" />
 
-<img src="./assets/screenshot.png" width="100%" alt="Zosma Cowork screenshot" />
+<img src="./assets/demo.png" width="100%" alt="Zosma Cowork screenshot" />
 
 *Invoice processing with natural language agents. See more demos at [zosma.ai/zosma-cowork/gallery](https://www.zosma.ai/zosma-cowork/gallery)*
 
