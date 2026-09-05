@@ -27,7 +27,7 @@
 
 ## Gallery
 
-<img src="./assets/demo.gif" width="100%" alt="Zosma Cowork demo" />
+<img src="./assets/demo.png" width="100%" alt="Zosma Cowork demo" />
 
 <img src="./assets/screenshot.png" width="100%" alt="Zosma Cowork screenshot" />
 
