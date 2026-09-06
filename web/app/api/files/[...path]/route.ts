@@ -17,7 +17,16 @@ import {
   getDocumentMime,
   getFileExt,
   getImageMime,
+  isSpreadsheetPath,
+  XLSX_PREVIEW_MAX_BYTES,
 } from "@/lib/file-types";
+import {
+  cellToString,
+  generateXlsxPreviewHtml,
+  type SpreadsheetCell,
+  type SpreadsheetSheet,
+  XLSX_MAX_RENDER_ROWS,
+} from "@/lib/xlsx-preview";
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
 import { isApiRequestAllowed } from "@/lib/request-security";
@@ -472,6 +481,10 @@ export async function GET(
       if (documentMime) {
         return streamFile(filePath, stat, documentMime, request.headers.get("range"));
       }
+      // Spreadsheets are previewed server-side, never read as raw text.
+      if (isSpreadsheetPath(filePath)) {
+        return NextResponse.json({ error: "Spreadsheet preview unavailable via read endpoint" }, { status: 400 });
+      }
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
         return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
       }
@@ -507,8 +520,38 @@ export async function GET(
       if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      if (getFileExt(filePath) !== "docx") {
+      if (getFileExt(filePath) !== "docx" && !isSpreadsheetPath(filePath)) {
         return NextResponse.json({ error: "Preview not available for this file type" }, { status: 400 });
+      }
+      if (isSpreadsheetPath(filePath)) {
+        if (stat.size > XLSX_PREVIEW_MAX_BYTES) {
+          return NextResponse.json({ error: "XLSX too large for preview (>10MB)" }, { status: 413 });
+        }
+        const exceljs = await import("exceljs");
+        const workbook = new exceljs.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const sheets: SpreadsheetSheet[] = [];
+        workbook.eachSheet((ws) => {
+          const cells: SpreadsheetCell[] = [];
+          ws.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+            if (rowNumber > XLSX_MAX_RENDER_ROWS) return;
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+              const text = cellToString(cell);
+              if (text) cells.push({ row: rowNumber, col: colNumber, text });
+            });
+          });
+          sheets.push({ name: ws.name, rowCount: Math.min(ws.rowCount, XLSX_MAX_RENDER_ROWS), cells });
+        });
+        const html = generateXlsxPreviewHtml(path.basename(filePath), sheets);
+        return new Response(html, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Content-Security-Policy": "default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
       }
       if (stat.size > DOCX_PREVIEW_MAX_BYTES) {
         return NextResponse.json({ error: "DOCX too large for preview (>10MB)" }, { status: 413 });

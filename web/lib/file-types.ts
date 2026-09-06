@@ -1,8 +1,16 @@
 export const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 export const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+export const XLSX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
 export type DocumentPreviewKind = "pdf" | "docx";
+export type SpreadsheetPreviewKind = "xlsx" | "xlsm" | "xls";
+
+export const SPREADSHEET_EXT_TO_MIME: Record<SpreadsheetPreviewKind, string> = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xlsm: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+};
 
 export const IMAGE_EXT_TO_MIME: Record<string, string> = {
   png: "image/png",
@@ -60,6 +68,16 @@ export function documentPreviewKind(filePath: string): DocumentPreviewKind | nul
   return null;
 }
 
+export function getSpreadsheetMime(filePath: string): string | null {
+  return SPREADSHEET_EXT_TO_MIME[getFileExt(filePath) as SpreadsheetPreviewKind] ?? null;
+}
+
+export function spreadsheetPreviewKind(filePath: string): SpreadsheetPreviewKind | null {
+  const ext = getFileExt(filePath);
+  if (ext === "xlsx" || ext === "xlsm" || ext === "xls") return ext;
+  return null;
+}
+
 export function isImagePath(filePath: string): boolean {
   return getImageMime(filePath) !== null;
 }
@@ -70,4 +88,8 @@ export function isAudioPath(filePath: string): boolean {
 
 export function isDocumentPreviewPath(filePath: string): boolean {
   return documentPreviewKind(filePath) !== null;
+}
+
+export function isSpreadsheetPath(filePath: string): boolean {
+  return spreadsheetPreviewKind(filePath) !== null;
 }

@@ -16,6 +16,8 @@ import {
   isAudioPath,
   isDocumentPreviewPath,
   isImagePath,
+  isSpreadsheetPath,
+  XLSX_PREVIEW_MAX_BYTES,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { resolveLocalFileHref } from "@/lib/file-links";
@@ -747,6 +749,164 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   );
 }
 
+function ExcelViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
+  const { t } = useI18n();
+  const [watching, setWatching] = useState(false);
+  const [bust, setBust] = useState(0);
+  const [size, setSize] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+  const syncRequestRef = useRef(0);
+
+  const ext = getFileExt(filePath);
+
+  useEffect(() => {
+    setBust(0);
+    setSize(null);
+    setError(null);
+    setWatching(false);
+
+    let active = true;
+    const requestId = ++syncRequestRef.current;
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((r) => r.json())
+      .then((d: { size?: number; error?: string }) => {
+        if (!active || requestId !== syncRequestRef.current) return;
+        if (d.error) setError(d.error);
+        if (typeof d.size === "number") {
+          setSize(d.size);
+          if (d.size > XLSX_PREVIEW_MAX_BYTES) setError("XLSX too large for preview (>10MB)");
+        }
+      })
+      .catch((nextError) => {
+        if (active && requestId === syncRequestRef.current) setError(String(nextError));
+      });
+
+    return () => { active = false; };
+  }, [filePath, sourceSessionId]);
+
+  useEffect(() => {
+    setWatching(false);
+
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+
+    if (!watchEnabled) return;
+
+    let active = true;
+    const synchronize = () => {
+      const requestId = ++syncRequestRef.current;
+      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+        .then((r) => r.json())
+        .then((d: { size?: number; error?: string }) => {
+          if (!active || requestId !== syncRequestRef.current) return;
+          if (d.error) {
+            setError(d.error);
+            return;
+          }
+          if (typeof d.size === "number") {
+            setSize(d.size);
+            if (d.size > XLSX_PREVIEW_MAX_BYTES) {
+              setError("XLSX too large for preview (>10MB)");
+              return;
+            }
+          }
+          setError(null);
+          setBust((value) => value + 1);
+        })
+        .catch((nextError) => {
+          if (active && requestId === syncRequestRef.current) setError(String(nextError));
+        });
+    };
+
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    esRef.current = es;
+
+    es.addEventListener("connected", () => {
+      setWatching(true);
+      synchronize();
+    });
+    es.addEventListener("change", (e) => {
+      syncRequestRef.current += 1;
+      try {
+        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
+        if (typeof d.size === "number") setSize(d.size);
+      } catch { /* ignore */ }
+      setError(null);
+      setBust((b) => b + 1);
+    });
+    const markDisconnected = () => { setWatching(false); };
+    es.addEventListener("error", markDisconnected);
+    es.onerror = markDisconnected;
+
+    return () => {
+      active = false;
+      es.close();
+      if (esRef.current === es) esRef.current = null;
+    };
+  }, [filePath, sourceSessionId, watchEnabled]);
+
+  const previewUrl = getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "4px 16px",
+          borderBottom: "1px solid var(--border)",
+          fontSize: 11,
+          color: "var(--text-dim)",
+          background: "var(--bg)",
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+          {getRelativeFilePath(filePath, cwd)}
+        </span>
+        <span style={{ marginLeft: "auto" }}>{ext} preview</span>
+        {size != null && <span>{formatSize(size)}</span>}
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <span
+          title={watching ? t("i18n.liveSync") : t("i18n.notWatching")}
+          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: watching ? "#4ade80" : "var(--border)",
+              display: "inline-block",
+              boxShadow: watching ? "0 0 4px #4ade80" : "none",
+            }}
+          />
+          {watching ? "live" : "static"}
+        </span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, background: "#fff" }}>
+        {error ? (
+          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
+            {error}
+          </div>
+        ) : (
+          <iframe
+            key={previewUrl}
+            src={previewUrl}
+            sandbox="allow-scripts"
+            title={t("i18n.previewFile", { file: getFileName(filePath) })}
+            style={{ width: "100%", height: "100%", border: "none", background: "#fff" }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DocumentViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
@@ -940,6 +1100,9 @@ export function FileViewer({
   }
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
+  }
+  if (isSpreadsheetPath(filePath)) {
+    return <ExcelViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
   }
   return (
     <TextFileViewer
