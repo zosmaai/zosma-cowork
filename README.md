@@ -1,310 +1,334 @@
-<div align="center">
 
 # Zosma Cowork 🇮🇳
 
 <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
 
-**English** | <a href="./README.zh.md">中文</a> | <a href="./README.es.md">Español</a> | <a href="./README.ja.md">日本語</a> | <a href="./README.de.md">Deutsch</a> | <a href="./README.fr.md">Français</a> | <a href="./README.pt.md">Português</a> | <a href="./README.ru.md">Русский</a> | <a href="./README.ko.md">한국어</a> | <a href="./README.hi.md">हिंदी</a>
+### The open-source AI work platform for companies and teams
+
+Run AI coworkers across employee machines, servers, and harnesses from one secure workspace.
 
 [![CI](https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/zosmaai/zosma-cowork?label=release&color=success)](https://github.com/zosmaai/zosma-cowork/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/zosmaai/zosma-cowork/releases/latest)
-[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-24C8DB?logo=tauri&logoColor=white)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-architecture%20migration-orange)](#roadmap)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/HQcyTD5jHA)
 [![GitHub Repo Stars](https://img.shields.io/github/stars/zosmaai/zosma-cowork?style=social)](https://github.com/zosmaai/zosma-cowork/stargazers)
 
-📖 **Documentation:** [cowork.zosma.ai](https://cowork.zosma.ai)
-</div>
-
-<br/>
+[Documentation](https://cowork.zosma.ai) · [Releases](https://github.com/zosmaai/zosma-cowork/releases/latest) · [Roadmap](#roadmap) · [Discord](https://discord.com/invite/HQcyTD5jHA)
 
 
+---
 
-> A desktop agentic work harness built on [pi](https://github.com/earendil-works/pi-coding-agent), the minimal, language-agnostic coding agent harness. Streaming, thinking, tool calls, multi-turn sessions — all free, all open-source, all local.
->
-> Built by [Zosma AI](https://zosma.ai).
+Zosma Cowork is an **MIT-licensed, work-focused AI agent platform**. It gives people and teams one place to delegate work, supervise long-running agents, review approvals, and collect results—without forcing everyone to use the same model or agent harness.
 
-## Gallery
+Cowork is built for more than software development. It is intended for finance, operations, research, sales, support, administration, and engineering teams working with files, applications, business systems, and repeatable processes.
 
-<img src="./assets/demo.png" width="100%" alt="Zosma Cowork demo" />
+> **Project status:** Cowork already ships a capable local, Pi-powered application. We are now rebuilding its architecture around a TypeScript machine daemon, central control plane, Next.js web app, Expo mobile app, and Tauri desktop app. The checklist below distinguishes shipped functionality from work in progress and planned work.
 
-<img src="./assets/demo.png" width="100%" alt="Zosma Cowork screenshot" />
+<img src="./assets/demo.png" width="100%" alt="Zosma Cowork processing business documents with an AI agent" />
 
-*Invoice processing with natural language agents. See more demos at [zosma.ai/zosma-cowork/gallery](https://www.zosma.ai/zosma-cowork/gallery)*
+## What Cowork Is
 
-## Why Zosma Cowork?
+Cowork is an open-source, MIT-licensed work harness for individuals, small teams, and large organizations. It runs in the cloud or on your own machines, stays provider-agnostic, and lets you use the model of your choice. Thanks to Pi and other open-source packages, Cowork stands on the shoulders of the open-source ecosystem rather than reinventing it.
 
-### 🌟 Built on pi
+## What Cowork Is Not
 
-Zosma Cowork is a desktop application built on [pi](https://github.com/earendil-works/pi-coding-agent) — the minimal, language-agnostic coding agent harness. pi's philosophy of simplicity and composability carries directly into your desktop experience. Every pi extension works out of the box, with zero wrappers or adapters.
+Cowork is not a coding assistant that opens a folder. It is not tied to a single provider, model, or harness — you choose the tools that fit the work.
 
-### 🆓 Free & Open Source
+## What Cowork Wants to Be
 
-Zosma Cowork is **100% free and open-source** (MIT). Bring your own API key, use an existing subscription (Claude, ChatGPT, Copilot), or run local models — you stay in control.
+A single, open work platform where a person, a small team, or a whole company can run their AI work across any provider and any model, from any device, under a permissive MIT license — on the infrastructure of their choosing.
 
-### 🧩 Full pi Extension Ecosystem
+## Our Goal
 
-The [pi ecosystem](https://github.com/earendil-works/pi-coding-agent) includes hundreds of extensions, skills, tools, prompts, and themes — all compatible with Zosma Cowork. Plug them into your `~/.zosmaai/cowork/` directory and they just work. No wrapping, no porting, no lock-in.
+To work with agents as seamlessly as possible.
 
-## Features
+Chat, get notifications of clarifications, information, and approvals — and schedule repeated tasks as you talk to the harness.
 
-- **Node.js agent sidecar** — The pi-mono TypeScript SDK runs in a managed sidecar process for full agent capabilities (extensions, tools, providers)
-- **Thin Tauri relay** — The Rust layer is a minimal IPC bridge between React and the sidecar, keeping the native desktop shell lightweight
-- **pi extension ecosystem** — Compatible with pi extensions via `DefaultResourceLoader` — skills, tools, and prompts auto-discovered from `~/.zosmaai/cowork/`
-- **Multi-turn sessions** — Full conversation continuity with persistent session history
-- **Streaming responses** — See the agent think, write, and call tools in real-time
-- **Thinking blocks** — Expandable reasoning from the model
-- **Tool call timeline** — Live bash/edit/write tool calls with args and results
-- **Session management** — Persistent chat sessions saved to `~/.zosmaai/cowork/`
-- **Light & dark mode** — Warm cream light mode, warm charcoal dark mode
-- **Keyboard shortcuts** — `Cmd/Ctrl+Shift+K` to focus, `Cmd/Ctrl+N` for new session
-- **Abort & steering** — Stop a running agent mid-turn, send follow-up steering messages
-- **Claude-inspired UI** — 3-column layout with sidebar, workspace, and info panel
+The agents create skills, learn from past experiences, and grow the more you use them.
 
-## Architecture
+That's the goal.
 
-<img src="./assets/architecture.png" width="100%" alt="Zosma Cowork architecture diagram" />
+## Product vision
 
-<details>
-<summary>Edit this diagram</summary>
+A company installs one lightweight Cowork daemon on each employee machine or managed server. The daemon discovers and supervises supported agent harnesses, keeps credentials and execution local, and opens an authenticated outbound connection to the Cowork backend.
 
-The diagram is generated from <code>assets/architecture.mmd</code>. To update:
+People use the web, mobile, or desktop app to start work, monitor sessions, answer questions, approve sensitive actions, and review outputs from anywhere.
 
-```bash
-# Edit assets/architecture.mmd, then re-render:
-mmdc -i assets/architecture.mmd -o assets/architecture.png -t default -b white -w 900 -H 700 -s 2
-```
-</details>
-
-
-See the full [**Product Roadmap**](ROADMAP.md) for phased plans, competitive positioning, and technical decisions.
-
-<details>
-<summary>Architecture diagrams (6 views)</summary>
-
-**System Architecture** — Full stack: React → Rust → Node sidecar → pi SDK
-
-<img src="docs/diagrams/system-architecture.png" width="100%" alt="System Architecture" />
-
-**Communication Flow** — Sequence diagram: streaming events pipeline
-
-<img src="docs/diagrams/communication-flow.png" width="100%" alt="Communication Flow" />
-
-**Extension Ecosystem** — 4 tiers: installed, vendored, planned, future
-
-<img src="docs/diagrams/extension-ecosystem.png" width="100%" alt="Extension Ecosystem" />
-
-**Competitive Positioning** — Quadrant chart vs Cursor, Hermes, Slack AI
-
-<img src="docs/diagrams/competitive-positioning.png" width="100%" alt="Competitive Positioning" />
-
-**Roadmap Timeline** — Gantt chart: 6 phases, 28 weeks
-
-<img src="docs/diagrams/roadmap-timeline.png" width="100%" alt="Roadmap Timeline" />
-
-**Data Flow** — User → App → Agent → Storage layers
-
-<img src="docs/diagrams/data-flow.png" width="100%" alt="Data Flow" />
-
-</details>
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, Tailwind CSS v4, Radix UI |
-| Desktop Shell | Tauri v2, Rust, Tokio |
-| Agent Engine | Node.js sidecar using `@earendil-works/pi-coding-agent` (pi-mono SDK) |
-| Testing | Vitest, Testing Library, jsdom |
-| Linting | Biome (frontend + sidecar), Clippy (Tauri relay) |
-
-## Development
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) 22+
-- [Rust](https://rustup.rs/) 1.85+ (for Tauri desktop shell)
-
-### Quick Start
-
-```bash
-# Install frontend dependencies
-npm install
-
-# Install agent-sidecar dependencies
-cd agent-sidecar && npm install && cd ..
-
-# Run frontend dev server
-npm run dev:frontend
-
-# Run full Tauri app (frontend + Rust relay + Node.js sidecar)
-npm run dev
+```mermaid
+flowchart LR
+    W[Next.js Web] --> B[TypeScript Control Plane]
+    M[Expo Mobile] --> B
+    E[Tauri Desktop<br/>bundles the Next.js app] --> B
+    B <--> D[TypeScript Machine Daemon]
+    E -. local mode .-> D
+    D --> PI[Pi]
+    D --> CC[Claude Code]
+    D --> CX[Codex]
+    D --> ACP[ACP Agents]
+    ACP --> H[Hermes]
+    ACP --> G[Gemini / Cursor / Copilot / Kimi]
 ```
 
-> `npm run dev` runs the sidecar from TypeScript source via `tsx` — no bundle
-> needed. On a fresh checkout it auto-generates lightweight **dev stubs** for the
-> Tauri bundle resources (`src-tauri/agent-sidecar/index.cjs`, `src-tauri/binaries/node`)
-> so the Rust shell can compile. The real sidecar bundle and Node.js binary are
-> produced only by the production build (`npm run build`).
+### One daemon, many harnesses
 
-### Scripts
+The machine daemon owns the capabilities every harness needs:
+
+- process and session supervision
+- reconnects, heartbeats, and crash recovery
+- files, Git, worktrees, terminals, and artifacts
+- local credentials and machine capabilities
+- approvals and organization policy enforcement
+- normalized events for every client
+
+Harness adapters only translate between native harness protocols and Cowork's protocol. We prefer SDKs, JSON-RPC, JSONL, native APIs, and ACP over terminal-screen scraping.
+
+### Agents of your choosing
+
+Cowork plans to support multiple agent harnesses, chosen per employee's job type and the work they do — starting with our favourite, the Pi Coding Agent. Pi remains Cowork's first-class runtime: existing Pi extensions, skills, prompts, providers, steering, session trees, and deeper runtime controls stay available.
+
+Each harness advertises its own capabilities rather than being forced into a lowest-common-denominator interface, so the app exposes richer controls whenever a selected harness supports them.
+
+| Harness | Integration | Status |
+|---|---|---|
+| Pi | Native TypeScript SDK | ✅ Available today; daemon migration in progress |
+| Claude Code | Native structured integration | ⬜ Planned |
+| Codex | Native app-server integration | ⬜ Planned |
+| ACP-compatible agents | Agent Client Protocol adapter | ⬜ Planned |
+| Hermes | ACP first, native adapter only if needed | ⬜ Planned |
+
+## Applications
+
+The target monorepo has three user-facing applications:
+
+```text
+apps/
+├── web/       # Next.js web application
+├── app/       # React Native application built with Expo
+└── desktop/   # Tauri shell that bundles and renders apps/web
+```
+
+### Web
+
+The Next.js application is the complete browser experience for individuals, teams, and administrators.
+
+### App
+
+The Expo application provides native mobile sessions, push notifications, voice input, approvals, task monitoring, and artifact review.
+
+### Desktop
+
+The Tauri application does not maintain a second frontend. In development it loads `apps/web`; release builds bundle the Next.js standalone server and machine daemon, supervise both processes, and render the local Next.js application in an Tauri window.
+
+## Target repository structure
+
+```text
+zosma-cowork/
+├── apps/
+│   ├── web/                  # Next.js
+│   ├── app/                  # React Native + Expo
+│   └── desktop/              # Tauri; bundles apps/web and daemon/
+├── backend/                  # TypeScript control plane: HTTP, realtime, teams, policy
+├── daemon/                   # TypeScript service installed on each machine
+├── packages/
+│   ├── protocol/             # Shared runtime schemas, commands, and events
+│   └── api-client/           # Shared authenticated HTTP/WebSocket client
+├── extensions/
+│   ├── pi/                   # Pi-native extensions
+│   ├── mcp/                  # Portable tools for multiple harnesses
+│   └── skills/               # Portable instruction-based skills
+├── infra/                    # Deployment and OS service packaging
+├── docs/
+├── scripts/
+├── pnpm-workspace.yaml
+├── package.json
+└── tsconfig.base.json
+```
+
+This is the migration target. Useful functionality from the current repository will move into these boundaries rather than preserving the old layout.
+
+## Deployment modes
+
+| Mode | Description | Status |
+|---|---|---|
+| Local | Desktop talks directly to its local daemon | ✅ Current local product; new daemon path planned |
+| Hosted | Zosma control plane connects users and company machines | ⬜ Planned |
+| Self-hosted | Company operates the control plane in its own environment | ⬜ Planned |
+
+The daemon initiates outbound connections, so employee machines do not need publicly exposed ports. Provider credentials remain on the machine unless an organization explicitly configures managed credentials.
+
+## Roadmap
+
+**Legend:** `[x]` shipped · `🚧` in progress · `[ ]` planned
+
+The roadmap describes product capability, not just repository shape. A checked item exists in the current product even if its code will move during the architecture migration.
+
+### Foundation shipped
+
+- [x] Native Pi SDK integration
+- [x] Streaming text, thinking, tool calls, and results
+- [x] Persistent multi-turn sessions and session trees
+- [x] Concurrent agent sessions
+- [x] Abort, steering, and follow-up messages
+- [x] Model and thinking-level selection
+- [x] Pi extensions, skills, prompts, and provider configuration
+- [x] Local files, Git status, diffs, and worktree support
+- [x] Responsive web experience with mobile-aware layouts
+- [x] Cross-platform packaged desktop releases
+- [x] MIT-licensed open-source core
+
+### Phase 1 — Headless Pi foundation
+
+- [ ] 🚧 Finish extracting Pi from the UI host into a transport-independent backend
+- [ ] 🚧 Complete the versioned `/api/v1` HTTP and event API
+- [ ] 🚧 Preserve concurrent sessions, session trees, extensions, and model controls through the new boundary
+- [ ] Add runtime contract and compatibility tests
+- [ ] Remove UI imports from all agent-runtime code
+
+### Phase 2 — Shared protocol and machine daemon
+
+- [ ] Create `packages/protocol` with runtime-validated commands and events
+- [ ] Create the standalone TypeScript daemon
+- [ ] Add machine identity, registration, and capability discovery
+- [ ] Add process supervision, heartbeats, reconnects, and recovery
+- [ ] Move files, Git, worktrees, terminals, and artifacts behind daemon services
+- [ ] Add local durable session-to-harness mappings
+- [ ] Package daemon installers for macOS, Windows, and Linux
+
+### Phase 3 — Company control plane
+
+- [ ] Build the TypeScript HTTP and WebSocket backend
+- [ ] Add users, organizations, teams, roles, and machine enrollment
+- [ ] Relay commands and events between clients and connected daemons
+- [ ] Persist normalized sessions, messages, tasks, and artifacts
+- [ ] Add approval queues and organization policies
+- [ ] Add audit history and administrative visibility
+- [ ] Support hosted and self-hosted deployment
+
+### Phase 4 — New application monorepo
+
+- [ ] Move the product UI into `apps/web`
+- [ ] Build `apps/desktop` with Tauri
+- [ ] Bundle and supervise the Next.js server and daemon from Tauri
+- [ ] Rebuild the legacy desktop shell into apps/desktop (Tauri)
+- [ ] Build the React Native Expo application in `apps/app`
+- [ ] Add native push notifications, deep links, secure storage, and voice input
+- [ ] Share protocol and API clients without forcing shared web/native UI components
+
+### Phase 5 — Multi-harness runtime
+
+- [ ] Define adapter capability negotiation and lifecycle contracts
+- [ ] Move Pi into the first native daemon adapter
+- [ ] Add a native Claude Code adapter
+- [ ] Add a native Codex app-server adapter
+- [ ] Add an ACP adapter
+- [ ] Validate Hermes and other ACP-compatible harnesses
+- [ ] Add adapter contract tests and real-harness compatibility probes
+
+### Phase 6 — Work for teams
+
+- [ ] Shared tasks, projects, ownership, and handoffs
+- [ ] Human approval and escalation workflows
+- [ ] Scheduled and recurring work
+- [ ] Team templates, skills, extensions, and MCP catalogs
+- [ ] Business-system integrations for communication, documents, finance, CRM, and operations
+- [ ] Search across sessions, artifacts, decisions, and work history
+- [ ] Usage controls, budgets, retention, and compliance policies
+
+### Future
+
+- [ ] Managed daemon fleets and zero-touch updates
+- [ ] Sandboxed and ephemeral execution workers
+- [ ] Enterprise identity and directory synchronization
+- [ ] Policy packs for regulated industries
+- [ ] Workflow analytics and operational reporting
+- [ ] Marketplace for work-focused skills, extensions, and integrations
+
+See [`ROADMAP.md`](ROADMAP.md) and [`docs/`](docs/) for detailed design and implementation plans. These documents are being revised to match this architecture.
+
+## What works today
+
+The current release is a local Pi-powered Cowork application with persistent sessions, streaming, tools, files, Git support, extensions, model configuration, and packaged desktop builds. It still uses the existing Next.js/Tauri runtime while the daemon architecture is developed.
+
+Download the current release from [GitHub Releases](https://github.com/zosmaai/zosma-cowork/releases/latest).
+
+### Build the current implementation
+
+Requirements:
+
+- Node.js 22.19 or newer
+- pnpm 10
+- Rust 1.85 or newer for the current Tauri shell
 
 ```bash
-# Frontend
-npm run lint          # Biome lint
-npm run typecheck     # TypeScript check
-npm run test          # Vitest run
-npm run validate      # lint + typecheck + test
-npm run format        # Biome format
+git clone https://github.com/zosmaai/zosma-cowork.git
+cd zosma-cowork
 
-# Tauri
-npm run build:frontend
-npm run build         # Build release binary
+corepack enable
+pnpm install
+pnpm -C web install
 
-# Agent Sidecar
-cd agent-sidecar
-npm run build         # TypeScript → JavaScript
-npm run dev           # tsx watch (standalone development)
+# Browser development server
+pnpm web:dev
 
-# Rust (Tauri relay only)
+# Current desktop application
+pnpm dev
+```
+
+Useful checks:
+
+```bash
+pnpm -C web lint
+pnpm -C web test
+pnpm -C web build
 cargo fmt --all --check
 cargo clippy --workspace -- -D warnings
 ```
 
-### Staging builds
+Development commands will change as the repository moves to the target pnpm workspace.
 
-Every merge to `main` produces unsigned cross-platform installers via the
-`Staging Build` workflow (`.github/workflows/staging-build.yml`). The bundles
-are attached as workflow artifacts (14-day retention) and a Discord embed
-with auth-free [nightly.link](https://nightly.link) download URLs is posted
-to whatever channel the `DISCORD_STAGING_WEBHOOK` repo secret points at
-(typically `#staging-builds`).
+## Principles
 
-This flow **does not** create a GitHub Release, tag a commit, or publish to
-AUR / winget / Homebrew — those side-effects remain gated on the
-tag-triggered `release.yml`. See issue
-[#133](https://github.com/zosmaai/zosma-cowork/issues/133) for the design.
+1. **Work is the product.** The agent and harness should disappear behind the result.
+2. **Humans remain accountable.** Sensitive actions require visible policy and approval.
+3. **Execution stays close to the work.** The daemon runs on company-controlled machines and servers.
+4. **No harness lock-in.** Use Pi deeply while supporting structured alternatives.
+5. **Open-source honest.** No dark patterns, hidden execution, or artificial engagement loops.
+6. **Boring infrastructure wins.** Start with a modular monolith and one daemon; split only when measured constraints demand it.
 
-To run a staging build on demand, trigger `Staging Build` from the Actions
-tab via *Run workflow*.
+## Open-source
 
-**One-time setup**: in Discord, open the target channel → *Edit Channel →
-Integrations → Webhooks → New Webhook*, copy the URL, then add it as a
-GitHub repo secret named `DISCORD_STAGING_WEBHOOK` (Settings → Secrets and
-variables → Actions → New repository secret). The workflow degrades
-gracefully — if the secret is unset the notify job emits a warning and
-exits 0, so the build itself still succeeds and the artifacts are still
-uploaded.
+Zosma Cowork is released under the permissive MIT License. Third-party harnesses, models, extensions, and services keep their own licenses and terms.
 
-## Config & Data
+## Contributing
 
-| What | Location | Notes |
-|------|----------|-------|
-| LLM providers & API keys | `~/.zosmaai/cowork/auth.json` | Managed by the app |
-| Model definitions | `~/.zosmaai/cowork/models.json` | Managed by the app |
-| Extensions & skills | `~/.zosmaai/cowork/extensions/` | Pi-compatible extensions |
-| Session history | `~/.zosmaai/cowork/` | Managed by Zosma Cowork |
+Contributions are welcome across the daemon, backend, applications, adapters, extensions, documentation, design, and testing.
 
-## IPC Protocol
-
-The Tauri relay communicates with the Node.js sidecar via stdin/stdout JSON lines:
-
-**Commands (→ sidecar):**
-
-| Command | Description |
-|---------|-------------|
-| `init` | Initialize agent with zosmaDir config |
-| `get_models` | List available models from all providers |
-| `prompt` | Send user message, stream events |
-| `abort` | Cancel running prompt |
-| `set_model` | Switch active model |
-| `save_auth` | Save API key for a provider |
-| `reload` | Reinitialize with fresh extensions/auth |
-
-**Events (← sidecar):**
-
-| Event | UI Effect |
-|-------|-----------|
-| `ready` | Models loaded, enable UI |
-| `event` | Agent session events (thinking, text, tool calls) |
-| `done` | Prompt completed |
-| `result` | Response to a request command |
-| `error` | Error with message |
-
-## Project Structure
-
-```
-zosma-cowork/
-├── agent-sidecar/                # Node.js agent process
-│   └── src/
-│       └── index.ts              # Sidecar: pi-mono SDK, stdin/stdout protocol
-├── src/                          # React frontend
-│   ├── components/               # UI components
-│   │   ├── ChatMessage.tsx       # Message with thinking + tool calls
-│   │   ├── ThinkingBlock.tsx     # Expandable reasoning
-│   │   ├── ToolCallTimeline.tsx  # Tool execution timeline
-│   │   ├── MessageInput.tsx      # Chat input
-│   │   └── ui/                   # Primitives (tooltip, badge, etc.)
-│   ├── hooks/
-│   │   ├── usePiStream.ts        # Streaming state machine (useReducer)
-│   │   └── useSessions.ts        # Session persistence
-│   ├── types/
-│   │   ├── index.ts              # ChatMessage, ToolCallInfo
-│   │   └── pi-events.ts          # CoworkEvent types
-│   ├── App.tsx                   # Main 3-column layout
-│   └── App.css                   # Tailwind theme (light + dark)
-├── src-tauri/                    # Tauri desktop shell (thin Rust relay)
-│   └── src/
-│       ├── main.rs               # Entry point
-│       └── lib.rs                # IPC commands → sidecar process
-├── docs/                         # Architecture, plans & DESIGN.md (design system)
-└── .github/workflows/            # CI/CD
-```
-
-> **Building UI?** Follow the [Design Guidelines](docs/DESIGN.md) — the global
-> standard for Zosma's elevated blue-glass design system.
-
-<div align="center">
-  <a href="https://github.com/zosmaai/zosma-cowork/stargazers">
-    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring Zosma Cowork!" width="100%" />
-  </a>
-  <br/>
-  <sub>
-    If you find Zosma Cowork useful,
-    <a href="https://github.com/zosmaai/zosma-cowork">⭐ star the repo</a> —
-    it lets us know we're building something that matters.
-  </sub>
-</div>
-
-<br/>
-
-## Contributors
+Before starting a large change, open an issue or join the [Discord community](https://discord.com/invite/HQcyTD5jHA) so the implementation fits the current migration phase.
 
 <a href="https://github.com/zosmaai/zosma-cowork/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=zosmaai/zosma-cowork" alt="Contributors" />
 </a>
 
----
+  <a href="https://github.com/zosmaai/zosma-cowork/stargazers">
+    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring Zosma Cowork" width="100%" />
+  </a>
 
-## 🇮🇳 Made in India
+## Made in India 🇮🇳
 
-**Zosma Cowork** — built **from India** by **ZOSMAAI SOLUTIONS PRIVATE LIMITED**.
+Built by **ZOSMAAI SOLUTIONS PRIVATE LIMITED** for teams everywhere.
 
 ## Citation
-
-If you use Zosma Cowork in your work, please cite it:
 
 ```bibtex
 @software{zosma_cowork,
   author  = {Nayak, Arjun and Mhaskar, Akshay and Shanvit and Mishra, Devendra},
-  title   = {{Zosma Cowork: A Desktop Agentic Work Harness}},
+  title   = {{Zosma Cowork: An Open-Source AI Work Platform}},
   url     = {https://github.com/zosmaai/zosma-cowork},
-  version = {0.15.2},
   year    = {2026}
 }
 ```
 
 ## License
 
-MIT © [Zosma AI](https://zosma.ai)
+[MIT](LICENSE) © [Zosma AI](https://zosma.ai)
