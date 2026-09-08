@@ -316,10 +316,6 @@ Before starting a large change, open an issue or join the [Discord community](ht
     <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring Zosma Cowork" width="100%" />
   </a>
 
-## Made in India 🇮🇳
-
-Built by **ZOSMAAI SOLUTIONS PRIVATE LIMITED** for teams everywhere.
-
 ## Citation
 
 ```bibtex
