@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import {
   DefaultResourceLoader,
@@ -188,6 +190,33 @@ test("direct bash removes host variables and allows explicit project values", as
   assert.equal(childEnvironment.NEXT_RUNTIME, undefined);
   assert.equal(childEnvironment.PI_USER_SETTING, "preserved");
   assert.ok(childEnvironment.PATH.split(delimiter).includes(agentBinDir));
+});
+
+test("deployment shell wraps project commands when no user shell is configured", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-web-shell-"));
+  const shellPath = join(directory, "shell-wrapper");
+  const previous = process.env.PI_PROJECT_SHELL_PATH;
+
+  try {
+    await writeFile(shellPath, "#!/bin/sh\nprintf wrapped:\nexec /bin/sh \"$@\"\n");
+    await chmod(shellPath, 0o755);
+    process.env.PI_PROJECT_SHELL_PATH = shellPath;
+
+    let output = "";
+    const operations = createProjectCommandBashOperations({
+      agentBinDir: join(directory, "agent-bin"),
+      baseEnvironment: { PATH: process.env.PATH },
+    });
+    await operations.exec("printf ready", directory, {
+      onData: (chunk) => { output += chunk.toString(); },
+    });
+
+    assert.equal(output, "wrapped:ready");
+  } finally {
+    if (previous === undefined) delete process.env.PI_PROJECT_SHELL_PATH;
+    else process.env.PI_PROJECT_SHELL_PATH = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("direct bash preserves execution controls and streaming callbacks", async () => {

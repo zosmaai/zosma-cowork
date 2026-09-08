@@ -37,6 +37,18 @@ RUN apk add --no-cache ca-certificates wget tzdata \
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# ── Persistent tooling layer ────────────────────────────────────────────────────
+# Minimal host baseline only. Project commands run in a mutable rootfs and
+# user home stored together in the per-user PVC.
+RUN apk add --no-cache git ripgrep jq python3 py3-pip proot unzip file
+# Tiny immutable seed (~4 MB). It is extracted into each user's PVC only on
+# first boot; subsequent replacement pods reuse the ready mutable rootfs.
+ARG ALPINE_ROOTFS_VERSION=3.24.1
+RUN wget -qO /opt/alpine-minirootfs.tar.gz \
+  "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-minirootfs-${ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"
+COPY pi-persistent-shell.sh /usr/local/bin/pi-shell
+RUN chmod +x /usr/local/bin/pi-shell
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

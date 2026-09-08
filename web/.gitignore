@@ -31,8 +31,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (keep the safe deployment template tracked)
 .env*
+!.env.example
+
+# deployment secrets (API keys) — never commit
+deploy/models.json
 
 # vercel
 .vercel

@@ -100,17 +100,28 @@ pnpm build && pnpm start:lan  # production
 ```
 Pi state: `~/.pi/agent` (or `$PI_CODING_AGENT_DIR`).
 
-### 2. Docker sandbox (isolated, fresh each time)
+### 2. Docker sandbox (isolated, persistent user environment)
 ```bash
 cd web
+cp .env.example .env
+# Edit .env and set PI_PERSISTENT_DIR to an absolute per-user host path.
 ./scripts/docker-sandbox.sh up      # build + run → http://<lan-ip>:30141
 ./scripts/docker-sandbox.sh logs    # follow
-./scripts/docker-sandbox.sh fresh   # wipe pi state + restart (fresh install)
-./scripts/docker-sandbox.sh down    # stop
-# optional LAN password:
-PI_WEB_PASSWORD='long-random' ./scripts/docker-sandbox.sh up
+./scripts/docker-sandbox.sh down    # stop; persistent state is preserved
 ```
-Pi state: Docker volume `pi-data` at `/data/pi-agent` (`down -v` wipes it).
+
+Exactly one host directory/PVC is mounted at `/persistent`. It contains
+`home/` (Pi state, sessions, and workspace), `rootfs/` (runtime-installed
+system packages), and `state/` (layout/rootfs versions). Pi project commands
+run through `pi-shell`, so packages installed in that mutable root survive
+container replacement without rebuilding the image. For an interactive shell:
+
+```bash
+docker exec -it -w /home/user/workspace zosma-cowork pi-shell
+```
+
+To reset a sandbox, stop it and explicitly remove the directory configured by
+`PI_PERSISTENT_DIR`; the helper intentionally does not delete host data.
 
 ## Notes
 

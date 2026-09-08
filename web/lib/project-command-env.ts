@@ -65,7 +65,9 @@ export function createProjectCommandBashOperations(
   const {
     agentBinDir = join(getAgentDir(), "bin"),
     baseEnvironment = process.env,
-    localOperations = createLocalBashOperations({ shellPath: options.shellPath }),
+    localOperations = createLocalBashOperations({
+      shellPath: options.shellPath ?? process.env.PI_PROJECT_SHELL_PATH,
+    }),
     platform = process.platform,
   } = options;
 
