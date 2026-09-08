@@ -1,5 +1,6 @@
 
-# Zosma Cowork 🇮🇳
+<div align="center">
+# Zosma Cowork
 
 <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
 
@@ -15,6 +16,7 @@ Run AI coworkers across employee machines, servers, and harnesses from one secur
 [![GitHub Repo Stars](https://img.shields.io/github/stars/zosmaai/zosma-cowork?style=social)](https://github.com/zosmaai/zosma-cowork/stargazers)
 
 [Documentation](https://cowork.zosma.ai) · [Releases](https://github.com/zosmaai/zosma-cowork/releases/latest) · [Roadmap](#roadmap) · [Discord](https://discord.com/invite/HQcyTD5jHA)
+</div>
 
 
 ---
