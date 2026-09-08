@@ -1,22 +1,26 @@
 
-<div align="center">
-# Zosma Cowork
+<h1 align="center">Zosma Cowork</h1>
 
-<img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
+<p align="center">
+  <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
+</p>
 
-### The open-source AI work platform for companies and teams
+<h3 align="center">The open-source AI work platform for companies and teams</h3>
 
-Run AI coworkers across employee machines, servers, and harnesses from one secure workspace.
+<p align="center">Run AI coworkers across employee machines, servers, and harnesses from one secure workspace.</p>
 
-[![CI](https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml/badge.svg)](https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/zosmaai/zosma-cowork?label=release&color=success)](https://github.com/zosmaai/zosma-cowork/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-architecture%20migration-orange)](#roadmap)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/HQcyTD5jHA)
-[![GitHub Repo Stars](https://img.shields.io/github/stars/zosmaai/zosma-cowork?style=social)](https://github.com/zosmaai/zosma-cowork/stargazers)
+<p align="center">
+  <a href="https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml"><img src="https://github.com/zosmaai/zosma-cowork/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/zosmaai/zosma-cowork/releases/latest"><img src="https://img.shields.io/github/v/release/zosmaai/zosma-cowork?label=release&color=success" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="#roadmap"><img src="https://img.shields.io/badge/status-active%20development-blue" alt="Status: active development" /></a>
+  <a href="https://discord.com/invite/HQcyTD5jHA"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white" alt="Discord: Join Server" /></a>
+  <a href="https://github.com/zosmaai/zosma-cowork/stargazers"><img src="https://img.shields.io/github/stars/zosmaai/zosma-cowork?style=social" alt="GitHub Repo Stars" /></a>
+</p>
 
-[Documentation](https://cowork.zosma.ai) · [Releases](https://github.com/zosmaai/zosma-cowork/releases/latest) · [Roadmap](#roadmap) · [Discord](https://discord.com/invite/HQcyTD5jHA)
-</div>
+<p align="center">
+  <a href="https://cowork.zosma.ai">Documentation</a> · <a href="https://github.com/zosmaai/zosma-cowork/releases/latest">Releases</a> · <a href="#roadmap">Roadmap</a> · <a href="https://discord.com/invite/HQcyTD5jHA">Discord</a>
+</p>
 
 
 ---
@@ -25,7 +29,7 @@ Zosma Cowork is an **MIT-licensed, work-focused AI agent platform**. It gives pe
 
 Cowork is built for more than software development. It is intended for finance, operations, research, sales, support, administration, and engineering teams working with files, applications, business systems, and repeatable processes.
 
-> **Project status:** Cowork already ships a capable local, Pi-powered application. We are now rebuilding its architecture around a TypeScript machine daemon, central control plane, Next.js web app, Expo mobile app, and Tauri desktop app. The checklist below distinguishes shipped functionality from work in progress and planned work.
+> **Project status:** Cowork ships as a local Pi-powered web application in a thin Tauri shell. The transport-independent Pi backend, versioned `/api/v1` discovery and read-only session slice are shipped; the next slices move interactive commands and events behind the same boundary. The machine daemon, control plane, mobile client, and additional harness adapters remain planned.
 
 <img src="./assets/demo.png" width="100%" alt="Zosma Cowork processing business documents with an AI agent" />
 
@@ -93,7 +97,7 @@ Each harness advertises its own capabilities rather than being forced into a low
 
 | Harness | Integration | Status |
 |---|---|---|
-| Pi | Native TypeScript SDK | ✅ Available today; daemon migration in progress |
+| Pi | Native TypeScript SDK | ✅ First-class runtime; backend extraction and `/api/v1` read slice shipped |
 | Claude Code | Native structured integration | ⬜ Planned |
 | Codex | Native app-server integration | ⬜ Planned |
 | ACP-compatible agents | Agent Client Protocol adapter | ⬜ Planned |
@@ -153,7 +157,7 @@ This is the migration target. Useful functionality from the current repository w
 
 | Mode | Description | Status |
 |---|---|---|
-| Local | Desktop talks directly to its local daemon | ✅ Current local product; new daemon path planned |
+| Local | Desktop talks directly to the local web/runtime bundle | ✅ Current product; standalone machine daemon is next |
 | Hosted | Zosma control plane connects users and company machines | ⬜ Planned |
 | Self-hosted | Company operates the control plane in its own environment | ⬜ Planned |
 
@@ -161,96 +165,45 @@ The daemon initiates outbound connections, so employee machines do not need publ
 
 ## Roadmap
 
-**Legend:** `[x]` shipped · `🚧` in progress · `[ ]` planned
+> **Last updated:** 2026-09-09
+> **Current state:** API foundation shipped; interactive API cutover is next.
 
-The roadmap describes product capability, not just repository shape. A checked item exists in the current product even if its code will move during the architecture migration.
+This roadmap tracks the product that exists today and the next architecture slices. The detailed implementation plan lives in [`docs/superpowers/roadmaps/2026-09-07-modular-headless-pi-backend-roadmap.md`](docs/superpowers/roadmaps/2026-09-07-modular-headless-pi-backend-roadmap.md).
 
-### Foundation shipped
+### Shipped
 
-- [x] Native Pi SDK integration
-- [x] Streaming text, thinking, tool calls, and results
-- [x] Persistent multi-turn sessions and session trees
-- [x] Concurrent agent sessions
-- [x] Abort, steering, and follow-up messages
-- [x] Model and thinking-level selection
-- [x] Pi extensions, skills, prompts, and provider configuration
-- [x] Local files, Git status, diffs, and worktree support
-- [x] Responsive web experience with mobile-aware layouts
-- [x] Cross-platform packaged desktop releases
-- [x] MIT-licensed open-source core
+- [x] Tauri shell and Next.js web UI migration
+- [x] Pi backend contracts, errors, runtime manager, session services, and model services
+- [x] Versioned `/api/v1` health, capability, model, runtime-state, and read-only session endpoints
+- [x] Persistent sessions, session trees, concurrent runs, streaming, tools, files, Git, worktrees, extensions, and provider configuration
+- [x] Cross-platform desktop packaging and local-first operation
 
-### Phase 1 — Headless Pi foundation
+### Current focus
 
-- [ ] 🚧 Finish extracting Pi from the UI host into a transport-independent backend
-- [ ] 🚧 Complete the versioned `/api/v1` HTTP and event API
-- [ ] 🚧 Preserve concurrent sessions, session trees, extensions, and model controls through the new boundary
-- [ ] Add runtime contract and compatibility tests
-- [ ] Remove UI imports from all agent-runtime code
+- [ ] 🚧 Move session creation, prompts, abort, steering, follow-ups, queues, and SSE onto `/api/v1`
+- [ ] 🚧 Move runtime controls, tools, compaction, Bash, model/thinking controls, and reload onto `/api/v1`
+- [ ] 🚧 Finish history, branching, export, and extension-UI API adapters
 
-### Phase 2 — Shared protocol and machine daemon
+### Next platform slices
 
-- [ ] Create `packages/protocol` with runtime-validated commands and events
-- [ ] Create the standalone TypeScript daemon
-- [ ] Add machine identity, registration, and capability discovery
-- [ ] Add process supervision, heartbeats, reconnects, and recovery
-- [ ] Move files, Git, worktrees, terminals, and artifacts behind daemon services
-- [ ] Add local durable session-to-harness mappings
-- [ ] Package daemon installers for macOS, Windows, and Linux
+- [ ] Workspace, file, and file-index APIs
+- [ ] Git status, diffs, and worktree APIs
+- [ ] Model configuration, project trust, provider credentials, and OAuth APIs
+- [ ] Skills, plugins, updates, and remaining utility APIs
+- [ ] Retire legacy agent/session/model routes after browser migration is complete
 
-### Phase 3 — Company control plane
+### Product direction
 
-- [ ] Build the TypeScript HTTP and WebSocket backend
-- [ ] Add users, organizations, teams, roles, and machine enrollment
-- [ ] Relay commands and events between clients and connected daemons
-- [ ] Persist normalized sessions, messages, tasks, and artifacts
-- [ ] Add approval queues and organization policies
-- [ ] Add audit history and administrative visibility
-- [ ] Support hosted and self-hosted deployment
+- [ ] TypeScript machine daemon with local credentials, supervision, reconnects, and approvals
+- [ ] Hosted and self-hosted TypeScript control plane
+- [ ] Web, Tauri desktop, and Expo mobile clients using shared protocol contracts
+- [ ] Native Pi, Claude Code, Codex, and ACP harness adapters
+- [ ] Team workspaces, scheduled work, policies, audit history, and usage controls
 
-### Phase 4 — New application monorepo
-
-- [ ] Move the product UI into `apps/web`
-- [ ] Build `apps/desktop` with Tauri
-- [ ] Bundle and supervise the Next.js server and daemon from Tauri
-- [ ] Rebuild the legacy desktop shell into apps/desktop (Tauri)
-- [ ] Build the React Native Expo application in `apps/app`
-- [ ] Add native push notifications, deep links, secure storage, and voice input
-- [ ] Share protocol and API clients without forcing shared web/native UI components
-
-### Phase 5 — Multi-harness runtime
-
-- [ ] Define adapter capability negotiation and lifecycle contracts
-- [ ] Move Pi into the first native daemon adapter
-- [ ] Add a native Claude Code adapter
-- [ ] Add a native Codex app-server adapter
-- [ ] Add an ACP adapter
-- [ ] Validate Hermes and other ACP-compatible harnesses
-- [ ] Add adapter contract tests and real-harness compatibility probes
-
-### Phase 6 — Work for teams
-
-- [ ] Shared tasks, projects, ownership, and handoffs
-- [ ] Human approval and escalation workflows
-- [ ] Scheduled and recurring work
-- [ ] Team templates, skills, extensions, and MCP catalogs
-- [ ] Business-system integrations for communication, documents, finance, CRM, and operations
-- [ ] Search across sessions, artifacts, decisions, and work history
-- [ ] Usage controls, budgets, retention, and compliance policies
-
-### Future
-
-- [ ] Managed daemon fleets and zero-touch updates
-- [ ] Sandboxed and ephemeral execution workers
-- [ ] Enterprise identity and directory synchronization
-- [ ] Policy packs for regulated industries
-- [ ] Workflow analytics and operational reporting
-- [ ] Marketplace for work-focused skills, extensions, and integrations
-
-See [`ROADMAP.md`](ROADMAP.md) and [`docs/`](docs/) for detailed design and implementation plans. These documents are being revised to match this architecture.
-
+For the implementation sequence, see [`ROADMAP.md`](ROADMAP.md) and the dated design plans under [`docs/superpowers/`](docs/superpowers/).
 ## What works today
 
-The current release is a local Pi-powered Cowork application with persistent sessions, streaming, tools, files, Git support, extensions, model configuration, and packaged desktop builds. It still uses the existing Next.js/Tauri runtime while the daemon architecture is developed.
+The current release is a local Pi-powered Cowork application with persistent sessions, streaming, tools, files, Git support, extensions, model configuration, and packaged desktop builds. The current web/Tauri runtime is the stable product surface while the standalone daemon and control-plane architecture are developed.
 
 Download the current release from [GitHub Releases](https://github.com/zosmaai/zosma-cowork/releases/latest).
 
