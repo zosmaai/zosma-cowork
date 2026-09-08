@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zosma Cowork 🇮🇳
+# Zosma Cowork
 
 <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
 
@@ -228,10 +228,6 @@ zosma-cowork/
 </a>
 
 ---
-
-## 🇮🇳 Feito na Índia
-
-**Zosma Cowork** — construído **da Índia** por **ZOSMAAI SOLUTIONS PRIVATE LIMITED**.
 
 ## Citação
 

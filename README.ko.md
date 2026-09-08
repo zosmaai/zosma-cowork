@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zosma Cowork 🇮🇳
+# Zosma Cowork
 
 <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
 
@@ -228,10 +228,6 @@ zosma-cowork/
 </a>
 
 ---
-
-## 🇮🇳 인도 제작
-
-**Zosma Cowork** — **ZOSMAAI SOLUTIONS PRIVATE LIMITED**에서 **인도에서** 개발.
 
 ## 인용
 

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zosma Cowork 🇮🇳
+# Zosma Cowork
 
 <img src="./assets/zosma-cowork-logo.png" alt="Zosma Cowork" width="200" />
 
@@ -228,10 +228,6 @@ zosma-cowork/
 </a>
 
 ---
-
-## 🇮🇳 印度制造
-
-**Zosma Cowork** — 由 **ZOSMAAI SOLUTIONS PRIVATE LIMITED** 在 **印度** 开发。
 
 ## 引用
 
