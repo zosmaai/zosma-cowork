@@ -4,9 +4,11 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const listRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-const detailRoute = await readFile(new URL("./[id]/route.ts", import.meta.url), "utf8");
-const contextRoute = await readFile(new URL("./[id]/context/route.ts", import.meta.url), "utf8");
 const stateRoute = await readFile(new URL("./[id]/state/route.ts", import.meta.url), "utf8");
+const serviceSource = await readFile(
+  new URL("../../../packages/pi-backend/sessions.ts", import.meta.url),
+  "utf8",
+);
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
   interopDefault: true,
@@ -16,21 +18,21 @@ const { GET: getSessionDetail } = await jiti.import("./[id]/route.ts");
 const { GET: getSessionState } = await jiti.import("./[id]/state/route.ts");
 
 test("session listing merges live registry snapshots and honors force refresh", () => {
+  // The `force` flag is still read in the route and passed as input.
   assert.match(listRoute, /searchParams\.get\("force"\) === "1"/);
-  assert.match(listRoute, /listAllSessions\(\{ force \}\)/);
-  assert.match(listRoute, /attachSessionProjectInfo\(getRpcSessionInfos\(\)\)/);
-  assert.match(listRoute, /mergeSessionLists\(persistedSessions, runtimeSessions\)/);
   assert.match(listRoute, /"Cache-Control": "no-store"/);
+  // The merge/listening coordination moved out of the route into the service.
+  assert.match(serviceSource, /listAllSessions\(input\)/);
+  assert.match(serviceSource, /attachSessionProjectInfo\(runtime\.getSessionInfos\(\)\)/);
+  assert.match(serviceSource, /mergeSessionLists\(persistedSessions, runtimeSessions\)/);
 });
 
 test("session reads use the live SessionManager before requiring a JSONL path", () => {
-  for (const source of [detailRoute, contextRoute]) {
-    const liveLookup = source.indexOf("getRpcSession(id)");
-    const pathLookup = source.indexOf("resolveSessionPath(id)");
-    assert.ok(liveLookup >= 0);
-    assert.ok(pathLookup > liveLookup);
-    assert.match(source, /liveRpc\?\.inner\.sessionManager \?\? SessionManager\.open/);
-  }
+  const liveLookup = serviceSource.indexOf("runtime.getSession(id)");
+  const pathLookup = serviceSource.indexOf("resolveSessionPath(id)");
+  assert.ok(liveLookup >= 0);
+  assert.ok(pathLookup > liveLookup);
+  assert.match(serviceSource, /liveRpc\?\.inner\.sessionManager \?\? SessionManager\.open/);
 });
 
 test("live agent state is available before the session file is persisted", () => {

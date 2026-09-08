@@ -88,6 +88,6 @@ test("loading, error, and empty states do not block add folder", () => {
 });
 
 test("selector fetches the session list once per mount", () => {
-  assert.match(selectorSource, /fetch\("\/api\/sessions"\)/);
+  assert.match(selectorSource, /listSessions\(\)/);
   assert.match(selectorSource, /cancelled = true/);
 });

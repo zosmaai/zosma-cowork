@@ -1,5 +1,6 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
+import { listSessions } from "@/lib/api-v1-client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, CustomMessage, SessionInfo, SessionTreeNode, ToolResultMessage, UserMessage } from "@/lib/types";
 import { getAssistantErrorMessage, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
@@ -235,9 +236,8 @@ function NewSessionWorkspaceSelector({ cwd, currentProjectKey, validatedProject,
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/sessions")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data: { sessions: SessionInfo[] }) => {
+    listSessions()
+      .then((data) => {
         if (!cancelled) setSessions(data.sessions);
       })
       .catch(() => {

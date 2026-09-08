@@ -75,17 +75,27 @@ test("the reload resolver reads the latest persisted trust decision", async (t) 
 });
 
 test("all project resource loaders and reloads enforce project trust", async () => {
-  const rpcSource = await readFile(new URL("./rpc-manager.ts", import.meta.url), "utf8");
-  const modelsSource = await readFile(new URL("../app/api/models/route.ts", import.meta.url), "utf8");
+  // The factory wiring project-trust reload options lives in the runtime
+  // registry now (the AgentSessionWrapper was split out to runtime.ts); the
+  // sync-project-trust + reload calls live on that wrapper.
+  const managerSource = await readFile(
+    new URL("../packages/pi-backend/runtime-manager.ts", import.meta.url),
+    "utf8",
+  );
+  const wrapperSource = await readFile(
+    new URL("../packages/pi-backend/runtime.ts", import.meta.url),
+    "utf8",
+  );
+  const modelsSource = await readFile(new URL("../packages/pi-backend/models.ts", import.meta.url), "utf8");
   const skillsSource = await readFile(new URL("./skills-service.ts", import.meta.url), "utf8");
   const skillsInstallSource = await readFile(new URL("../app/api/skills/install/route.ts", import.meta.url), "utf8");
   const pluginsSource = await readFile(new URL("../app/api/plugins/route.ts", import.meta.url), "utf8");
 
-  assert.match(rpcSource, /const sessionCwd = sessionManager\.getCwd\(\)/);
-  assert.match(rpcSource, /projectTrustReloadOptions\(sessionCwd, agentDir\)/);
-  assert.match(rpcSource, /resourceLoaderReloadOptions: trustReloadOptions/);
+  assert.match(managerSource, /const sessionCwd = sessionManager\.getCwd\(\)/);
+  assert.match(managerSource, /projectTrustReloadOptions\(sessionCwd, agentDir\)/);
+  assert.match(managerSource, /resourceLoaderReloadOptions: trustReloadOptions/);
   assert.equal(
-    Array.from(rpcSource.matchAll(/this\.syncProjectTrust\(\);\s*await this\.inner\.reload/g)).length,
+    Array.from(wrapperSource.matchAll(/this\.syncProjectTrust\(\);\s*await this\.inner\.reload/g)).length,
     2,
   );
 
@@ -106,12 +116,15 @@ test("all project resource loaders and reloads enforce project trust", async () 
 
 test("the trust API invalidates cached models and restricted runtimes", async () => {
   const source = await readFile(new URL("../app/api/project-trust/route.ts", import.meta.url), "utf8");
-  const rpcSource = await readFile(new URL("./rpc-manager.ts", import.meta.url), "utf8");
+  const managerSource = await readFile(
+    new URL("../packages/pi-backend/runtime-manager.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(source, /trustProject\(result\.cwd, agentDir\)/);
   assert.match(source, /invalidateModelsCache\(\)/);
   assert.match(source, /destroyRpcSessionsForCwd\(result\.cwd\)/);
   assert.match(source, /hasBusyRpcSessionForCwd\(result\.cwd\)/);
-  assert.match(rpcSource, /trackStartingSession\(sessionCwd\)/);
-  assert.match(rpcSource, /realpathSync\(resolvedCwd\)/);
+  assert.match(managerSource, /trackStartingSession\(sessionCwd\)/);
+  assert.match(managerSource, /realpathSync\(resolvedCwd\)/);
 });

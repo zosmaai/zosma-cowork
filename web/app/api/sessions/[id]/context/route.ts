@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { resolveSessionPath, buildSessionContext } from "@/lib/session-reader";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { getSessionContext } from "@/lib/session-reader";
+import { backendErrorResponse } from "@/lib/backend-error-response";
 
 export async function GET(
   req: Request,
@@ -9,26 +8,17 @@ export async function GET(
 ) {
   const { id } = await params;
   const url = new URL(req.url);
-  const leafId = url.searchParams.get("leafId") ?? undefined;
-  const deferThinking = url.searchParams.has("deferThinking");
-  const deferToolResultImages = url.searchParams.has("deferMedia");
-
   try {
-    const rpc = getRpcSession(id);
-    const liveRpc = rpc?.isAlive() ? rpc : undefined;
-    const filePath = liveRpc ? null : await resolveSessionPath(id);
-    if (!liveRpc && !filePath) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-
-    const sm = liveRpc?.inner.sessionManager ?? SessionManager.open(filePath!);
-    const context = buildSessionContext(sm.getEntries() as never, leafId, {
-      deferThinking,
-      deferToolResultImages,
+    const context = await getSessionContext({
+      sessionId: id,
+      leafId: url.searchParams.get("leafId") ?? undefined,
+      deferThinking: url.searchParams.has("deferThinking"),
+      deferMedia: url.searchParams.has("deferMedia"),
     });
-
     return NextResponse.json({ context });
   } catch (error) {
+    const mapped = backendErrorResponse(error);
+    if (mapped) return mapped;
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

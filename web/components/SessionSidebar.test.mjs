@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const clientSource = await readFile(new URL("../lib/api-v1-client.ts", import.meta.url), "utf8");
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
 
 test("only Shift+click bypasses session deletion confirmation", () => {
@@ -21,7 +22,7 @@ test("does not register row-level session deletion shortcuts", () => {
 
 test("polls running sessions only while the tab is visible", () => {
   assert.doesNotMatch(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
-  assert.match(source, /fetch\("\/api\/agent\/running"/);
+  assert.match(source, /getRunningSessionIds\(/);
   assert.match(source, /document\.visibilityState !== "visible"/);
   assert.match(source, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/);
 });
@@ -58,8 +59,8 @@ test("offers the downstream context-menu hook only on a normal session row", () 
 });
 
 test("manual and lifecycle refreshes bypass the server session-list cache", () => {
-  assert.match(source, /force \? "\/api\/sessions\?force=1" : "\/api\/sessions"/);
-  assert.match(source, /cache: "no-store"/);
+  assert.match(source, /listSessions\(force\)/);
+  assert.match(clientSource, /cache: "no-store"/);
   assert.match(source, /loadSessions\(isFirst, !isFirst\)/);
   assert.match(source, /onClick=\{\(\) => loadSessions\(false, true\)\}/);
   assert.match(source, /loadSessions\(false, true\);[\s\S]*?onBackgroundTaskDone/);

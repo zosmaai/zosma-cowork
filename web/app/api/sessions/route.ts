@@ -1,26 +1,20 @@
 import { NextResponse } from "next/server";
-import {
-  attachSessionProjectInfo,
-  listAllSessions,
-  mergeSessionLists,
-} from "@/lib/session-reader";
-import { getRpcSessionInfos, getRunningRpcSessionIds } from "@/lib/rpc-manager";
+import { listSessions } from "@/lib/session-reader";
+import { backendErrorResponse } from "@/lib/backend-error-response";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
     const force = new URL(req.url).searchParams.get("force") === "1";
-    const [persistedSessions, runtimeSessions] = await Promise.all([
-      listAllSessions({ force }),
-      attachSessionProjectInfo(getRpcSessionInfos()),
-    ]);
-    const sessions = mergeSessionLists(persistedSessions, runtimeSessions);
+    const result = await listSessions({ force });
     return NextResponse.json(
-      { sessions, runningSessionIds: getRunningRpcSessionIds() },
+      result,
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    const mapped = backendErrorResponse(error);
+    if (mapped) return mapped;
     return NextResponse.json(
       { error: String(error) },
       { status: 500, headers: { "Cache-Control": "no-store" } },
