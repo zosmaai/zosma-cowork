@@ -1,53 +1,65 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { createV1Jiti } from "../test-helper.mjs";
 
 const jiti = createV1Jiti();
 const { GET } = await jiti.import(new URL("./route.ts", import.meta.url).href);
-const { allowFileRoot } = await jiti.import("@/lib/file-access");
 
-test("GET /api/v1/models returns the model catalog under { data }", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "api-v1-models-"));
-  // Seed the throwaway temp dir as an allowed root exactly as the real app
-  // does on default-cwd/worktrees writes, so the file-access guard doesn't
-  // reject it when no sessions live under the machine's tmpdir (e.g. CI).
-  allowFileRoot(dir);
+// The /api/v1/models catalog no longer probes or validates the cwd (ZOS-80:
+// headless clients list the catalog without pointing at a filesystem
+// directory). Stub the facade so the route's catalog call resolves without a
+// real model loader, then assert the cwd (or its absence) is never rejected.
+function stubFacade() {
+  const original = globalThis.__piBackend;
+  globalThis.__piBackend = {
+    getModels: async ({ cwd }) => ({
+      cwd,
+      models: {},
+      modelList: [],
+      defaultModel: null,
+      thinkingLevels: {},
+      thinkingLevelMaps: {},
+      thinkingLevelPins: {},
+    }),
+  };
+  return () => { globalThis.__piBackend = original; };
+}
+
+test("GET /api/v1/models returns the model catalog under { data } without a cwd probe", async () => {
+  const restore = stubFacade();
   try {
-    const res = await GET(new Request(`http://localhost/api/v1/models?cwd=${encodeURIComponent(dir)}`));
+    const res = await GET(new Request("http://localhost/api/v1/models"));
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.ok(Array.isArray(body.data.modelList));
-    assert.equal(typeof body.data.models, "object");
-    assert.equal(typeof body.data.thinkingLevels, "object");
     assert.equal(body.error, undefined);
+    assert.ok(Array.isArray(body.data.modelList));
+    assert.equal(body.data.cwd, process.cwd());
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    restore();
   }
 });
 
-test("GET /api/v1/models rejects a missing cwd with invalid_request 400", async () => {
-  const missing = join(tmpdir(), "definitely-not-a-dir-xyz");
-  const res = await GET(new Request(`http://localhost/api/v1/models?cwd=${encodeURIComponent(missing)}`));
-  assert.equal(res.status, 400);
-  const body = await res.json();
-  assert.equal(body.error.code, "invalid_request");
-  assert.match(body.error.message, /^Directory does not exist:/);
+test("GET /api/v1/models accepts an explicit cwd", async () => {
+  const restore = stubFacade();
+  try {
+    const res = await GET(new Request("http://localhost/api/v1/models?cwd=%2Fsome%2Fpath"));
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data.cwd, "/some/path");
+  } finally {
+    restore();
+  }
 });
 
-test("GET /api/v1/models rejects a non-directory cwd with invalid_request 400", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "api-v1-models-file-"));
-  const filePath = join(dir, "file.txt");
-  writeFileSync(filePath, "x");
+test("GET /api/v1/models no longer rejects a missing cwd (cwd probe removed)", async () => {
+  const restore = stubFacade();
   try {
-    const res = await GET(new Request(`http://localhost/api/v1/models?cwd=${encodeURIComponent(filePath)}`));
-    assert.equal(res.status, 400);
-    const body = await res.json();
-    assert.equal(body.error.code, "invalid_request");
-    assert.match(body.error.message, /^Not a directory:/);
+    // A path that does not exist is accepted — the invalid_request 400 probe
+    // was dropped in ZOS-80.
+    const res = await GET(new Request("http://localhost/api/v1/models?cwd=" + encodeURIComponent("/definitely-not-a-dir-xyz")));
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).error, undefined);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    restore();
   }
 });

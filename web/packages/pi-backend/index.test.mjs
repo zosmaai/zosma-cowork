@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
 
-const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
+const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false, alias: { "@": process.cwd() } });
 const { createPiBackend } = await jiti.import("./index.ts");
 const { createRuntimeManager } = await jiti.import("./runtime-manager.ts");
 const { cacheSessionPath } = await jiti.import("./sessions.ts");

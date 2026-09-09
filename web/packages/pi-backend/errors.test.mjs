@@ -30,6 +30,7 @@ test("BackendError keeps a stable code, safe message, optional details, and caus
 test("backend error codes match the approved v1 contract", () => {
   assert.deepEqual(BACKEND_ERROR_CODES, [
     "invalid_request",
+    "cwd_required",
     "access_denied",
     "session_not_found",
     "session_not_running",
@@ -39,6 +40,11 @@ test("backend error codes match the approved v1 contract", () => {
     "entry_not_found",
     "thinking_block_not_found",
     "startup_failed",
+    "skill_not_found",
+    "skill_install_failed",
+    "skill_update_failed",
+    "skill_check_failed",
+    "skill_search_failed",
     "internal_error",
   ]);
 });

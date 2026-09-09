@@ -5,13 +5,25 @@ import type {
   HealthResponse,
   ListModelsInput,
   ListSessionsInput,
+  SkillsListInput,
+  SkillInstallInput,
+  SkillInstallResponse,
+  SkillCheckInput,
+  SkillCheckResponse,
+  SkillUpdateInput,
+  SkillUpdateResponse,
+  SkillSearchInput,
+  SkillSearchResponse,
   SessionContext,
   SessionDetailsResponse,
   SessionIdInput,
   SessionMutationResponse,
+  ModelState,
+  UpdateModelRequest,
   SessionsResponse,
   UpdateSessionInput,
   ModelsResponse,
+  SkillsResponse,
 } from "./contracts";
 import {
   autoNameSession as autoNameSessionFromServices,
@@ -25,8 +37,21 @@ import {
 } from "./sessions";
 import { getModels as getModelsFromServices } from "./models";
 import { BackendError } from "./errors";
+import { getSessionStream as getSessionStreamFromServices } from "./stream";
+import {
+  getSessionModel as getSessionModelFromServices,
+  configureModel as configureModelFromServices,
+} from "./session-model";
+import {
+  listSkillsFromServices,
+  installSkillFromServices,
+  checkSkillUpdatesFromServices,
+  updateSkillFromServices,
+  searchSkillsFromServices,
+} from "./skills";
 import { getRuntimeManager } from "../../lib/runtime-state";
 import type { RuntimeManager } from "./runtime-manager";
+import type { StreamingSessionHandle } from "./stream";
 
 export type * from "./contracts";
 export { BACKEND_ERROR_CODES, BackendError, isBackendError } from "./errors";
@@ -45,6 +70,7 @@ export interface PiBackend {
   deleteSession(input: SessionIdInput): Promise<SessionMutationResponse>;
   autoNameSession(input: SessionIdInput): Promise<AutoNameResponse>;
   getModels(input: ListModelsInput): Promise<ModelsResponse>;
+  listSkills(input?: SkillsListInput): Promise<SkillsResponse>;
   getSessionThinking(
     input: SessionIdInput & { entryId: string; blockIndex: number },
   ): Promise<{ thinking: string }>;
@@ -52,6 +78,27 @@ export interface PiBackend {
   getAgentState(
     input: SessionIdInput,
   ): Promise<{ running: boolean; state?: AgentStateResponse }>;
+  /**
+   * Live event source for a running session, ready to feed the transport-neutral
+   * streaming primitive (web/lib/agent-event-stream.ts). Rejected with
+   * session_not_found when the session is not live.
+   */
+  getSessionStream(sessionId: string): Promise<StreamingSessionHandle>;
+  /**
+   * Read a live session's model + thinking level. Rejected with
+   * session_not_found when the session is not live.
+   */
+  getSessionModel(sessionId: string): Promise<ModelState>;
+  /**
+   * Select a model and/or change the thinking-level budget on a live session,
+   * then read back the applied values. Rejected with session_not_found (or
+   * model_not_found on an unknown model).
+   */
+  configureModel(sessionId: string, patch: UpdateModelRequest): Promise<ModelState>;
+  installSkill(input: SkillInstallInput): Promise<SkillInstallResponse>;
+  checkSkillUpdates(input: SkillCheckInput): Promise<SkillCheckResponse>;
+  updateSkill(input: SkillUpdateInput): Promise<SkillUpdateResponse>;
+  searchSkills(input: SkillSearchInput): Promise<SkillSearchResponse>;
 }
 
 export interface CreatePiBackendOptions {
@@ -129,6 +176,30 @@ export function createPiBackend(options: CreatePiBackendOptions): PiBackend {
     },
     getModels(input) {
       return getModelsFromServices(input.cwd);
+    },
+    listSkills(input) {
+      return listSkillsFromServices(input?.cwd);
+    },
+    async installSkill(input) {
+      return installSkillFromServices(input);
+    },
+    async checkSkillUpdates(input) {
+      return checkSkillUpdatesFromServices(input);
+    },
+    async updateSkill(input) {
+      return updateSkillFromServices(input);
+    },
+    async searchSkills(input) {
+      return searchSkillsFromServices(input);
+    },
+    async getSessionStream(sessionId) {
+      return getSessionStreamFromServices(sessionId, runtime());
+    },
+    async getSessionModel(sessionId) {
+      return getSessionModelFromServices(sessionId, runtime());
+    },
+    async configureModel(sessionId, patch) {
+      return configureModelFromServices(sessionId, patch, runtime());
     },
   };
 }
