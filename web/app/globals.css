@@ -2583,11 +2583,8 @@ span.token.table {
   font-size: 12px;
 }
 
-.new-session-empty {
-  justify-content: flex-start !important;
-  padding-top: calc(50dvh - 120px) !important;
-  padding-bottom: 24px !important;
-}
+/* Desktop: centering + padding driven purely by inline Tailwind on the
+   element (flex-col justify-center, px-4 py-8). No CSS override needed. */
 .new-session-panel {
   position: relative;
   isolation: isolate;

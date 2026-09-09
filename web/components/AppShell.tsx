@@ -2227,8 +2227,16 @@ export function AppShell() {
             </div>
           ) : showPlaceholder ? (
             activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                 {translate("workspace.selectSession")}
+              <div
+                role="status"
+                className="flex min-h-full flex-col items-center justify-center gap-1.5 p-6 text-center max-w-[420px]"
+              >
+                <div className="text-[15px] font-medium text-[var(--text)]">
+                  {translate("workspace.selectSession")}
+                </div>
+                <div className="text-[13px] text-(--text-muted)">
+                  {translate("workspace.selectSessionHint")}
+                </div>
               </div>
             ) : (
               <ZosmaLoadingState label={translate("i18n.loading")} />

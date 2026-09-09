@@ -60,7 +60,7 @@ test("STATUS_BY_CODE is total over the contract code union", () => {
     "session_busy", "prompt_rejected", "model_not_found", "entry_not_found",
     "thinking_block_not_found", "startup_failed", "skill_not_found",
     "skill_install_failed", "skill_update_failed", "skill_check_failed", "skill_search_failed",
-    "internal_error",
+    "plugin_action_failed", "internal_error",
   ]);
   assert.deepEqual(new Set(Object.keys(STATUS_BY_CODE)), expectedCodes);
 });

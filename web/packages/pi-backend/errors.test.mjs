@@ -45,6 +45,7 @@ test("backend error codes match the approved v1 contract", () => {
     "skill_update_failed",
     "skill_check_failed",
     "skill_search_failed",
+    "plugin_action_failed",
     "internal_error",
   ]);
 });

@@ -6,9 +6,19 @@ import type {
   SessionTreeNode,
 } from "../../lib/types";
 import type {
+  PluginScope,
+  PluginResourceInfo,
+  PluginResourceKind,
   SkillInstallScope,
   SkillSearchResult,
   SkillUpdateResult,
+} from "../../lib/api-types";
+import type {
+  PluginDiagnostic,
+  PluginPackageInfo,
+  PluginResourceCounts,
+  PluginResourceKind as PluginResourceKindApi,
+  PluginsResponse,
 } from "../../lib/api-types";
 import type { SkillInfo, SkillsResponse } from "../../lib/api-types";
 
@@ -32,6 +42,41 @@ export type {
   SkillInfo,
   SkillsResponse,
 } from "../../lib/api-types";
+
+// Wire contract for the plugin management surface (extensions/skills/prompts/
+// themes, ZOS-82). These shapes are defined by the loader/SDK-backed plugin
+// service; re-exporting them keeps the /api/v1 boundary transport-neutral
+// (browser code reads the same shape without importing server runtime).
+export type {
+  PluginDiagnostic,
+  PluginPackageInfo,
+  PluginResourceCounts,
+  PluginResourceInfo,
+  PluginResourceKind,
+  PluginResourceKind as PluginResourceKindApi,
+  PluginScope,
+  PluginsResponse,
+} from "../../lib/api-types";
+
+export interface PluginsRequestInput {
+  cwd?: string;
+  action: PluginAction;
+  source?: string;
+  scope?: PluginScope;
+}
+
+export interface PluginsListInput {
+  cwd?: string;
+}
+
+export type PluginAction =
+  | "install"
+  | "remove"
+  | "update"
+  | "disable"
+  | "enable";
+
+export type PluginsResponseAction = "list" | PluginAction;
 
 export interface SkillsListInput {
   cwd?: string;
@@ -100,6 +145,7 @@ export type BackendErrorCode =
   | "skill_update_failed"
   | "skill_check_failed"
   | "skill_search_failed"
+  | "plugin_action_failed"
   | "internal_error";
 
 export interface ApiErrorResponse {

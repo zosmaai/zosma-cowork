@@ -25,6 +25,8 @@ import type {
   SkillSearchResponse,
   UpdateModelRequest,
   UpdateModelResponse,
+  PluginsRequestInput,
+  PluginsResponse,
 } from "@/packages/pi-backend/contracts";
 
 export class ApiV1Error extends Error {
@@ -157,6 +159,25 @@ export function updateSkill(input: SkillUpdateInput): Promise<SkillUpdateRespons
 
 export function searchSkills(input: SkillSearchInput): Promise<SkillSearchResponse> {
   return apiFetch("/api/v1/skills/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+// ============================================================================
+// Plugin management (ZOS-82) — extensions/skills/prompts/themes over /api/v1
+//
+// GET  /api/v1/plugins?cwd=
+// POST /api/v1/plugins          { action, source?, scope?, cwd }
+// ============================================================================
+
+export function listPlugins(cwd?: string): Promise<PluginsResponse> {
+  return apiFetch(cwd ? `/api/v1/plugins?cwd=${encodeURIComponent(cwd)}` : "/api/v1/plugins");
+}
+
+export function managePlugin(input: PluginsRequestInput): Promise<PluginsResponse> {
+  return apiFetch("/api/v1/plugins", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

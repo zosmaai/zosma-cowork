@@ -22,6 +22,7 @@ export const STATUS_BY_CODE: Record<BackendErrorCode, number> = {
   skill_update_failed: 500,
   skill_check_failed: 500,
   skill_search_failed: 500,
+  plugin_action_failed: 500,
   internal_error: 500,
 };
 

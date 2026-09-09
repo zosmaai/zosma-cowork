@@ -24,6 +24,9 @@ import type {
   UpdateSessionInput,
   ModelsResponse,
   SkillsResponse,
+  PluginsRequestInput,
+  PluginsResponse,
+  PluginsListInput,
 } from "./contracts";
 import {
   autoNameSession as autoNameSessionFromServices,
@@ -49,6 +52,10 @@ import {
   updateSkillFromServices,
   searchSkillsFromServices,
 } from "./skills";
+import {
+  readPluginsFromServices as listPluginsFromServices,
+  managePluginsFromServices as managePluginsFromServices,
+} from "./plugins";
 import { getRuntimeManager } from "../../lib/runtime-state";
 import type { RuntimeManager } from "./runtime-manager";
 import type { StreamingSessionHandle } from "./stream";
@@ -99,6 +106,8 @@ export interface PiBackend {
   checkSkillUpdates(input: SkillCheckInput): Promise<SkillCheckResponse>;
   updateSkill(input: SkillUpdateInput): Promise<SkillUpdateResponse>;
   searchSkills(input: SkillSearchInput): Promise<SkillSearchResponse>;
+  listPlugins(input?: PluginsListInput): Promise<PluginsResponse>;
+  managePlugin(input: PluginsRequestInput): Promise<PluginsResponse>;
 }
 
 export interface CreatePiBackendOptions {
@@ -191,6 +200,12 @@ export function createPiBackend(options: CreatePiBackendOptions): PiBackend {
     },
     async searchSkills(input) {
       return searchSkillsFromServices(input);
+    },
+    listPlugins(input) {
+      return listPluginsFromServices(input?.cwd);
+    },
+    async managePlugin(input) {
+      return managePluginsFromServices(input);
     },
     async getSessionStream(sessionId) {
       return getSessionStreamFromServices(sessionId, runtime());

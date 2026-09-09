@@ -10,7 +10,7 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
 import { isEditToolName } from "@/lib/tool-names";
-import { firstUsefulLine, formatToolTitle, getToolCallState } from "@/lib/conversation-flow";
+import { firstUsefulLine, formatToolTitle, getToolCallState, getToolCategory, type ToolCategory } from "@/lib/conversation-flow";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -389,8 +389,8 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             border: "1px solid rgba(59,130,246,0.2)",
             borderRadius: 12,
             padding: "8px 12px",
-            fontSize: 14,
-            lineHeight: 1.6,
+            fontSize: 13,
+            lineHeight: 1.55,
             color: "var(--text)",
             wordBreak: "break-word",
             maxHeight: USER_BUBBLE_MAX_HEIGHT,
@@ -856,6 +856,36 @@ function AssistantMessageView({
   );
 }
 
+function ToolCategoryIcon({ category, active }: { category: ToolCategory; active?: boolean }) {
+  const size = 16;
+  const glyph = () => {
+    switch (category) {
+      case "search":
+        return (<><circle cx="11" cy="11" r="6.5" /><line x1="16" y1="16" x2="21" y2="21" /></>);
+      case "terminal":
+        return (<><path d="M4 7l4 5-4 5" /><line x1="12" y1="17" x2="20" y2="17" /></>);
+      case "file":
+        return (<><path d="M7 3h7l5 5v13H7z" /><path d="M10 12h6M10 16h6" /></>);
+      case "skill":
+        return (<><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /><circle cx="12" cy="12" r="2.5" /></>);
+      case "chat":
+        return (<><path d="M4 5h16v11H9l-4 4z" /></>);
+      default:
+        return (<><circle cx="6" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18" cy="12" r="1.6" /></>);
+    }
+  };
+  return (
+    <span
+      className={active ? "conversation-disclosure-icon conversation-disclosure-icon-active" : "conversation-disclosure-icon"}
+      aria-hidden="true"
+    >
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+        {glyph()}
+      </svg>
+    </span>
+  );
+}
+
 function BlockView({ block, toolResults, isStreaming, isActive = false, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; isActive?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
@@ -966,7 +996,7 @@ function ToolCallBlock({ block, result, running, active, duration, cwd, onOpenFi
   return (
     <div className={`conversation-disclosure tool-row tool-row-${state}`} data-state={state} data-running={running ? "true" : "false"}>
       <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="conversation-disclosure-trigger">
-        <span className="conversation-disclosure-dot" aria-hidden="true" />
+        <ToolCategoryIcon category={getToolCategory(block.toolName)} active={active} />
         <span className="conversation-disclosure-title">{title}</span>
         <span className="conversation-disclosure-summary">{preview}</span>
         {duration !== undefined && <span className="conversation-disclosure-duration">{duration}s</span>}

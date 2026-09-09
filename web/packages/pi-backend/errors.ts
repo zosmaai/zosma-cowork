@@ -19,6 +19,7 @@ export const BACKEND_ERROR_CODES = [
   "skill_update_failed",
   "skill_check_failed",
   "skill_search_failed",
+  "plugin_action_failed",
   "internal_error",
 ] as const satisfies readonly BackendErrorCode[];
 
