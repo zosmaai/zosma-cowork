@@ -98,6 +98,41 @@ function pickNewSessionTitle(): string {
   return NEW_SESSION_TITLES[Math.floor(Math.random() * NEW_SESSION_TITLES.length)] ?? NEW_SESSION_TITLES[0];
 }
 
+/**
+ * One-shot example prompts shown on the empty new-session composer. Clicking a
+ * chip fills the (empty) input via ChatInput's insertIfEmpty — ChatGPT's
+ * "start with a suggestion" behavior. These are starter ideas for coding
+ * workspaces, not canned answers.
+ */
+const PROMPT_SUGGESTIONS = [
+  "Draft a project roadmap for next quarter",
+  "Refactor the auth module and add tests",
+  "Write a test suite for the payment service",
+  "Explain this codebase in a short brief",
+] as const;
+
+function PromptSuggestions({
+  onPrompt,
+}: {
+  onPrompt: (text: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="new-session-suggestions" role="group" aria-label={t("chat.promptSuggestions")}>
+      {PROMPT_SUGGESTIONS.map((prompt) => (
+        <button
+          type="button"
+          key={prompt}
+          className="new-session-suggestion"
+          onClick={() => onPrompt(prompt)}
+        >
+          {prompt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function NewSessionUpdateLink({
   label,
 }: {
@@ -719,7 +754,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             {[0, 0.8, 1.6].map((delay) => (
               <div
                 key={delay}
-                className="absolute h-[720px] w-[720px] rounded-full border-[1.5px] border-solid border-[rgba(37,99,235,0.5)] animate-[drop-ripple_2.4s_ease-out_infinite_backwards]"
+                className="absolute h-180 w-180 rounded-full border-[1.5px] border-solid border-[rgba(37,99,235,0.5)] animate-[drop-ripple_2.4s_ease-out_infinite_backwards]"
                 style={{ transformOrigin: "center", animationDelay: `${delay}s` }}
               />
             ))}
@@ -816,12 +851,13 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       )}
       <ExtensionStatusBar statuses={[]} widgets={extensionWidgetGroups.aboveEditor} placement="aboveEditor" />
       {chatInputElement}
+      <PromptSuggestions onPrompt={(text) => { if (chatInputRef) chatInputRef.current?.insertIfEmpty(text); }} />
           </div>
         </div>
       ) : (
       <>
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
-        <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 [scrollbar-width:none]">
+        <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 scrollbar-none">
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div
               ref={messageContentRef}
@@ -1012,7 +1048,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             )}
 
             {agentRunning && !hasStreamingContent && agentPhase && (
-              <div className="conversation-status is-running break-words py-2 text-[13px] text-text-muted">
+              <div className="conversation-status is-running wrap-break-word py-2 text-[13px] text-text-muted">
                 <span>{phaseLabel(agentPhase, t)}</span>
               </div>
             )}
