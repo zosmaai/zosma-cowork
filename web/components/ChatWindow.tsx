@@ -857,7 +857,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       ) : (
       <>
       <div className="relative flex min-w-0 flex-1 overflow-hidden">
-        <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pt-4 scrollbar-none">
+        <div ref={scrollContainerRef} className="flex min-w-0 flex-1 flex-col justify-end overflow-x-hidden overflow-y-auto pt-4 scrollbar-none">
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div
               ref={messageContentRef}

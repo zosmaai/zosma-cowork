@@ -87,6 +87,7 @@ export const enLocale: LocalePlugin = {
     "layout.resizeFilePanel": "Resize file panel",
     "layout.resizeHint": "Drag to resize. Double-click or press Enter to reset.",
     "sidebar.new": "New",
+    "sidebar.recents": "Recents",
     "sidebar.newSessionTitle": "New session in {path}",
     "sidebar.workspaces": "Workspaces",
     "sidebar.searchWorkspaces": "Search workspaces and sessions…",

@@ -902,101 +902,32 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <div
         className="workspace-sidebar-header"
         style={{
-          padding: "12px 10px 10px",
+          padding: "12px 12px 10px",
           borderBottom: "1px solid var(--border)",
           flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
         }}
       >
-        <div className="workspace-sidebar-brand-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="workspace-sidebar-brand-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
           <BrandTitle />
-          {onToggleSidebar && (
-            <button type="button" className="workspace-sidebar-collapse" onClick={onToggleSidebar} title={t("sidebar.hide")} aria-label={t("sidebar.hide")}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="3" />
-                <line x1="9" y1="3" x2="9" y2="21" />
-              </svg>
-            </button>
-          )}
-          <div className="workspace-sidebar-actions" style={{ display: "flex", gap: 6 }}>
-                        <button
-              className="workspace-new-button"
-              onClick={handleNewSession}
-              disabled={!selectedCwd}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: selectedCwd ? "var(--text-muted)" : "var(--text-dim)",
-                cursor: selectedCwd ? "pointer" : "not-allowed",
-                height: 32,
-                paddingLeft: 10,
-                paddingRight: 12,
-                borderRadius: 7,
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
-                flexShrink: 0,
-                transition: "background 0.12s, color 0.12s, border-color 0.12s",
-              }}
-             title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
-              onMouseEnter={(e) => {
-                if (!selectedCwd) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="6" y1="1" x2="6" y2="11" />
-                <line x1="1" y1="6" x2="11" y2="6" />
-              </svg>
-              {t("sidebar.new")}
-            </button>
-            <div ref={folderPopoverRef} className="workspace-folder-control" style={{ position: "relative", flexShrink: 0 }}>
+          <div className="workspace-sidebar-actions" style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <div ref={folderPopoverRef} className="workspace-folder-control">
               <button
-                className="workspace-add-button"
                 ref={folderTriggerRef}
                 type="button"
                 onClick={handleFolderTriggerClick}
                 aria-expanded={folderPopoverOpen}
                 aria-controls="folder-popover"
                 title={t("sidebar.addFolder")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                  background: "var(--bg-hover)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  height: 32,
-                  paddingLeft: 10,
-                  paddingRight: 12,
-                  borderRadius: 7,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  letterSpacing: "-0.01em",
-                  flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                  e.currentTarget.style.color = "var(--accent)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
+                aria-label={t("sidebar.addFolder")}
+                className="workspace-sidebar-icon-btn"
               >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h2.2l1.2 1.5h3.6a1 1 0 0 1 1 1v4.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V3.5Z" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
                 </svg>
-                {t("sidebar.addFolder")}
               </button>
               <div
                 id="folder-popover"
@@ -1070,52 +1001,85 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 </button>
               </div>
             </div>
-                        <button
-              className="workspace-refresh-button"
+            <button
+              type="button"
+              className={`workspace-sidebar-icon-btn${sessionRefreshDone ? " is-done" : ""}`}
               onClick={() => loadSessions(false, true)}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: sessionRefreshDone ? "rgba(74,222,128,0.18)" : "var(--bg-hover)",
-                border: `1px solid ${sessionRefreshDone ? "rgba(74,222,128,0.4)" : "var(--border)"}`,
-                color: sessionRefreshDone ? "#4ade80" : "var(--text-muted)",
-                cursor: "pointer",
-                width: 32, height: 32,
-                borderRadius: 7,
-                padding: 0,
-                flexShrink: 0,
-                transition: "background 0.3s, color 0.3s, border-color 0.3s",
-              }}
-              onMouseEnter={(e) => {
-                if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                if (sessionRefreshDone) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = "var(--text-muted)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-               title={t("sidebar.refresh")}
+              title={t("sidebar.refresh")}
+              aria-label={t("sidebar.refresh")}
             >
               {sessionRefreshDone ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                   <path d="M3 3v5h5" />
                 </svg>
               )}
             </button>
+            {onToggleSidebar && (
+              <button type="button" className="workspace-sidebar-collapse" onClick={onToggleSidebar} title={t("sidebar.hide")} aria-label={t("sidebar.hide")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <line x1="9" y1="3" x2="9" y2="21" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Workspace and session search. Typing never changes cwd, selection,
+        {/* New session. Typing never changes cwd, selection,
             running/unread state, or expansion. */}
-        <div className="workspace-search" style={{ position: "relative" }}>
+        <button
+          className="workspace-new-button"
+          onClick={handleNewSession}
+          disabled={!selectedCwd}
+          title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            background: "var(--bg-hover)",
+            border: "1px solid var(--border)",
+            color: selectedCwd ? "var(--text)" : "var(--text-dim)",
+            cursor: selectedCwd ? "pointer" : "not-allowed",
+            height: 34,
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 500,
+            letterSpacing: "-0.01em",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            transition: "background 0.12s, color 0.12s, border-color 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            if (!selectedCwd) return;
+            e.currentTarget.style.background = "var(--bg-selected)";
+            e.currentTarget.style.color = "var(--accent)";
+            e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = selectedCwd ? "var(--text)" : "var(--text-dim)";
+            e.currentTarget.style.borderColor = "var(--border)";
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <line x1="6" y1="1" x2="6" y2="11" />
+            <line x1="1" y1="6" x2="11" y2="6" />
+          </svg>
+          {t("sidebar.new")}
+        </button>
+      </div>
+
+      {/* Workspace and session search */}
+      <div className="workspace-search" style={{ padding: "8px 12px 4px", flexShrink: 0 }}>
+        {!searching && (
+          <div className="workspace-recents" aria-hidden="true" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-dim)", marginBottom: 6 }}>
+            {t("sidebar.recents")}
+          </div>
+        )}
+        <div style={{ position: "relative" }}>
           <input
             value={workspaceQuery}
             onChange={(e) => setWorkspaceQuery(e.target.value)}
@@ -1126,15 +1090,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             placeholder={t("sidebar.searchWorkspaces")}
             style={{
               width: "100%",
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: "var(--font-mono)",
-              padding: "6px 28px 6px 8px",
-              border: "1px solid var(--border)",
-              borderRadius: 7,
+              padding: "6px 26px 6px 9px",
+              border: "1px solid transparent",
+              borderRadius: 8,
               outline: "none",
-              background: "var(--bg)",
+              background: "var(--bg-hover)",
               color: "var(--text)",
               boxSizing: "border-box",
+              transition: "border-color 0.12s, background 0.12s",
+            }}
+            onMouseEnter={(e) => {
+              if (workspaceQuery === "") e.currentTarget.style.borderColor = "var(--border)";
+            }}
+            onMouseLeave={(e) => {
+              if (workspaceQuery === "") e.currentTarget.style.borderColor = "transparent";
             }}
           />
           {workspaceQuery.trim() !== "" && (
@@ -2281,47 +2252,24 @@ function SessionItem({
                   {title}
                 </span>
               </div>
-              <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 8, color: "var(--text-dim)", fontSize: 11, minWidth: 0 }}>
+              <div className="mt-0.5 flex items-center justify-between gap-2 min-w-0 text-[11px] text-[var(--text-dim)]">
                 {isRunning ? (
                   <RunningSessionIndicator />
                 ) : isUnread ? (
                   <UnreadSessionIndicator />
-                ) : (
-                  <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
-                )}
-                <span>{t("sidebar.messagesCount", { count: session.messageCount })}</span>
-                {session.worktreeBranch && (
-                  <span
-                    title={`Worktree: ${session.cwd}`}
-                    style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--accent)", minWidth: 0, overflow: "hidden" }}
-                  >
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                      <line x1="6" y1="3" x2="6" y2="15" />
-                      <circle cx="18" cy="6" r="3" />
-                      <circle cx="6" cy="18" r="3" />
-                      <path d="M18 9a9 9 0 0 1-9 9" />
-                    </svg>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.worktreeBranch}</span>
-                  </span>
-                )}
+                ) : null}
+                <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
               </div>
             </div>
           </button>
 
-          {/* Action buttons — shown on hover */}
-                    {hovered && !session.transient && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          {/* Action buttons shown on hover */}
+            {hovered && !session.transient && (
+            <div className="flex gap-1 flex-shrink-0">
               <button
                 onClick={startRename}
                 title={t("sidebar.rename")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
+                className="inline-flex h-8 w-8 items-center justify-center flex-shrink-0 rounded-lg border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors"
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "var(--bg-selected)";
                   e.currentTarget.style.color = "var(--accent)";
@@ -2340,14 +2288,7 @@ function SessionItem({
               <button
                 onClick={handleDeleteClick}
                 title={t("sidebar.deleteWithShiftClick")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
+                className="inline-flex h-8 w-8 items-center justify-center flex-shrink-0 rounded-lg border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors"
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "rgba(239,68,68,0.08)";
                   e.currentTarget.style.color = "#ef4444";

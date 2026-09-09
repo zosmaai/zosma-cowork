@@ -6,6 +6,7 @@
  * token or they are rejected.
  */
 import http from "node:http";
+import { GIT_RPC_OPS, handleGitRpc, type GitRpcRequest } from "./git/rpc.ts";
 
 export type Readiness = "starting" | "ready" | "shutting-down" | "error";
 
@@ -87,6 +88,26 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         return reply(res, 400, { ok: false, error: "invalid_request", detail: "missing type" });
       }
       const { type: _type, ...rest } = body;
+
+      // Git/worktree ops route to the ported daemon service, gated by the
+      // file-access security. Any other op echoes back unchanged.
+      if ((GIT_RPC_OPS as readonly string[]).includes(type)) {
+        try {
+          const request: GitRpcRequest = {
+            type,
+            cwd: (rest.cwd as string | undefined) ?? undefined,
+            path: (rest.path as string | undefined) ?? undefined,
+            branch: (rest.branch as string | undefined) ?? undefined,
+            force: (rest.force as boolean | undefined) ?? undefined,
+          };
+          const result = await handleGitRpc(request);
+          const data = (result.body ?? {}) as Record<string, unknown>;
+          return reply(res, result.status, { ok: result.status < 400, type, ...data });
+        } catch (err) {
+          return reply(res, 500, { ok: false, error: "internal_error" });
+        }
+      }
+
       const ipcReply: IpcReply = { ok: true, type, ...rest };
       return reply(res, 200, ipcReply);
     } catch (err) {
