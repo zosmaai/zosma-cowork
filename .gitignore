@@ -36,3 +36,4 @@ web/dist-server/
 .DS_Store
 /.pi-lens
 SHOW_HN.md
+.sessions

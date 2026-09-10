@@ -1,0 +1,27 @@
+{
+  "name": "@zosma-cowork/protocol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Transport-neutral, versioned, runtime-validated messages for the Cowork runtime.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./errors": "./src/errors.ts",
+    "./negotiation": "./src/negotiation.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^22.19.0"
+  }
+}

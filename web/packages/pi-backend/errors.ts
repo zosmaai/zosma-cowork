@@ -4,6 +4,7 @@ export type { BackendErrorCode } from "./contracts";
 
 export const BACKEND_ERROR_CODES = [
   "invalid_request",
+  "cwd_required",
   "access_denied",
   "session_not_found",
   "session_not_running",
@@ -13,6 +14,12 @@ export const BACKEND_ERROR_CODES = [
   "entry_not_found",
   "thinking_block_not_found",
   "startup_failed",
+  "skill_not_found",
+  "skill_install_failed",
+  "skill_update_failed",
+  "skill_check_failed",
+  "skill_search_failed",
+  "plugin_action_failed",
   "internal_error",
 ] as const satisfies readonly BackendErrorCode[];
 

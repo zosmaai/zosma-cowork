@@ -2,6 +2,23 @@ import type { ToolResultMessage } from "@/lib/types";
 
 export type ToolCallState = "running" | "success" | "error" | "interrupted";
 
+export type ToolCategory = "search" | "terminal" | "file" | "skill" | "chat" | "default";
+
+/**
+ * Visual category for a tool call. ChatGPT renders tool calls with a per-type
+ * icon, so this drives the icon set in MessageView. Classification is purely
+ * name-based — the SDK only exposes `toolName` — so it's heuristic by design.
+ */
+export function getToolCategory(toolName: string): ToolCategory {
+  const name = (toolName ?? "").toLowerCase();
+  if (/(\b|_)(web_)?(search|browse|crawl|scan|fetch_url)/.test(name) || /(^|_)web/.test(name)) return "search";
+  if (/(\b|_)(bash|command|shell|exec|run|terminal)/.test(name)) return "terminal";
+  if (/(\b|_)(read|write|edit|inspect|file|image|pdf|docx|doc|spread|sheet)/.test(name)) return "file";
+  if (/(\b|_)(skill|extension|plugin)/.test(name)) return "skill";
+  if (/(_|\b)(session_ask|ask|question|chat)/.test(name)) return "chat";
+  return "default";
+}
+
 const TOOL_TITLES: Record<string, string> = {
   bash: "Run",
   web_search: "Search web",

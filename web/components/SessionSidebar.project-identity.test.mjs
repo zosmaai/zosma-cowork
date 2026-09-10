@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const url = (p) => new URL(`./session-sidebar/${p}`, import.meta.url);
+const modelSource = await readFile(url("use-session-sidebar-model.ts"), "utf8");
+const composerSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 
 test("projectFor prefers the shell-provided validated identity before session and worktree fallbacks", () => {
-  const start = source.indexOf("const projectFor = useCallback");
-  const end = source.indexOf("}, [validatedProject, worktreeState, allSessions, projectSelection]);", start);
+  const start = modelSource.indexOf("const projectFor = useCallback");
+  const end = modelSource.indexOf("}, [validatedProject, worktreeState, allSessions, projectSelection]);", start);
   assert.notEqual(start, -1, "projectFor callback not found");
   assert.notEqual(end, -1, "projectFor callback end not found");
-  const body = source.slice(start, end);
+  const body = modelSource.slice(start, end);
 
   const validatedAt = body.indexOf("validatedProject?.cwd === cwd");
   const worktreeAt = body.indexOf("worktreeState && worktreeState.forCwd === cwd");
@@ -20,7 +22,7 @@ test("projectFor prefers the shell-provided validated identity before session an
 });
 
 test("shell-provided folder callbacks drive new-workspace selection", () => {
-  assert.match(source, /onAddFolder\?: \(\) => void/);
-  assert.match(source, /onSelectFolder\?: \(path: string\) => void/);
-  assert.match(source, /validatedProject\?: ValidatedCwd \| null/);
+  assert.match(composerSource, /onAddFolder\?: \(\) => void/);
+  assert.match(composerSource, /onSelectFolder\?: \(path: string\) => void/);
+  assert.match(composerSource, /validatedProject\?: ValidatedCwd \| null/);
 });
