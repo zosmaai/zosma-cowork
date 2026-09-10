@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const explorer = await readFile(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
-const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const composer = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const model = await readFile(new URL("./session-sidebar/use-session-sidebar-model.ts", import.meta.url), "utf8");
+const explorerPanel = await readFile(new URL("./session-sidebar/explorer-panel.tsx", import.meta.url), "utf8");
 const tabs = await readFile(new URL("./TabBar.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -18,9 +20,9 @@ test("keeps explorer file and change rows keyboard-activatable", () => {
 });
 
 test("keeps explorer state and file tabs as existing entry points", () => {
-  assert.match(sidebar, /loadExplorerOpen\(\)/);
-  assert.match(sidebar, /saveExplorerOpen\(next\)/);
-  assert.match(sidebar, /<FileExplorer/);
+  assert.match(model, /loadExplorerOpen\(\)/);
+  assert.match(explorerPanel, /saveExplorerOpen\(next\)/);
+  assert.match(explorerPanel, /<FileExplorer/);
   assert.match(explorer, /className="file-explorer-section"/);
   assert.match(tabs, /role="tablist"/);
   assert.match(tabs, /role="tab"/);
@@ -28,9 +30,9 @@ test("keeps explorer state and file tabs as existing entry points", () => {
 });
 
 test("explorer follows the canonical current cwd on fresh sessions", () => {
-  assert.match(sidebar, /const explorerCwd = selectedCwd \?\? selectedCwdProp \?\? validatedProject\?\.cwd \?\? null/);
-  assert.match(sidebar, /\{explorerCwd && \(/);
-  assert.match(sidebar, /cwd=\{explorerCwd\}/);
+  assert.match(model, /const explorerCwd = selectedCwd \?\? selectedCwdProp \?\? validatedProject\?\.cwd \?\? null/);
+  assert.match(explorerPanel, /\{model\.explorerOpen && \(/);
+  assert.match(explorerPanel, /cwd=\{model\.explorerCwd\}/);
 });
 
 test("workspace browser does not override explorer split sizing", () => {

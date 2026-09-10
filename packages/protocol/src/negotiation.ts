@@ -23,14 +23,19 @@ export function negotiateVersion(
   return requested;
 }
 
-/** Intersect two capability sets; returns sorted keys (empty array if none). */
+/** Value identity key for a capability, so distinct object entries match by value, not reference. */
+function capabilityKey(c: Capability): string {
+  return `${c.name}@${c.version}`;
+}
+
+/** Intersect two capability sets; returns the entries of `a` shared with `b` (empty array if none). */
 export function negotiateCapabilities(
   a: Capability[],
   b: Capability[],
 ): Capability[] {
-  const set = new Set(b);
+  const bKeys = new Set(b.map(capabilityKey));
   const out: Capability[] = [];
-  for (const c of a) if (set.has(c)) out.push(c);
+  for (const c of a) if (bKeys.has(capabilityKey(c))) out.push(c);
   out.sort();
   return out;
 }

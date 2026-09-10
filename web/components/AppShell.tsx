@@ -115,6 +115,9 @@ export function AppShell() {
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // ChatGPT-style collapse-to-icon-rail. Desktop only; the mobile drawer uses
+  // `sidebarOpen` instead. Fixed width — the user cannot drag-resize anymore.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mobileToolbarMoreOpen, setMobileToolbarMoreOpen] = useState(false);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
@@ -298,6 +301,10 @@ export function AppShell() {
     }
     setSidebarOpen((open) => !open);
   }, [isMobile]);
+  // Desktop rail toggle: narrow the sidebar to an icon column (ChatGPT-style).
+  const handleSidebarCollapseToggle = useCallback(() => {
+    setSidebarCollapsed((collapsed) => !collapsed);
+  }, []);
 
   const handleMobileToolbarMoreToggle = useCallback(() => {
     setSidebarOpen(false);
@@ -1050,6 +1057,51 @@ export function AppShell() {
     return () => observer.disconnect();
   }, [windowTitle]);
 
+  // Rail mode hides the dense workspace/session/explorer content and shows an
+  // icon column. Only meaningful on desktop; mobile uses the drawer.
+  const sidebarRail = !isMobile && sidebarCollapsed;
+  const footerNavItems = [
+    {
+      label: translate("common.models"),
+      onClick: () => { setSettingsInitialCategory("models"); setSettingsOpen(true); },
+      disabled: false,
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
+          <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
+          <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
+          <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
+          <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
+        </svg>
+      ),
+    },
+    {
+      label: translate("common.skills"),
+      onClick: () => { setSettingsInitialCategory("skills"); setSettingsOpen(true); },
+      disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" />
+          <path d="M2 17l10 5 10-5" />
+          <path d="M2 12l10 5 10-5" />
+        </svg>
+      ),
+    },
+    {
+      label: translate("common.plugins"),
+      onClick: () => { setSettingsInitialCategory("plugins"); setSettingsOpen(true); },
+      disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
+      icon: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 7V2" />
+          <path d="M15 7V2" />
+          <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
+          <path d="M12 19v3" />
+        </svg>
+      ),
+    },
+  ];
+
   const sidebarContent = (
     <>
       {addFolderOpen && (
@@ -1081,69 +1133,58 @@ export function AppShell() {
         onAtMentions={handleAtMentions}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
-        onToggleSidebar={handleSidebarToggle}
+        rail={sidebarRail}
+        isMobile={isMobile}
+        onToggleRail={handleSidebarCollapseToggle}
       />
-      <div className="sidebar-footer" style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
-        {([
-          {
-             label: translate("common.models"),
-            onClick: () => { setSettingsInitialCategory("models"); setSettingsOpen(true); },
-            disabled: false,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
-                <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-                <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-                <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-                <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-              </svg>
-            ),
-          },
-          {
-             label: translate("common.skills"),
-            onClick: () => { setSettingsInitialCategory("skills"); setSettingsOpen(true); },
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            ),
-          },
-          {
-             label: translate("common.plugins"),
-            onClick: () => { setSettingsInitialCategory("plugins"); setSettingsOpen(true); },
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 7V2" />
-                <path d="M15 7V2" />
-                <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
-                <path d="M12 19v3" />
-              </svg>
-            ),
-          },
-        ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
-          <button
-            key={label}
-            onClick={onClick}
-            disabled={disabled}
-            title={label}
-            style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-              fontSize: 12, opacity: disabled ? 0.35 : 1,
-              transition: "background 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {icon}
-            {label}
-          </button>
-        ))}
+      <div className={`sidebar-footer${sidebarRail ? " is-rail" : ""}`}>
+        {sidebarRail ? (
+          <div className="sidebar-rail-nav" aria-hidden="true" style={{ display: "flex", flexDirection: "column", width: "100%", gap: 2 }}>
+            {footerNavItems.map(({ label, onClick, disabled, icon }) => (
+              <button
+                key={label}
+                onClick={onClick}
+                disabled={disabled}
+                title={label}
+                aria-label={label}
+                className="sidebar-rail-nav-item"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  height: 34, padding: 0, background: "none", border: "none",
+                  borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="sidebar-footer-buttons" style={{ display: "flex", justifyContent: "space-between", gap: 4 }}>
+            {footerNavItems.map(({ label, onClick, disabled, icon }) => (
+              <button
+                key={label}
+                onClick={onClick}
+                disabled={disabled}
+                title={label}
+                style={{
+                  flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  height: 32, padding: 0, background: "none", border: "none",
+                  borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
+                  fontSize: 12, opacity: disabled ? 0.35 : 1,
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
@@ -1707,52 +1748,45 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
+        className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${sidebarCollapsed && !isMobile ? " sidebar-collapsed" : ""}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
         } as React.CSSProperties}
       >
         {sidebarContent}
       </div>
-      {sidebarOpen && (
-        <div
-          {...sidebarResizer.separatorProps}
-          aria-controls="session-sidebar"
-          className={`panel-resize-handle sidebar-resize-handle${sidebarResizer.isResizing ? " is-resizing" : ""}`}
-          data-resize-handle="sidebar"
-          title={`${translate("layout.resizeSidebar")}: ${translate("layout.resizeHint")}`}
-        />
-      )}
 
       {/* Center: chat */}
       <div className="app-shell-center">
         {/* Top bar with sidebar toggle */}
         <div ref={topBarRef} className="app-shell-topbar" data-new-session={!selectedSession || undefined}>
           <div className="app-shell-toolbar">
-          <button
-            className="sidebar-toggle-button"
-            onClick={handleSidebarToggle}
-             title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-             aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
-          >
-            {sidebarOpen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
+          {isMobile && (
+            <button
+              className="sidebar-toggle-button"
+              onClick={handleSidebarToggle}
+              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+              aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+                background: "none", border: "none", borderRight: "1px solid var(--border)",
+                color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+            >
+              {sidebarOpen ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              )}
+            </button>
+          )}
           {!isMobile && (
             <>
               <div className="session-header">

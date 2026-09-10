@@ -8,7 +8,7 @@ const webRoot = fileURLToPath(new URL("../", import.meta.url));
 
 const BROWSER_FILES = [
   "components/AppShell.tsx",
-  "components/SessionSidebar.tsx",
+  "components/session-sidebar/use-session-sidebar-model.ts",
   "components/ChatWindow.tsx",
   "components/MessageView.tsx",
   "hooks/useAgentSession.ts",

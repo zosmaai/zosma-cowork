@@ -20,7 +20,7 @@ const [
   readText("../app/layout.tsx"),
   readText("../app/manifest.ts"),
   readText("./AppShell.tsx"),
-  readText("./SessionSidebar.tsx"),
+  readText("./session-sidebar/workspace-panel.tsx"),
   readText("./ChatWindow.tsx"),
   readText("../public/offline.html"),
   readText("../lib/i18n/messages/en.ts"),

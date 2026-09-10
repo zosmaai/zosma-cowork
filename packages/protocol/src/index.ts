@@ -154,3 +154,25 @@ export {
 // Adapter-error + unsupported-capability semantics.
 export type { AdapterErrorCode, AdapterError } from "./adapter-errors.ts";
 export { ADAPTER_ERROR_CODES, isAdapterError, normalizeAdapterError, unsupportedCapabilityError, operationNotSupportedError, adapterUnavailableError, adapterError } from "./adapter-errors.ts";
+
+// --- adapter conformance kit (ZOS-87) ---
+// Shared conformance runner + the runtime adapter surface it drives.
+export type {
+  HarnessAdapter,
+  InitializeRequest,
+  InitializeResponse,
+  Turn,
+  TurnResult,
+  UpdatePatch,
+  SessionStateLike,
+  AcpSessionConfig,
+  PermissionRequest,
+  PermissionResponse,
+  HealthStatus,
+  ConformanceCheck,
+  ConformanceReport,
+} from "./conformance.ts";
+export { runConformanceSuite } from "./conformance.ts";
+
+// ACP v2 deterministic fixture.
+export { AcpV2Adapter, ACP_V2_NATIVE_TAGS } from "./acp-v2.ts";

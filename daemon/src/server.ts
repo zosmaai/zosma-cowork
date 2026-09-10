@@ -40,8 +40,10 @@ interface IpcReply {
 
 function authHeld(authorization: string | undefined, token: string): boolean {
   if (!authorization) return false;
-  const m = /^Bearer\s+(.+)$/i.exec(authorization.trim());
-  return m ? timingSafeEqual(m[1] ?? "", token) : false;
+  const s = authorization.trim();
+  const i = s.indexOf(" ");
+  if (i === -1 || s.slice(0, i).toUpperCase() !== "BEARER") return false;
+  return timingSafeEqual(s.slice(i + 1).trim(), token);
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

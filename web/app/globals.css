@@ -1596,6 +1596,10 @@ span.token.table {
   .sidebar-container.sidebar-closed {
     grid-template-columns: 0fr;
   }
+  /* ChatGPT-style collapse to a fixed icon rail. */
+  .sidebar-container.sidebar-collapsed {
+    grid-template-columns: 62px;
+  }
   .sidebar-container.sidebar-resizing {
     transition: none !important;
   }
@@ -2296,6 +2300,8 @@ span.token.table {
   }
 }
 
+/* Sidebar: column flex so the content area fills and the footer pins bottom.
+   Using flex-fill (not fixed height) avoids the huge-void / bunched-content bug. */
 /* Sidebar header: brand + compact action row on top, full-width new-session
    button below, search line at the base. Clean flex layout (no grid hacks). */
 .workspace-sidebar-header {
@@ -2304,6 +2310,36 @@ span.token.table {
   gap: 8px;
   padding: 12px 12px 10px;
   border-bottom: 1px solid var(--border);
+}
+/* Rail (collapsed) header: compact centered column of icon buttons.
+   Brand, folder, refresh are hidden; only expand + new-session show. */
+.workspace-sidebar-header-rail {
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+.workspace-sidebar-rail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.workspace-sidebar-rail-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.workspace-sidebar-rail-btn:disabled {
+  cursor: not-allowed;
+  color: var(--text-dim);
 }
 .workspace-sidebar-brand-row {
   display: flex;
