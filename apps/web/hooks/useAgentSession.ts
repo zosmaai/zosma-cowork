@@ -85,8 +85,12 @@ export interface QueuedMessages {
   followUp: string[];
 }
 
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
 function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] } | null): QueuedMessages {
-  return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
+  return { steering: asArray(q?.steering), followUp: asArray(q?.followUp) };
 }
 
 type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" }>;
@@ -502,8 +506,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
         if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
         if (liveState.thinkingLevel !== undefined) setThinkingLevel((liveState.thinkingLevel as ThinkingLevelOption) ?? "auto");
-        if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
-        if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
+        if (liveState.extensionStatuses !== undefined) setExtensionStatuses(asArray(liveState.extensionStatuses));
+        if (liveState.extensionWidgets !== undefined) setExtensionWidgets(asArray(liveState.extensionWidgets));
         if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
       } else if (!agentState?.running) {
         setQueuedMessages({ steering: [], followUp: [] });
@@ -962,8 +966,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (state) {
         if (state.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
         if (state.systemPrompt !== undefined) setSystemPrompt(state.systemPrompt ?? null);
-        if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
-        if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
+        if (state.extensionStatuses !== undefined) setExtensionStatuses(asArray(state.extensionStatuses));
+        if (state.extensionWidgets !== undefined) setExtensionWidgets(asArray(state.extensionWidgets));
       }
       await finishPromptWithoutStream(sid, runId);
     } catch {
@@ -1034,8 +1038,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             .then((d) => {
               if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
-              if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
-              if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
+              if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(asArray(d.state.extensionStatuses));
+              if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(asArray(d.state.extensionWidgets));
               // Aborted turns can leave messages queued in pi (delivered with the
               // next turn); dead wrapper (no state) means the queue is gone.
               setQueuedMessages(normalizeQueuedMessages(d.state?.queuedMessages));
@@ -1790,8 +1794,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
           if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
           if (agentState.state.thinkingLevel !== undefined) setThinkingLevel((agentState.state.thinkingLevel as ThinkingLevelOption) ?? "auto");
-          if (agentState.state.extensionStatuses !== undefined) setExtensionStatuses(agentState.state.extensionStatuses ?? []);
-          if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
+          if (agentState.state.extensionStatuses !== undefined) setExtensionStatuses(asArray(agentState.state.extensionStatuses));
+          if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(asArray(agentState.state.extensionWidgets));
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
         }
       });
