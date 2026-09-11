@@ -1,0 +1,5 @@
+# Standalone pnpm project (GCloud Functions deploy) — NOT part of the
+# zosma-cowork workspace; this file stops pnpm from walking up to a parent
+# workspace root.
+packages:
+  - "."

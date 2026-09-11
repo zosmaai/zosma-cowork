@@ -54,6 +54,8 @@ echo "==> Grant the gen2 build/runtime SA the roles it needs"
   --member="serviceAccount:${COMPUTE_SA}" --role=roles/cloudbuild.builds.builder --condition=None >/dev/null
 
 echo "==> Build + stage an isolated deploy dir"
+# Lockfile regen (only when deps change): pnpm install --trust-policy-exclude=undici-types --trust-policy-ignore-after=1051200
+# (flags needed because the legacy GCloud tree predates publish attestation; frozen installs skip the check).
 ( cd "$here/functions" && pnpm install --frozen-lockfile && pnpm run build )
 stage="$(mktemp -d)"
 cp -r "$here/functions/lib" "$stage/lib"

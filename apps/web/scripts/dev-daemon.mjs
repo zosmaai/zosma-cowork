@@ -73,7 +73,7 @@ async function main() {
   }
 
   log(`starting web (next dev, :30141) → ZOSMA_DAEMON_URL=${URL}`);
-  const web = spawn("npm", ["run", "dev"], {
+  const web = spawn("pnpm", ["run", "dev"], {
     cwd: join(dirname(fileURLToPath(import.meta.url))),
     env: {
       ...process.env,

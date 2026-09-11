@@ -1,7 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
-# oauth-broker is a standalone npm (GCloud Functions) app — not a pnpm package.
+# oauth-broker is a standalone pnpm (GCloud Functions) app — own pnpm-workspace.yaml
+# + lockfile in functions/, deliberately excluded from the workspace.
 exclude:
   - "apps/oauth-broker"
 # D6: Next standalone + Turbopack + Tauri resource bundling choke on pnpm's
@@ -9,3 +10,8 @@ exclude:
 # real dirs, mirrors the old per-app node_modules topology the toolchain
 # was proven on. Revisit if a strict-layout need appears.
 node-linker: hoisted
+# pnpm-only config must live here (not .npmrc): npm reads any .npmrc and
+# warns on unknown keys. trust-policy=allow-all is pnpm's supply-chain gate;
+# the repo tree ships legacy transitive deps (exceljs/uuid era) that predate
+# publish attestation — allow-all avoids ERR_PNPM_TRUST_DOWNGRADE whack-a-mole.
+trust-policy: allow-all

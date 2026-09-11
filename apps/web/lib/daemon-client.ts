@@ -6,7 +6,7 @@
 // over `/ipc`; the web keeps only session-file reads and static discovery
 // (models/skills/plugins), which never needed a live agent runtime.
 //
-// Daemon discovery contract (set by `npm run dev:all` / the prod unit):
+// Daemon discovery contract (set by `pnpm dev:all` / the prod unit):
 //   ZOSMA_DAEMON_URL    http://127.0.0.1:<port>   (required)
 //   ZOSMA_DAEMON_TOKEN  shared Bearer token        (required)
 //
@@ -110,7 +110,7 @@ export async function daemonStream(
 export function requireConfig(config: DaemonConfig | null = daemonConfig()): DaemonConfig {
   if (!config) {
     throw new DaemonError(
-      "Daemon not configured — start it with `npm run dev:all` (ZOSMA_DAEMON_URL / ZOSMA_DAEMON_TOKEN missing)",
+      "Daemon not configured — start it with `pnpm dev:all` (ZOSMA_DAEMON_URL / ZOSMA_DAEMON_TOKEN missing)",
       503,
       "daemon_not_configured",
     );

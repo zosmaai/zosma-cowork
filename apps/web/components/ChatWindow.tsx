@@ -435,6 +435,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     lastUserMsgRef, promptAnchorActive,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    sessionLost, resumeSession,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, scrollUserMsgToTop,
@@ -685,7 +686,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
-      onSend={handleSend}
+      onSend={sessionLost ? () => {} : handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -726,6 +727,22 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       cwd={session?.cwd ?? newSessionCwd}
     />
   );
+
+  const sessionLostBanner = sessionLost ? (
+    <div
+      role="alert"
+      className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-(--base-solid) px-3 py-1.5 text-xs text-[var(--text-dim)]"
+    >
+      <span>Session lost — this session is no longer reachable.</span>
+      <button
+        type="button"
+        onClick={() => { void resumeSession(); }}
+        className="shrink-0 cursor-pointer rounded-md px-2.5 py-0.5 text-xs font-semibold"
+      >
+        Resume
+      </button>
+    </div>
+  ) : null;
 
   if (loading) {
     return <ZosmaLoadingState label={t("chat.loadingSession")} />;
@@ -850,6 +867,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         />
       )}
       <ExtensionStatusBar statuses={[]} widgets={extensionWidgetGroups.aboveEditor} placement="aboveEditor" />
+      {sessionLostBanner}
       {chatInputElement}
       <PromptSuggestions onPrompt={(text) => { if (chatInputRef) chatInputRef.current?.insertIfEmpty(text); }} />
           </div>
@@ -1090,7 +1108,8 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
 
       <div className="relative">
         <ExtensionStatusBar statuses={[]} widgets={extensionWidgetGroups.aboveEditor} placement="aboveEditor" />
-        {chatInputElement}
+        {sessionLostBanner}
+      {chatInputElement}
         <SessionMetricsLine stats={sessionStats} contextUsage={contextUsage} />
         <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgetGroups.belowEditor} placement="belowEditor" />
       </div>

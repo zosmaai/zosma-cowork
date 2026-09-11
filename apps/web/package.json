@@ -37,7 +37,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"packages/**/*.test.mjs\" \"public/**/*.test.mjs\"",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
+    "release": "pnpm version patch --no-git-tag-version && pnpm run build && pnpm publish --access public",
     "dev:all": "node scripts/dev-daemon.mjs"
   },
   "dependencies": {
@@ -53,18 +53,6 @@
     "undici": "8.10.0"
   },
   "packageManager": "pnpm@10.33.2",
-  "pnpm": {
-    "overrides": {
-      "eslint-plugin-react-hooks": "7.0.1",
-      "exceljs>uuid": "11.1.1",
-      "@eslint/eslintrc>js-yaml": "4.3.2"
-    },
-    "onlyBuiltDependencies": [
-      "@google/genai",
-      "protobufjs",
-      "unrs-resolver"
-    ]
-  },
   "devDependencies": {
     "@lobehub/icons": "^5.6.0",
     "@tailwindcss/postcss": "^4.2.2",

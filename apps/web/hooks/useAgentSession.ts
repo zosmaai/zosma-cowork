@@ -20,7 +20,7 @@ import {
 } from "@/lib/api-v1-client";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { clearDraft, rekeyDraft, restoreDraftSubmission } from "@/lib/draft-store";
 import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
@@ -272,6 +272,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState<string | null>(null);
+  const [sessionLost, setSessionLost] = useState(false);
+
+  // Single funnel for every daemon command: a 404 means the session record no
+  // longer exists server-side (died/was archived). Surface the "session lost"
+  // banner once instead of a bare error toast on each failed command.
+  const sendCommand = useCallback(async <T,>(sid: string, command: Record<string, unknown>): Promise<T> => {
+    try {
+      return await sendAgentCommand<T>(sid, command);
+    } catch (e) {
+      if (e instanceof AgentCommandError && e.status === 404) setSessionLost(true);
+      throw e;
+    }
+  }, []);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [entryIds, setEntryIds] = useState<string[]>([]);
@@ -487,6 +500,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setEntryIds(d.context.entryIds ?? []);
       setCurrentModelOverride((current) => modelSwitchPendingRef.current ? current : null);
       setError(null);
+      setSessionLost(false);
       if (d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
         setThinkingLevel(d.context.thinkingLevel as ThinkingLevelOption);
       }
@@ -533,7 +547,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadTools = useCallback(async (sid: string) => {
     try {
-      const tools = await sendAgentCommand<ToolEntry[]>(sid, { type: "get_tools" });
+      const tools = await sendCommand<ToolEntry[]>(sid, { type: "get_tools" });
       if (tools) {
         const { getPresetFromTools } = await import("@/lib/tool-presets");
         setToolPresetState(getPresetFromTools(tools));
@@ -541,7 +555,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to load tools:", e);
     }
-  }, [setToolPresetState]);
+  }, [setToolPresetState, sendCommand]);
 
   const promoteNewSession = useCallback((messageCount = 0, firstMessage = "(no messages)") => {
     const sid = sessionIdRef.current;
@@ -629,10 +643,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensureNewSession();
     if (!sid) return;
 
-    const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+    const state = await sendCommand<AgentStateResponse>(sid, { type: "get_state" });
     if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
     setSystemPrompt(state.systemPrompt ?? "");
-  }, [ensureNewSession]);
+  }, [ensureNewSession, sendCommand]);
 
   const loadSlashCommands = useCallback(async () => {
     const sid = sessionIdRef.current ?? await ensureNewSession();
@@ -642,7 +656,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     setSlashCommandsLoading(true);
     try {
-      const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
+      const data = await sendCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
       const commands = data?.commands ?? [];
       setSlashCommands(commands);
       return commands;
@@ -653,7 +667,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setSlashCommandsLoading(false);
     }
-  }, [ensureNewSession]);
+  }, [ensureNewSession, sendCommand]);
 
   const cancelEventStreamGrace = useCallback(() => {
     eventStreamGraceGenerationRef.current += 1;
@@ -703,7 +717,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setExtensionDialog((current) => current?.id === request.id ? null : current);
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, {
+      await sendCommand(sid, {
         type: "extension_ui_response",
         id: request.id,
         ...response,
@@ -711,13 +725,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to send extension UI response:", e);
     }
-  }, []);
+  }, [sendCommand]);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, {
+      await sendCommand(sid, {
         type: "extension_ui_input",
         id: request.id,
         data,
@@ -725,7 +739,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to send extension custom UI input:", e);
     }
-  }, []);
+  }, [sendCommand]);
 
   const addNotice = useCallback((notice: { id?: string; message: string; type?: NoticeType }) => {
     const message = notice.message.trim();
@@ -739,6 +753,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       },
     });
   }, []);
+
+
+  // Reload the session from disk and re-establish the event stream. Cleared
+  // banner on success; stays up if the record is still gone.
+  const resumeSession = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const restored = await loadSession(sid, true, true);
+    if (restored) {
+      setSessionLost(false);
+      setError(null);
+    }
+  }, [loadSession]);
 
   const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
     if (isBlockingExtensionUiRequest(request)) onAttentionNeeded?.(request);
@@ -1291,12 +1318,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (selectedModel) {
           setPendingModel(selectedModel);
           if (existingSid) {
-            await sendAgentCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
+            await sendCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
           }
         }
         await ensureEventsConnected(sid);
         promptRequestStarted = true;
-        await sendAgentCommand(sid, {
+        await sendCommand(sid, {
           type: "prompt",
           message,
           ...(piImages?.length ? { images: piImages } : {}),
@@ -1306,7 +1333,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         sentSessionId = session.id;
         await ensureEventsConnected(session.id);
         promptRequestStarted = true;
-        await sendAgentCommand(session.id, {
+        await sendCommand(session.id, {
           type: "prompt",
           message,
           ...(piImages?.length ? { images: piImages } : {}),
@@ -1350,7 +1377,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, sendCommand]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1361,7 +1388,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error("Unable to create a session for the shell command");
-      await sendAgentCommand(sid, {
+      await sendCommand(sid, {
         type: "bash",
         command,
         excludeFromContext,
@@ -1377,7 +1404,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setPendingBash(null);
       setBashRunning(false);
     }
-  }, [addNotice, composerDraftKey, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
+  }, [addNotice, composerDraftKey, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session, sendCommand]);
   executeBashRef.current = executeBash;
 
   const handleAbort = useCallback(async () => {
@@ -1385,18 +1412,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     if (bashRunningRef.current) {
       try {
-        await sendAgentCommand(sid, { type: "abort_bash" });
+        await sendCommand(sid, { type: "abort_bash" });
       } catch (e) {
         console.error("Failed to abort bash:", e);
       }
       return;
     }
     try {
-      await sendAgentCommand(sid, { type: "abort" });
+      await sendCommand(sid, { type: "abort" });
     } catch (e) {
       console.error("Failed to abort:", e);
     }
-  }, []);
+  }, [sendCommand]);
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -1404,7 +1431,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setForkingEntryId(entryId);
     try {
-      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string }>(sid, {
+      const result = await sendCommand<{ cancelled?: boolean; newSessionId?: string }>(sid, {
         type: "fork",
         entryId,
       });
@@ -1417,16 +1444,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setForkingEntryId(null);
     }
-  }, [onSessionForked]);
+  }, [onSessionForked, sendCommand]);
 
   const handleNavigate = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
     const sid = sessionIdRef.current;
     if (!sid) return;
-    sendAgentCommand(sid, { type: "navigate_tree", targetId: entryId }).catch(() => {});
+    sendCommand(sid, { type: "navigate_tree", targetId: entryId }).catch(() => {});
     setActiveLeafId(entryId);
     await loadContext(sid, entryId);
-  }, [loadContext]);
+  }, [loadContext, sendCommand]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current) return;
@@ -1435,9 +1462,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     await loadContext(sid, leafId);
     if (leafId) {
-      sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
+      sendCommand(sid, { type: "navigate_tree", targetId: leafId }).catch(() => {});
     }
-  }, [loadContext]);
+  }, [loadContext, sendCommand]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (isNew) {
@@ -1448,7 +1475,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
       if (!sid) return;
       try {
-        await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+        await sendCommand(sid, { type: "set_model", provider, modelId });
       } catch (e) {
         console.error("Failed to set model:", e);
       }
@@ -1462,7 +1489,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setCurrentModelOverride(target);
     setModelSwitching(true);
     try {
-      await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+      await sendCommand(sid, { type: "set_model", provider, modelId });
       // Pi persists model_change synchronously. Reload the canonical session so
       // the model, thinking level, and active leaf all advance together.
       modelSwitchPendingRef.current = false;
@@ -1482,7 +1509,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       modelSwitchPendingRef.current = false;
       setModelSwitching(false);
     }
-  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel]);
+  }, [addNotice, currentModelOverride, isNew, loadSession, setNewSessionModel, sendCommand]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -1491,7 +1518,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setCompactError(null);
     setCompactResult(null);
     try {
-      const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
+      const result = await sendCommand<CompactCommandResult>(sid, { type: "compact" });
       setCompactResult(readCompactResult(result, "manual"));
       await loadSession(sid, true);
     } catch (e) {
@@ -1500,7 +1527,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setIsCompacting(false);
     }
-  }, [isCompacting, loadSession]);
+  }, [isCompacting, loadSession, sendCommand]);
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
@@ -1553,7 +1580,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setIsCompacting(true);
           setCompactError(null);
           setCompactResult(null);
-          const result = await sendAgentCommand<CompactCommandResult>(sid, {
+          const result = await sendCommand<CompactCommandResult>(sid, {
             type: "compact",
             ...(args ? { customInstructions: args } : {}),
           });
@@ -1564,7 +1591,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         case "reload": {
           if (!sid) return complete({ handled: true, error: "No active session to reload" });
-          await sendAgentCommand(sid, { type: "reload" });
+          await sendCommand(sid, { type: "reload" });
           await Promise.all([
             loadSession(sid, false, true),
             loadTools(sid),
@@ -1577,14 +1604,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         case "name": {
           if (!sid) return complete({ handled: true, error: "No active session to name" });
           if (!args) return complete({ handled: true, error: "Usage: /name <name>" });
-          await sendAgentCommand(sid, { type: "set_session_name", name: args });
+          await sendCommand(sid, { type: "set_session_name", name: args });
           if (await loadSession(sid)) promoteNewSession();
           return complete({ handled: true, message: `Session renamed to ${args}` });
         }
 
         case "session": {
           if (!sid) return complete({ handled: true, error: "No active session" });
-          const stats = await sendAgentCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
+          const stats = await sendCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
           if (stats) {
             setSessionStatsOverride(stats);
           }
@@ -1594,7 +1621,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         case "copy": {
           if (!sid) return complete({ handled: true, error: "No active session" });
-          const data = await sendAgentCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
+          const data = await sendCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
           const textToCopy = data?.text ?? "";
           if (!textToCopy) return complete({ handled: true, error: "No assistant message to copy" });
           await navigator.clipboard.writeText(textToCopy);
@@ -1628,7 +1655,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     try {
-      await sendAgentCommand(sid, {
+      await sendCommand(sid, {
         type: "prompt",
         message,
         streamingBehavior: behavior,
@@ -1667,7 +1694,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, { type: "abort_compaction" });
+      await sendCommand(sid, { type: "abort_compaction" });
     } catch (e) {
       console.error("Failed to abort compaction:", e);
     }
@@ -1677,7 +1704,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      const result = await sendAgentCommand<{ steering?: string[]; followUp?: string[] }>(sid, { type: "clear_queue" });
+      const result = await sendCommand<{ steering?: string[]; followUp?: string[] }>(sid, { type: "clear_queue" });
       // clearQueue also emits an empty queue_update, but that only reaches us
       // while SSE is connected — clear locally so idle recalls update the UI.
       setQueuedMessages({ steering: [], followUp: [] });
@@ -1700,7 +1727,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, { type: "set_thinking_level", level });
+      await sendCommand(sid, { type: "set_thinking_level", level });
     } catch (e) {
       console.error("Failed to set thinking level:", e);
     }
@@ -1713,7 +1740,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, { type: "set_tools", toolNames });
+      await sendCommand(sid, { type: "set_tools", toolNames });
     } catch (e) {
       console.error("Failed to set tools:", e);
     }
@@ -1905,6 +1932,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     data, loading, error, activeLeafId, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
+    sessionLost, resumeSession,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
