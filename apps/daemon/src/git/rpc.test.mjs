@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmdirSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { GIT_RPC_OPS, handleGitRpc } from "./rpc.ts";
@@ -23,7 +23,7 @@ test.before(() => {
 
 test.after(() => {
   for (const d of [successDir, validateDir, deniedDir]) {
-    rmdirSync(d, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
   }
 });
 

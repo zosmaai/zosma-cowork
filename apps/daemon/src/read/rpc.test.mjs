@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { READ_RPC_OPS, handleReadRpc } from "./rpc.ts";
@@ -16,8 +16,8 @@ test.before(() => {
 });
 
 test.after(() => {
-  try { rmdirSync(rootDir, { recursive: true }); } catch { /* gone */ }
-  try { rmdirSync(deniedDir, { recursive: true }); } catch { /* gone */ }
+  try { rmSync(rootDir, { recursive: true }); } catch { /* gone */ }
+  try { rmSync(deniedDir, { recursive: true }); } catch { /* gone */ }
 });
 
 test("read ops are dispatched by the server op registry", () => {
@@ -122,7 +122,7 @@ test("read:allow-root admits a new root for cwd-gated read ops", async () => {
     const after = await handleReadRpc({ type: "read:plugins-list", cwd: newRoot });
     assert.notEqual(after.status, 403);
   } finally {
-    try { rmdirSync(newRoot, { recursive: true }); } catch { /* gone */ }
+    try { rmSync(newRoot, { recursive: true }); } catch { /* gone */ }
   }
 });
 

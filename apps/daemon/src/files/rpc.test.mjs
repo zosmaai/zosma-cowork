@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, rmdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { FILES_RPC_OPS, handleFilesRpc } from "./rpc.ts";
@@ -25,7 +25,7 @@ test.before(() => {
 
 test.after(() => {
   for (const d of [rootDir, deniedDir]) {
-    rmdirSync(d, { recursive: true, force: true });
+    rmSync(d, { recursive: true, force: true });
   }
 });
 
@@ -120,7 +120,7 @@ test("files:read cannot cross into another allowed workspace", async () => {
   writeFileSync(path.join(otherRoot, "private.txt"), "private");
   const r = await handleFilesRpc({ type: "files:read", cwd: rootDir, path: "other/private.txt" });
   assert.equal(r.status, 404); // not under this cwd at all
-  rmdirSync(otherRoot, { recursive: true, force: true });
+  rmSync(otherRoot, { recursive: true, force: true });
 });
 
 test("files:read truncates oversized content", async () => {
