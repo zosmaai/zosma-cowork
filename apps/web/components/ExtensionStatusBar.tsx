@@ -12,6 +12,9 @@ export function sanitizeExtensionStatusText(text: string): string {
 }
 
 export function formatExtensionStatusLine(statuses: ExtensionStatusItem[]): string {
+  // Daemon state can carry a non-array here when a session degrades (LLM
+  // unreachable, dead session). Never crash the whole UI over a status line.
+  if (!Array.isArray(statuses)) return "";
   return [...statuses]
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(({ text }) => sanitizeExtensionStatusText(text))
@@ -22,6 +25,7 @@ export function partitionExtensionWidgets(widgets: ExtensionWidgetItem[]): {
   aboveEditor: ExtensionWidgetItem[];
   belowEditor: ExtensionWidgetItem[];
 } {
+  if (!Array.isArray(widgets)) return { aboveEditor: [], belowEditor: [] };
   return {
     aboveEditor: widgets.filter(({ placement }) => placement === "aboveEditor"),
     belowEditor: widgets.filter(({ placement }) => placement === "belowEditor"),

@@ -101,3 +101,16 @@ test("marks the physical shelf placement", () => {
   assert.match(html, /extension-status-shelf has-widgets is-above-editor/);
   assert.doesNotMatch(html, /has-status/);
 });
+
+test("tolerates non-array statuses from a degraded daemon state", () => {
+  assert.equal(formatExtensionStatusLine(null), "");
+  assert.equal(formatExtensionStatusLine({ key: "x" }), "");
+  const html = renderStatusBar({ statuses: { key: "x", text: "y" } });
+  assert.doesNotMatch(html, /extension-status-line/);
+});
+
+test("tolerates non-array widgets from a degraded daemon state", () => {
+  const widgets = partitionExtensionWidgets({ key: "x", lines: ["y"] });
+  assert.deepEqual(widgets.aboveEditor, []);
+  assert.deepEqual(widgets.belowEditor, []);
+});

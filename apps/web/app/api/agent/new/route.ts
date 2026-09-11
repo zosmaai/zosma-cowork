@@ -41,19 +41,23 @@ export async function POST(req: Request) {
 
     // Daemon handles session creation; one-time unique key avoids UID reuse.
     const tempKey = `__new__${randomUUID()}`;
+
+    // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
+    // in sync so the new cwd is immediately readable via /api/files, and grant
+    // the same root to the daemon so pi:start's file gate admits this cwd.
+    // Grant BEFORE start: the daemon's allowed-roots set is in-memory and empty
+    // after a daemon restart — pi:start is root-gated, so start-first wedged
+    // every new session on a fresh daemon (root was never granted).
+    allowFileRoot(cwd);
+    await piAllowRoot(cwd);
+    invalidateSessionListCache();
+
     const handle = await piStart(cwd, tempKey, {
       ...(provider && modelId ? { model: { provider, modelId } } : {}),
       ...(thinkingLevel ? { thinkingLevel: String(thinkingLevel) } : {}),
       ...(toolNames ? { toolNames } : {}),
     });
     const realSessionId = handle.sessionId;
-
-    // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
-    // in sync so the new cwd is immediately readable via /api/files, and grant
-    // the same root to the daemon so pi:start's file gate admits this cwd.
-    allowFileRoot(cwd);
-    await piAllowRoot(cwd);
-    invalidateSessionListCache();
 
     const state = await piCommand(realSessionId, { type: "get_state" }) as {
       model?: { id: string; provider: string };
