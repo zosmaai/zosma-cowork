@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CI guard: the port contract between the shell and the web UI.
-// SHARED_PORT (src-tauri/src/lib.rs) and the `next` scripts (web/package.json)
+// SHARED_PORT (apps/desktop/src/lib.rs) and the `next` scripts (apps/web/package.json)
 // must agree on one port. Fails the build if they diverge.
 
 import { readFileSync } from "node:fs";
@@ -9,12 +9,12 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const libRs = readFileSync(join(root, "src-tauri/src/lib.rs"), "utf8");
-const pkg = JSON.parse(readFileSync(join(root, "web/package.json"), "utf8"));
+const libRs = readFileSync(join(root, "apps/desktop/src/lib.rs"), "utf8");
+const pkg = JSON.parse(readFileSync(join(root, "apps/web/package.json"), "utf8"));
 
 const m = libRs.match(/SHARED_PORT:\s*u16\s*=\s*(\d+)/);
 if (!m) {
-  console.error("SHARED_PORT not found in src-tauri/src/lib.rs");
+  console.error("SHARED_PORT not found in apps/desktop/src/lib.rs");
   process.exit(1);
 }
 const port = m[1];

@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+# oauth-broker is a standalone npm (GCloud Functions) app — not a pnpm package.
+exclude:
+  - "apps/oauth-broker"
+# D6: Next standalone + Turbopack + Tauri resource bundling choke on pnpm's
+# isolated symlink layout (broken symlinks in .next/standalone). Hoisted =
+# real dirs, mirrors the old per-app node_modules topology the toolchain
+# was proven on. Revisit if a strict-layout need appears.
+node-linker: hoisted

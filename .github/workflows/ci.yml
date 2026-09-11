@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm -C web install --frozen-lockfile
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: website
+        working-directory: apps/website
     steps:
       - uses: actions/checkout@v4
 
@@ -88,7 +88,7 @@ jobs:
         # tauri.conf.json's bundle.resources declares binaries/node*, so the
         # build script needs it at compile time (the binary itself is
         # gitgenerated at build time by fetch-node.mjs).
-        run: node src-tauri/scripts/fetch-node.mjs
+        run: node apps/desktop/scripts/fetch-node.mjs
 
       - name: Build web server (standalone dist-server resource)
         # tauri.conf.json's bundle.resources also declares

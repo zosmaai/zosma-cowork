@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       # The web app is the repository's JavaScript workspace. Audit its lockfile
       # directly; the root lockfile is a stale pre-workspace projection.
       - run: pnpm -C web install --frozen-lockfile
@@ -55,7 +55,7 @@ jobs:
       # build-tooling-only advisory can't red-gate unrelated PRs. Every
       # allowlist entry carries a reason + removal condition. See issue #264.
       - name: Audit web dependencies
-        working-directory: web
+        working-directory: apps/web
         run: npx audit-ci --config ../audit-ci.jsonc
 
   cargo-audit:

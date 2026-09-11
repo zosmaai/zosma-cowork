@@ -1,1 +1,42 @@
-{"name": "zosma-cowork","version": "0.3.0","private": true,"description": "Zosma Cowork — thin Tauri shell around the Zosma Harness web UI","packageManager": "pnpm@10.33.2","scripts": {"dev": "tauri dev","build": "tauri build","tauri": "tauri","web:dev": "pnpm -C web dev","web:build": "pnpm -C web build"},"devDependencies": {"@tauri-apps/cli": "^2.11.2"}}
+{
+  "name": "zosma-cowork",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Zosma Cowork — pnpm monorepo: desktop (Tauri), web (Next.js), daemon, docs",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "concurrently --crash-first \"pnpm -C apps/web dev:all\" \"pnpm -C apps/desktop dev\"",
+    "build": "pnpm -C apps/desktop build",
+    "tauri": "pnpm -C apps/desktop tauri",
+    "dev:docs": "pnpm -C apps/website dev",
+    "web:dev": "pnpm -C apps/web dev:all",
+    "web:build": "pnpm -C apps/web build",
+    "desktop:dev": "pnpm -C apps/desktop dev",
+    "desktop:build": "pnpm -C apps/desktop build",
+    "website:dev": "pnpm -C apps/website dev",
+    "website:build": "pnpm -C apps/website build",
+    "daemon:dev": "pnpm -C apps/daemon start",
+    "daemon:build": "pnpm -C apps/daemon build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "eslint-plugin-react-hooks": "7.0.1",
+      "exceljs>uuid": "11.1.1",
+      "@eslint/eslintrc>js-yaml": "4.3.2"
+    },
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild",
+      "sharp",
+      "protobufjs",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
+    "concurrently": "^10.0.0"
+  }
+}

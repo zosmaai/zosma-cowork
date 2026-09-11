@@ -89,21 +89,21 @@ jobs:
             const ver = process.env.TAG.replace(/^v/, '');
 
             // Update tauri.conf.json
-            const tauriConf = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf-8'));
+            const tauriConf = JSON.parse(fs.readFileSync('apps/desktop/tauri.conf.json', 'utf-8'));
             tauriConf.version = ver;
-            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(tauriConf, null, 2) + '\n');
+            fs.writeFileSync('apps/desktop/tauri.conf.json', JSON.stringify(tauriConf, null, 2) + '\n');
             console.log('tauri.conf.json updated');
 
             // Update Cargo.toml
-            let cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf-8');
+            let cargo = fs.readFileSync('apps/desktop/Cargo.toml', 'utf-8');
             cargo = cargo.replace(/^version = \".*\"/m, 'version = \"' + ver + '\"');
-            fs.writeFileSync('src-tauri/Cargo.toml', cargo);
+            fs.writeFileSync('apps/desktop/Cargo.toml', cargo);
             console.log('Cargo.toml updated');
           "
 
       - name: Fetch bundled Node.js
         shell: bash
-        run: node src-tauri/scripts/fetch-node.mjs
+        run: node apps/desktop/scripts/fetch-node.mjs
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -210,8 +210,8 @@ jobs:
       #    client-secret: ${{ secrets.DIGICERT_CLIENT_SECRET }}
       #    access-password: ${{ secrets.DIGICERT_ACCESS_PASSWORD }}
       #    files: |
-      #      src-tauri/target/release/bundle/nsis/*.exe
-      #      src-tauri/target/release/bundle/msi/*.msi
+      #      apps/desktop/target/release/bundle/nsis/*.exe
+      #      apps/desktop/target/release/bundle/msi/*.msi
       #    timestamp: http://timestamp.digicert.com
 
       - name: Build & sign Tauri app
