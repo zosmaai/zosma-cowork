@@ -14,7 +14,7 @@ const switchSource = source.slice(
 
 test("existing-session model changes are optimistic and serialized", () => {
   const optimisticIndex = switchSource.indexOf("setCurrentModelOverride(target)");
-  const requestIndex = switchSource.indexOf("await sendAgentCommand", optimisticIndex);
+  const requestIndex = switchSource.indexOf("await sendCommand", optimisticIndex);
 
   assert.match(switchSource, /if \(!sid \|\| modelSwitchPendingRef\.current\) return/);
   assert.ok(optimisticIndex >= 0);

@@ -731,7 +731,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   const sessionLostBanner = sessionLost ? (
     <div
       role="alert"
-      className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-(--base-solid) px-3 py-1.5 text-xs text-[var(--text-dim)]"
+      className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-(--base-solid) px-3 py-1.5 text-xs text-(--text-dim)"
     >
       <span>Session lost — this session is no longer reachable.</span>
       <button
