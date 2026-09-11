@@ -80,6 +80,27 @@ export { artifactReference, attachmentReference } from "./refs.ts";
 export { MESSAGE, AGENT, eventTags, message, agent } from "./events.ts";
 export type { MessageEventPayload, AgentEventPayload } from "./events.ts";
 
+// --- outbound control-plane frames (ZOS-96) ---
+export {
+  HELLO as CONTROL_HELLO,
+  RPC_REQUEST as CONTROL_RPC_REQUEST,
+  RPC_RESPONSE as CONTROL_RPC_RESPONSE,
+  ACK as CONTROL_ACK,
+  PING as CONTROL_PING,
+  PONG as CONTROL_PONG,
+  WATERMARK as CONTROL_WATERMARK,
+  CONTROL_TAGS,
+  FRAME_VALIDATORS,
+  isControlTag,
+  hello as controlHello,
+  rpcRequest as controlRpcRequest,
+  rpcResponse as controlRpcResponse,
+  ack as controlAck,
+  watermark as controlWatermark,
+  ping as controlPing,
+  pong as controlPong,
+} from "./control-plane.ts";
+
 // --- responses (daemon -> client terminal) ---
 export { HELLO_RESPONSE, COMMAND_RESPONSE, responseTags, helloResponse, command, createHelloResponseEnvelope } from "./responses.ts";
 export type { HelloResponsePayload, CommandResponsePayload } from "./responses.ts";

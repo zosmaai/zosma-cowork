@@ -24,6 +24,8 @@
   "devDependencies": {
     "@types/node": "^26.5.0",
     "@types/proper-lockfile": "4.1.4",
+    "@types/ws": "^8.18.1",
+    "@zosma-cowork/control-plane": "workspace:*",
     "typescript": "^5.9.3"
   },
   "dependencies": {
@@ -33,6 +35,7 @@
     "@hono/node-server": "^2.1.1",
     "@zosma-cowork/protocol": "workspace:*",
     "hono": "^4.13.7",
-    "proper-lockfile": "4.1.2"
+    "proper-lockfile": "4.1.2",
+    "ws": "^8.21.3"
   }
 }
