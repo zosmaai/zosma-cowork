@@ -1,4 +1,10 @@
-import type { ResourceDiagnostic } from "@earendil-works/pi-coding-agent";
+// Resource/loader diagnostics surfaced by the daemon read ops — structural
+// mirror of the SDK shape the UI consumes (type/source/message).
+export interface ResourceDiagnostic {
+  type: "warning" | "error" | string;
+  message: string;
+  source?: string;
+}
 
 export interface SkillSearchResult {
   package: string;

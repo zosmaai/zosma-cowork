@@ -24,6 +24,8 @@ export interface SessionRecord {
   handle: SessionHandle;
   adapterId?: string;
   workspace?: string;
+  /** Absolute path to the persisted native session file, when one was written. */
+  sessionFile?: string;
   pid?: number;
   createdAt?: number;
 }
@@ -32,6 +34,7 @@ const sessionRecordSpec = {
   handle: sessionHandleSchema,
   adapterId: optional(nonEmptyString("adapterId")),
   workspace: optional(nonEmptyString("workspace")),
+  sessionFile: optional(nonEmptyString("sessionFile")),
   pid: optional(number("pid")),
   createdAt: optional(number("createdAt")),
 } satisfies { [K: string]: import("./schema.ts").Schema<unknown> };

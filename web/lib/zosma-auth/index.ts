@@ -23,7 +23,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
-import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { agentDir as getAgentDir } from "../agent-dir";
+import { piAuth } from "../daemon-client";
 import { invalidateModelsCache } from "../models-cache";
 import { generateCodeVerifier, generateState, sha256Base64url } from "./crypto";
 import { deletePending, loadPending, savePending } from "./state";
@@ -352,8 +353,9 @@ declare global {
 }
 
 /**
- * Production dependency wiring: web models-cache invalidation + live
- * ModelRuntime reads.
+ * Production dependency wiring: web models-cache invalidation + daemon
+ * provider-model reads (roadmap item 6 end-to-end: ModelRuntime lives in the
+ * daemon; web relays via the auth:* ops).
  */
 export function productionDeps(): ZosmaAuthDeps {
   return {
@@ -361,12 +363,10 @@ export function productionDeps(): ZosmaAuthDeps {
       invalidateModelsCache();
     },
     getAvailable: async (providerId) => {
-      const runtime = await ModelRuntime.create();
-      const provider = runtime.getProvider(providerId);
-      if (!provider) return [];
-      // Probed 2026-08-26: provider exposes getModels(), not a models array.
-      const models = provider.getModels?.() ?? [];
-      return models.map((m) => ({ id: m.id, provider: providerId }));
+      const { models } = await piAuth("provider-models", { providerId }) as {
+        models: Array<{ id: string; provider: string }>;
+      };
+      return models;
     },
   };
 }

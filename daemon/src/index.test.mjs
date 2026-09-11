@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run, resolveToken } from "./index.ts";
+import { run, resolveToken, resolvePort } from "./index.ts";
 import { createLogger } from "./log.ts";
 
 function wait(ms) {
@@ -17,6 +17,13 @@ test("resolveToken prefers env, else persists a fresh token file", () => {
   const token2 = resolveToken(dir, {});
   assert.ok(token2.length > 8);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("resolvePort reads a valid ZOSMA_DAEMON_PORT, else undefined", () => {
+  assert.equal(resolvePort({ ZOSMA_DAEMON_PORT: "64713" }), 64713);
+  assert.equal(resolvePort({}), undefined);
+  assert.equal(resolvePort({ ZOSMA_DAEMON_PORT: "abc" }), undefined);
+  assert.equal(resolvePort({ ZOSMA_DAEMON_PORT: "70000" }), undefined);
 });
 
 async function stopHandle(handle) {

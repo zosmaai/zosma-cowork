@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveModelDiscoveryAuth } from "@/lib/model-discovery-auth";
+import { legacyDaemonError, piAuth } from "@/lib/daemon-client";
 import { buildModelsListUrl, parseDiscoveredModels } from "@/lib/model-discovery";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Base URL is invalid" }, { status: 400 });
     }
 
-    const auth = await resolveModelDiscoveryAuth(providerName, body.provider);
+    let auth: { apiKey?: string; headers: Record<string, string> };
+    try {
+      auth = await piAuth("resolve-discovery", {
+        providerName,
+        providerConfig: body.provider,
+      }) as { apiKey?: string; headers: Record<string, string> };
+    } catch (e) {
+      const { status, error } = legacyDaemonError(e);
+      return NextResponse.json({ error }, { status });
+    }
     if (typeof body.provider.apiKey === "string" && body.provider.apiKey.trim() && !auth.apiKey) {
       return NextResponse.json({ error: `No API key found for "${providerName}"` }, { status: 400 });
     }

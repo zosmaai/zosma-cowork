@@ -1,13 +1,12 @@
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { buildOAuthProviderList } from "@/lib/provider-listing";
-import { collectProviderListingInputs } from "@/lib/provider-listing-runtime";
+import { piAuth } from "@/lib/daemon-client";
+import { buildOAuthProviderList, type ProviderListingInput } from "@/lib/provider-listing";
 
 export const dynamic = "force-dynamic";
 
 // Providers that declare an OAuth login method, including anthropic
-// (Claude Pro/Max) — see lib/provider-listing.ts (#309).
+// (Claude Pro/Max) — see lib/provider-listing.ts (#309). The daemon builds
+// the provider listing from ModelRuntime; this route filters to OAuth.
 export async function GET() {
-  const modelRuntime = await ModelRuntime.create();
-  const providers = buildOAuthProviderList(await collectProviderListingInputs(modelRuntime));
-  return Response.json({ providers });
+  const listing = await piAuth("provider-listing") as Array<Record<string, unknown>>;
+  return Response.json({ providers: buildOAuthProviderList(listing as unknown as ProviderListingInput[]) });
 }

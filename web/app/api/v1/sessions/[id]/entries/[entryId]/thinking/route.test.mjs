@@ -1,115 +1,46 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
-import { createV1Jiti } from "../../../../../test-helper.mjs";
+import { createV1Jiti, stubDaemon } from "../../../../../test-helper.mjs";
 
 const jiti = createV1Jiti();
-const { GET } = await jiti.import(
-  new URL("./route.ts", import.meta.url).href,
-);
-const { cacheSessionPath } = await jiti.import(
-  "../../../packages/pi-backend/sessions.ts",
-);
+const { GET } = await jiti.import(new URL("./route.ts", import.meta.url).href);
 
-function writeSessionJsonl(dir, id, lines) {
-  const filePath = join(dir, "session.jsonl");
-  const header = `${JSON.stringify({
-    type: "session",
-    version: 3,
-    id,
-    timestamp: "2026-01-01T00:00:00.000Z",
-    cwd: dir,
-  })}\n`;
-  const body = lines.map((line) => `${JSON.stringify(line)}\n`).join("");
-  writeFileSync(filePath, header + body);
-  cacheSessionPath(id, filePath);
-  return filePath;
-}
-
-test("GET .../thinking returns the deferred thinking block under { data }", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "api-v1-thinking-"));
-  const filePath = writeSessionJsonl(
-    dir,
-    "thinking-session",
-    [
-      {
-        type: "message",
-        id: "m1",
-        parentId: null,
-        timestamp: "2026-01-01T00:00:00.100Z",
-        message: { role: "user", content: "hi" },
-      },
-      {
-        type: "message",
-        id: "m2",
-        parentId: "m1",
-        timestamp: "2026-01-01T00:00:00.200Z",
-        message: {
-          role: "assistant",
-          content: [
-            { type: "thinking", thinking: "deferred text" },
-            { type: "text", text: "answer" },
-          ],
-        },
-      },
-    ],
+test("GET .../thinking relays to the daemon and returns the deferred block under { data }", async (t) => {
+  const seen = [];
+  const restore = stubDaemon([
+    (body) => {
+      seen.push(body);
+      return { body: { ok: true, data: { thinking: "deferred text" } } };
+    },
+  ]);
+  t.after(restore);
+  const res = await GET(
+    new Request(
+      "http://localhost/api/v1/sessions/thinking-session/entries/m2/thinking?blockIndex=0",
+    ),
+    { params: Promise.resolve({ id: "thinking-session", entryId: "m2" }) },
   );
-  try {
-    const res = await GET(
-      new Request(
-        "http://localhost/api/v1/sessions/thinking-session/entries/m2/thinking?blockIndex=0",
-      ),
-      { params: Promise.resolve({ id: "thinking-session", entryId: "m2" }) },
-    );
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.data.thinking, "deferred text");
-    assert.equal(body.error, undefined);
-  } finally {
-    rmSync(filePath, { force: true });
-    rmSync(dir, { recursive: true, force: true });
-  }
+  assert.equal(res.status, 200);
+  assert.deepEqual(seen, [
+    { type: "read:session-thinking", sessionId: "thinking-session", entryId: "m2", blockIndex: 0 },
+  ]);
+  const body = await res.json();
+  assert.equal(body.data.thinking, "deferred text");
+  assert.equal(body.error, undefined);
 });
 
-test("GET .../thinking maps a missing thinking block to thinking_block_not_found 404", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "api-v1-thinking-"));
-  const filePath = writeSessionJsonl(
-    dir,
-    "thinking-session",
-    [
-      {
-        type: "message",
-        id: "m1",
-        parentId: null,
-        timestamp: "2026-01-01T00:00:00.100Z",
-        message: { role: "user", content: "hi" },
-      },
-      {
-        type: "message",
-        id: "m2",
-        parentId: "m1",
-        timestamp: "2026-01-01T00:00:00.200Z",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "answer" }],
-        },
-      },
-    ],
+test("GET .../thinking maps a daemon thinking_block_not_found to 404", async (t) => {
+  const restore = stubDaemon([
+    () => ({ status: 404, body: { ok: false, error: "Thinking block not found", code: "thinking_block_not_found" } }),
+  ]);
+  t.after(restore);
+  const res = await GET(
+    new Request(
+      "http://localhost/api/v1/sessions/thinking-session/entries/m2/thinking?blockIndex=0",
+    ),
+    { params: Promise.resolve({ id: "thinking-session", entryId: "m2" }) },
   );
-  try {
-    const res = await GET(
-      new Request(
-        "http://localhost/api/v1/sessions/thinking-session/entries/m2/thinking?blockIndex=0",
-      ),
-      { params: Promise.resolve({ id: "thinking-session", entryId: "m2" }) },
-    );
-    assert.equal(res.status, 404);
-    const body = await res.json();
-    assert.equal(body.error.code, "thinking_block_not_found");
-  } finally {
-    rmSync(filePath, { force: true });
-    rmSync(dir, { recursive: true, force: true });
-  }
+  assert.equal(res.status, 404);
+  const body = await res.json();
+  assert.equal(body.error.code, "thinking_block_not_found");
 });

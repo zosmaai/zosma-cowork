@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { deleteSession, getSessionDetails, renameSession } from "@/lib/session-reader";
+import { daemonConfig, daemonToBackend, piClose, piList, piRead } from "@/lib/daemon-client";
 import { backendErrorResponse } from "@/lib/backend-error-response";
+
+// Session details (daemon read), rename (daemon read), delete (close live
+// session on the daemon first, then delete the session file on the daemon).
 
 export async function GET(
   req: Request,
@@ -9,14 +12,14 @@ export async function GET(
   const { id } = await params;
   const searchParams = new URL(req.url).searchParams;
   try {
-    const details = await getSessionDetails({
+    const details = await piRead("session-details", {
       sessionId: id,
       deferThinking: searchParams.has("deferThinking"),
       deferMedia: searchParams.has("deferMedia"),
     });
     return NextResponse.json(details);
   } catch (error) {
-    const mapped = backendErrorResponse(error);
+    const mapped = backendErrorResponse(daemonToBackend(error) ?? error);
     if (mapped) return mapped;
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -30,10 +33,13 @@ export async function PATCH(
   const { id } = await params;
   try {
     const { name } = await req.json() as { name?: unknown };
-    await renameSession({ sessionId: id, name: name as string });
+    if (typeof name !== "string" || !name) {
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    }
+    await piRead("session-rename", { sessionId: id, name });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const mapped = backendErrorResponse(error);
+    const mapped = backendErrorResponse(daemonToBackend(error) ?? error);
     if (mapped) return mapped;
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -46,10 +52,20 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    await deleteSession({ sessionId: id });
+    // Live sessions are daemon-owned; close on the daemon first so its
+    // SessionStore mapping dies with the session, then delete the file.
+    try {
+      if (daemonConfig()) {
+        const live = (await piList()).some((s) => s.sessionId === id || s.nativeSessionId === id);
+        if (live) await piClose(id);
+      }
+    } catch {
+      // Daemon down — deletion still proceeds; the file is authoritative.
+    }
+    await piRead("session-delete", { sessionId: id });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const mapped = backendErrorResponse(error);
+    const mapped = backendErrorResponse(daemonToBackend(error) ?? error);
     if (mapped) return mapped;
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

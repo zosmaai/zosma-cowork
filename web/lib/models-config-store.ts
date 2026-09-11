@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentDir as getAgentDir } from "./agent-dir";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { invalidateModelsCache } from "./models-cache";
 

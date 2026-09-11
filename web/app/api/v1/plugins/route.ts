@@ -1,27 +1,23 @@
-import { getPiBackend } from "@/lib/pi-backend-host";
 import { apiSuccess, apiErrorResponse } from "@/lib/api-envelope";
-import { BackendError } from "@/packages/pi-backend/errors";
-import type { PluginAction, PluginScope } from "@/packages/pi-backend/contracts";
+import { daemonToBackend, piRead } from "@/lib/daemon-client";
+import { BackendError } from "@/lib/backend-errors";
 
 export const dynamic = "force-dynamic";
 
-// Plugin management surface over /api/v1 (ZOS-82): list installed
-// extensions/skills/prompts/themes, or install/update/remove/disable/enable a
-// package through the transport-neutral pi-backend facade. The handler is
-// transport-neutral — no NextResponse, no spawn, no SDK import. The
-// file-access + project-trust gating lives in the pi-backend facade.
+// Plugin management surface over /api/v1 (ZOS-82), relayed to the daemon:
+// list installed extensions/skills/prompts/themes, or install/update/remove/
+// disable/enable a package. The file-access + project-trust gating lives in
+// the daemon's read:plugins-* ops.
 
 const PLUGIN_ACTIONS = new Set<string>(["install", "remove", "update", "disable", "enable"]);
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const cwd = searchParams.get("cwd");
+  const cwd = searchParams.get("cwd") ?? undefined;
   try {
-    return apiSuccess(
-      await getPiBackend().listPlugins(cwd ? { cwd } : {}),
-    );
+    return apiSuccess(await piRead("plugins-list", { cwd }));
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(daemonToBackend(error) ?? error);
   }
 }
 
@@ -39,14 +35,15 @@ export async function POST(req: Request) {
         new BackendError("invalid_request", `unsupported plugin action: ${body.action}`),
       );
     }
-    const input = {
-      action: body.action as PluginAction,
-      source: body.source,
-      scope: body.scope as PluginScope,
-      cwd: body.cwd,
-    };
-    return apiSuccess(await getPiBackend().managePlugin(input));
+    return apiSuccess(
+      await piRead("plugins-manage", {
+        action: body.action,
+        source: body.source,
+        scope: body.scope,
+        cwd: body.cwd,
+      }),
+    );
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(daemonToBackend(error) ?? error);
   }
 }

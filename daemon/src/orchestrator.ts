@@ -6,7 +6,7 @@ import { createLogger, Logger } from "./log.ts";
 import { createInstance } from "./instance.ts";
 import type { DaemonInstance } from "./instance.ts";
 import { createDaemonServer } from "./server.ts";
-import type { DaemonServer, Readiness } from "./server.ts";
+import type { DaemonServer, PiRpcHandler, PiStreamHandler, Readiness } from "./server.ts";
 import { createShutdown } from "./signal.ts";
 
 export interface StartArgs {
@@ -16,6 +16,12 @@ export interface StartArgs {
   logger?: Logger;
   /** invoked after the server is bound but before readiness flips to ready */
   onReady?: () => void | Promise<void>;
+  /** Pi adapter dispatch (wired by the entrypoint). Disposed on shutdown. */
+  piRpc?: PiRpcHandler;
+  /** Pi streaming transport for `/ipc/stream` (wired by the entrypoint). */
+  piStream?: PiStreamHandler;
+  /** Fixed port to bind (supervision). Default: ephemeral. */
+  port?: number;
   signals?: NodeJS.Signals[];
   /** override exit (tests). default: process.exit */
   exit?: (code: number) => void;
@@ -41,7 +47,13 @@ export async function startDaemon(args: StartArgs): Promise<Daemon> {
   }
   logger.info("daemon started", { id: instance.id, dataDir: instance.dataDir });
 
-  const server = createDaemonServer({ token: args.token, logger });
+  const server = createDaemonServer({
+    token: args.token,
+    logger,
+    piRpc: args.piRpc,
+    piStream: args.piStream,
+    port: args.port,
+  });
   const { port } = await server.start();
 
   if (args.onReady) await args.onReady();
@@ -54,6 +66,14 @@ export async function startDaemon(args: StartArgs): Promise<Daemon> {
     exit: args.exit,
     onShutdown: async () => {
       server.setReady("shutting-down");
+      // Process supervision: tear down live Pi sessions before freeing the port.
+      if (args.piRpc) {
+        try {
+          await args.piRpc({ type: "pi:dispose" });
+        } catch {
+          // dispose failure must not wedge shutdown
+        }
+      }
       await server.stop();
       instance.release();
       logger.info("daemon stopped");

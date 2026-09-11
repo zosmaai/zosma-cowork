@@ -2784,22 +2784,37 @@ span.token.table {
 }
 .new-session-empty .composer-send {
   position: absolute;
-  right: 12px;
-  bottom: 10px;
+  right: 14px;
+  bottom: 12px;
   z-index: 2;
+  width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
   border-radius: 50% !important;
-  background: color-mix(in srgb, var(--accent) 32%, var(--surface-elevated)) !important;
+  background: color-mix(in srgb, var(--accent) 30%, var(--surface-elevated)) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
   font-size: 0 !important;
-  color: rgba(255,255,255,.52) !important;
+  color: rgba(255,255,255,.5) !important;
+  transition: background .15s, color .15s, transform .12s, box-shadow .15s;
 }
 .new-session-empty .composer-send:not(:disabled) {
   background: var(--accent) !important;
   color: #fff !important;
+  box-shadow: 0 4px 14px rgba(65,118,230,.32);
+}
+.new-session-empty .composer-send:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(65,118,230,.38);
 }
 .new-session-empty .composer-send svg {
-  width: 15px;
-  height: 15px;
+  width: 17px;
+  height: 17px;
+  display: block;
   transform: rotate(-90deg);
+  margin: 1px 0 0 1px;
 }
 .new-session-empty .composer-send svg + * {
   display: none;

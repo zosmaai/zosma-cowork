@@ -78,6 +78,18 @@ export interface Turn {
   cid?: string;
   /** When true the turn exceeded its prompt deadline (deterministic CI signal). */
   timedOut?: boolean;
+  /** Dispatch mode: steer (interrupt live turn) or follow-up (queue behind).
+   *  Plain turns (no mode) are normal prompts. */
+  mode?: "steer" | "follow_up";
+  /** Base64 image attachments (adapter-validated at the boundary). */
+  images?: TurnImage[];
+}
+
+/** One base64-encoded image attachment (Pi-native shape). */
+export interface TurnImage {
+  type: "image";
+  data: string;
+  mimeType: string;
 }
 
 export interface TurnResult {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,8 +11,7 @@ const {
   readModelsConfig,
   writeModelsConfig,
 } = await jiti.import("./models-config-store.ts");
-const { invalidateModelsCache, loadModelsWithCache } = await jiti.import("./models-cache.ts");
-const { buildSessionContext, getSessionEntries } = await jiti.import("./session-reader.ts");
+const { invalidateModelsCache } = await jiti.import("./models-cache.ts");
 
 function createTempRoot(t) {
   const root = mkdtempSync(join(tmpdir(), "pi-web-models-config-"));
@@ -31,7 +30,7 @@ function modelsData(id) {
   };
 }
 
-test("saving models.json atomically invalidates the model-list cache", async (t) => {
+test("saving models.json atomically and busts the daemon model cache", async (t) => {
   const root = createTempRoot(t);
   const modelsPath = join(root, "agent", "models.json");
   const config = {
@@ -43,19 +42,33 @@ test("saving models.json atomically invalidates the model-list cache", async (t)
       },
     },
   };
-  let loads = 0;
-
-  invalidateModelsCache();
-  await loadModelsWithCache(root, async () => modelsData(`load-${++loads}`));
-  writeModelsConfig(config, modelsPath);
-  const reloaded = await loadModelsWithCache(root, async () => modelsData(`load-${++loads}`));
-
-  assert.equal(loads, 2);
-  assert.equal(reloaded.modelList[0].id, "load-2");
-  assert.deepEqual(readModelsConfig(modelsPath), config);
-  assert.deepEqual(readdirSync(join(root, "agent")), ["models.json"]);
-  if (process.platform !== "win32") {
-    assert.equal(statSync(modelsPath).mode & 0o777, 0o600);
+  // Roadmap item 6: the 60s model cache is daemon-owned; saving writes the
+  // file atomically and fires the read:invalidate-models relay.
+  const seen = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    seen.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ ok: true, data: { ok: true } }), { status: 200 });
+  };
+  const oldUrl = process.env.ZOSMA_DAEMON_URL;
+  const oldToken = process.env.ZOSMA_DAEMON_TOKEN;
+  process.env.ZOSMA_DAEMON_URL = "http://127.0.0.1:64713";
+  process.env.ZOSMA_DAEMON_TOKEN = "tok";
+  try {
+    writeModelsConfig(config, modelsPath);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(seen, [{ type: "read:invalidate-models" }]);
+    assert.deepEqual(readModelsConfig(modelsPath), config);
+    assert.deepEqual(readdirSync(join(root, "agent")), ["models.json"]);
+    if (process.platform !== "win32") {
+      assert.equal(statSync(modelsPath).mode & 0o777, 0o600);
+    }
+  } finally {
+    if (oldUrl === undefined) delete process.env.ZOSMA_DAEMON_URL;
+    else process.env.ZOSMA_DAEMON_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.ZOSMA_DAEMON_TOKEN;
+    else process.env.ZOSMA_DAEMON_TOKEN = oldToken;
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -180,8 +193,8 @@ test("an existing session opens after its historical model is removed from confi
       },
     },
   }, modelsPath);
-  const beforeChange = buildSessionContext(getSessionEntries(sessionPath));
-  assert.equal(beforeChange.messages[1].content[0].text, "still readable");
+  const beforeChange = readFileSync(sessionPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(beforeChange.find((e) => e.id === "assistant-1").message.content[0].text, "still readable");
 
   writeModelsConfig({
     providers: {
@@ -193,8 +206,8 @@ test("an existing session opens after its historical model is removed from confi
     },
   }, modelsPath);
 
-  const afterChange = buildSessionContext(getSessionEntries(sessionPath));
-  assert.deepEqual(afterChange.entryIds, ["user-1", "assistant-1"]);
-  assert.equal(afterChange.messages[0].content, "keep this conversation");
-  assert.equal(afterChange.messages[1].content[0].text, "still readable");
+  const afterChange = readFileSync(sessionPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(afterChange.map((e) => e.id), ["existing-session", "model-old", "user-1", "assistant-1"]);
+  assert.equal(afterChange.find((e) => e.id === "user-1").message.content, "keep this conversation");
+  assert.equal(afterChange.find((e) => e.id === "assistant-1").message.content[0].text, "still readable");
 });

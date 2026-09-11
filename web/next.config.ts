@@ -5,22 +5,15 @@ import { fileURLToPath } from "url";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
 const { version } = JSON.parse(readFileSync(join(configDir, "package.json"), "utf8")) as { version: string };
-let piVersion = "unknown";
-try {
-  const piPkgPath = join(configDir, "node_modules/@earendil-works/pi-coding-agent/package.json");
-  piVersion = (JSON.parse(readFileSync(piPkgPath, "utf8")) as { version: string }).version;
-} catch { /* package not found, use default */ }
+// ponytail: Pi's version is daemon-owned now (SDK dep removed from web). The
+// UI label mirrors the daemon's pinned @earendil-works/pi-coding-agent — bump
+// alongside ../daemon/package.json when the SDK upgrades.
+const PI_VERSION = "0.84.2";
 
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: configDir,
-  serverExternalPackages: [
-    "undici",
-    "@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-agent-core",
-    "@earendil-works/pi-ai",
-    "@earendil-works/pi-tui",
-  ],
+  serverExternalPackages: ["undici"],
   allowedDevOrigins: ["127.0.0.1", "192.168.*.*"],
   webpack: (config, { isServer }) => {
   if (isServer) {
@@ -55,7 +48,7 @@ const nextConfig: NextConfig = {
   },
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
-    NEXT_PUBLIC_PI_VERSION: piVersion,
+    NEXT_PUBLIC_PI_VERSION: PI_VERSION,
   },
 };
 

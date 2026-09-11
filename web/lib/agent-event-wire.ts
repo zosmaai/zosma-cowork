@@ -1,25 +1,70 @@
-import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
-
+// Assistant-message wire events (roadmap item 6 end-to-end: the SDK type
+// graph was removed from web). Discriminated union matching the assistant-
+// message event shape the stream reducer consumes.
 export interface AgentEventLike {
   type: string;
   [key: string]: unknown;
 }
 
-type JsonMessageUpdateEvent = Extract<
-  JsonAgentSessionEvent,
-  { type: "message_update" }
->;
+interface BaseAssistantEvent {
+  contentIndex: number;
+}
 
-type JsonAssistantMessageEvent = JsonMessageUpdateEvent["assistantMessageEvent"];
-type JsonToolCallStartEvent = Extract<JsonAssistantMessageEvent, { type: "toolcall_start" }>;
-type JsonToolCallDeltaEvent = Extract<JsonAssistantMessageEvent, { type: "toolcall_delta" }>;
+interface TextStartEvent extends BaseAssistantEvent {
+  type: "text_start";
+}
+interface TextDeltaEvent extends BaseAssistantEvent {
+  type: "text_delta";
+  delta: string;
+}
+interface TextEndEvent extends BaseAssistantEvent {
+  type: "text_end";
+  content: string;
+}
+interface ThinkingStartEvent extends BaseAssistantEvent {
+  type: "thinking_start";
+}
+interface ThinkingDeltaEvent extends BaseAssistantEvent {
+  type: "thinking_delta";
+  delta: string;
+}
+interface ThinkingEndEvent extends BaseAssistantEvent {
+  type: "thinking_end";
+  content: string;
+}
+interface ToolcallStartEvent extends BaseAssistantEvent {
+  type: "toolcall_start";
+  id?: string;
+  toolName?: string;
+}
+interface ToolcallDeltaEvent extends BaseAssistantEvent {
+  type: "toolcall_delta";
+  id?: string;
+  toolName?: string;
+  delta: string;
+}
+interface ToolcallEndEvent extends BaseAssistantEvent {
+  type: "toolcall_end";
+  toolCall: {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
 
 export type ClientAssistantMessageEvent =
-  | Exclude<JsonAssistantMessageEvent, { type: "toolcall_start" | "toolcall_delta" }>
-  | (JsonToolCallStartEvent & { id?: string; toolName?: string })
-  | (JsonToolCallDeltaEvent & { id?: string; toolName?: string });
+  | TextStartEvent
+  | TextDeltaEvent
+  | TextEndEvent
+  | ThinkingStartEvent
+  | ThinkingDeltaEvent
+  | ThinkingEndEvent
+  | ToolcallStartEvent
+  | ToolcallDeltaEvent
+  | ToolcallEndEvent;
 
-export type ClientMessageUpdateEvent = Omit<JsonMessageUpdateEvent, "assistantMessageEvent"> & {
+export type ClientMessageUpdateEvent = {
+  type: "message_update";
   assistantMessageEvent: ClientAssistantMessageEvent;
 };
 
@@ -27,7 +72,6 @@ const OMITTED_EVENT_TYPES = new Set([
   "turn_start",
   "turn_end",
 ]);
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

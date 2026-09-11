@@ -27,7 +27,7 @@ import type {
   UpdateModelResponse,
   PluginsRequestInput,
   PluginsResponse,
-} from "@/packages/pi-backend/contracts";
+} from "./api-contracts.ts";
 
 export class ApiV1Error extends Error {
   constructor(

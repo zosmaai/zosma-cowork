@@ -1,5 +1,5 @@
-import { getPiBackend } from "@/lib/pi-backend-host";
 import { apiSuccess, apiErrorResponse } from "@/lib/api-envelope";
+import { daemonToBackend, piRead } from "@/lib/daemon-client";
 
 export const dynamic = "force-dynamic";
 
@@ -10,14 +10,14 @@ export async function GET(
   const { id, entryId } = await params;
   const blockIndexParam = new URL(req.url).searchParams.get("blockIndex");
   try {
-    const data = await getPiBackend().getSessionThinking({
-      sessionId: id,
-      entryId,
-      blockIndex:
-        blockIndexParam === null ? Number.NaN : Number(blockIndexParam),
-    });
-    return apiSuccess(data);
+    return apiSuccess(
+      await piRead("session-thinking", {
+        sessionId: id,
+        entryId,
+        blockIndex: blockIndexParam === null ? undefined : Number(blockIndexParam),
+      }),
+    );
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(daemonToBackend(error) ?? error);
   }
 }

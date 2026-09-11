@@ -1,130 +1,41 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import {
-  getProjectTrustStatus,
-  projectTrustReloadOptions,
-  trustProject,
-} from "./project-trust.ts";
-
-async function createProjectFixture(t) {
-  const root = await mkdtemp(join(tmpdir(), "pi-web-project-trust-"));
-  const cwd = join(root, "project");
-  const agentDir = join(root, "agent");
-  await mkdir(cwd, { recursive: true });
-  await mkdir(agentDir, { recursive: true });
-  t.after(() => rm(root, { recursive: true, force: true }));
-  return { root, cwd, agentDir };
-}
-
-test("clean projects stay on the normal trusted load path", async (t) => {
-  const { cwd, agentDir } = await createProjectFixture(t);
-
-  assert.deepEqual(getProjectTrustStatus(cwd, agentDir), {
-    requiresTrust: false,
-    trusted: true,
-  });
-  assert.equal(projectTrustReloadOptions(cwd, agentDir), undefined);
-});
-
-test("project extensions execute only after the project is trusted", async (t) => {
-  const { root, cwd, agentDir } = await createProjectFixture(t);
-  const extensionDir = join(cwd, ".pi", "extensions");
-  const marker = join(root, "extension-executed");
-  await mkdir(extensionDir, { recursive: true });
-  await writeFile(
-    join(extensionDir, "probe.js"),
-    `import { writeFileSync } from "node:fs";\nexport default () => { writeFileSync(${JSON.stringify(marker)}, "executed"); };\n`,
-  );
-
-  assert.deepEqual(getProjectTrustStatus(cwd, agentDir), {
-    requiresTrust: true,
-    trusted: false,
-  });
-
-  const restrictedLoader = new DefaultResourceLoader({ cwd, agentDir });
-  await restrictedLoader.reload(projectTrustReloadOptions(cwd, agentDir));
-  assert.equal(existsSync(marker), false);
-  assert.equal(restrictedLoader.getExtensions().extensions.length, 0);
-
-  assert.deepEqual(trustProject(cwd, agentDir), {
-    requiresTrust: true,
-    trusted: true,
-  });
-
-  const trustedLoader = new DefaultResourceLoader({ cwd, agentDir });
-  await trustedLoader.reload(projectTrustReloadOptions(cwd, agentDir));
-  assert.equal(existsSync(marker), true);
-  assert.equal(trustedLoader.getExtensions().extensions.length, 1);
-});
-
-test("the reload resolver reads the latest persisted trust decision", async (t) => {
-  const { cwd, agentDir } = await createProjectFixture(t);
-  await mkdir(join(cwd, ".pi", "extensions"), { recursive: true });
-
-  const reloadOptions = projectTrustReloadOptions(cwd, agentDir);
-  assert.ok(reloadOptions);
-  assert.equal(await reloadOptions.resolveProjectTrust(), false);
-
-  trustProject(cwd, agentDir);
-  assert.equal(await reloadOptions.resolveProjectTrust(), true);
-});
 
 test("all project resource loaders and reloads enforce project trust", async () => {
-  // The factory wiring project-trust reload options lives in the runtime
-  // registry now (the AgentSessionWrapper was split out to runtime.ts); the
-  // sync-project-trust + reload calls live on that wrapper.
-  const managerSource = await readFile(
-    new URL("../packages/pi-backend/runtime-manager.ts", import.meta.url),
-    "utf8",
-  );
-  const wrapperSource = await readFile(
-    new URL("../packages/pi-backend/runtime.ts", import.meta.url),
-    "utf8",
-  );
-  const modelsSource = await readFile(new URL("../packages/pi-backend/models.ts", import.meta.url), "utf8");
-  const skillsSource = await readFile(new URL("./skills-service.ts", import.meta.url), "utf8");
+  // The web-side loaders died in the daemon cutover: the skills/plugins
+  // routes are now relays and the trust gating lives in the daemon's read
+  // services (daemon/src/read/{skills,plugins}.ts), covered by daemon tests.
+  // This test pins the relay shape and the daemon-side gates.
+  const skillsRouteSource = await readFile(new URL("../app/api/skills/route.ts", import.meta.url), "utf8");
   const skillsInstallSource = await readFile(new URL("../app/api/skills/install/route.ts", import.meta.url), "utf8");
   const pluginsSource = await readFile(new URL("../app/api/plugins/route.ts", import.meta.url), "utf8");
+  const daemonSkillsSource = await readFile(new URL("../../daemon/src/read/skills.ts", import.meta.url), "utf8");
+  const daemonSkillsServiceSource = await readFile(new URL("../../daemon/src/read/lib/skills-service.ts", import.meta.url), "utf8");
+  const daemonPluginsSource = await readFile(new URL("../../daemon/src/read/plugins.ts", import.meta.url), "utf8");
 
-  assert.match(managerSource, /const sessionCwd = sessionManager\.getCwd\(\)/);
-  assert.match(managerSource, /projectTrustReloadOptions\(sessionCwd, agentDir\)/);
-  assert.match(managerSource, /resourceLoaderReloadOptions: trustReloadOptions/);
-  assert.equal(
-    Array.from(wrapperSource.matchAll(/this\.syncProjectTrust\(\);\s*await this\.inner\.reload/g)).length,
-    2,
-  );
+  // Web routes are relays — no resource loaders, no npx, no settings manager.
+  assert.doesNotMatch(skillsRouteSource, /DefaultResourceLoader|runNpx/);
+  assert.doesNotMatch(skillsInstallSource, /runNpx|getProjectTrustStatus/);
+  assert.match(skillsInstallSource, /piRead\("skills-install"/);
+  assert.doesNotMatch(pluginsSource, /DefaultPackageManager|SettingsManager/);
+  assert.match(pluginsSource, /piRead\("plugins-manage"/);
 
-  assert.match(modelsSource, /projectTrustReloadOptions\(cwd, agentDir\)/);
-  assert.match(modelsSource, /resourceLoaderReloadOptions: trustReloadOptions/);
-  assert.match(skillsSource, /loader\.reload\(projectTrustReloadOptions\(cwd, agentDir\)\)/);
-  assert.match(pluginsSource, /projectTrusted: projectTrust\.trusted/);
-  assert.match(
-    skillsInstallSource,
-    /getProjectTrustStatus\(cwd, getAgentDir\(\)\)\.trusted/,
-  );
-  assert.equal(
-    Array.from(pluginsSource.matchAll(/projectTrusted: projectTrust\.trusted/g)).length,
-    2,
-  );
-  assert.match(pluginsSource, /scope === "project" && !projectTrust\.trusted/);
+  // The daemon services carry the trust gates.
+  assert.match(daemonSkillsSource, /getProjectTrustStatus\(cwd, getAgentDir\(\)\)\.trusted/);
+  assert.match(daemonSkillsServiceSource, /loader\.reload\(projectTrustReloadOptions\(cwd, agentDir\)\)/);
+  assert.match(daemonPluginsSource, /projectTrusted: projectTrust\.trusted/);
+  assert.match(daemonPluginsSource, /!isGlobal && !projectTrust\.trusted/);
 });
 
-test("the trust API invalidates cached models and restricted runtimes", async () => {
+test("the trust API invalidates cached models after trusting", async () => {
   const source = await readFile(new URL("../app/api/project-trust/route.ts", import.meta.url), "utf8");
-  const managerSource = await readFile(
-    new URL("../packages/pi-backend/runtime-manager.ts", import.meta.url),
-    "utf8",
-  );
 
-  assert.match(source, /trustProject\(result\.cwd, agentDir\)/);
+  assert.match(source, /piRead\("project-trust"/);
   assert.match(source, /invalidateModelsCache\(\)/);
-  assert.match(source, /destroyRpcSessionsForCwd\(result\.cwd\)/);
-  assert.match(source, /hasBusyRpcSessionForCwd\(result\.cwd\)/);
-  assert.match(managerSource, /trackStartingSession\(sessionCwd\)/);
-  assert.match(managerSource, /realpathSync\(resolvedCwd\)/);
+  // The old busy-session wait + in-process session destroy left with the
+  // daemon cutover: live sessions are daemon-owned and the SDK consults trust
+  // markers per tool call, so no destroy is needed.
+  assert.doesNotMatch(source, /RpcSessionForCwd/);
+  assert.doesNotMatch(source, /rpc-manager/);
 });

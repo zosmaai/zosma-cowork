@@ -8,7 +8,7 @@ import { createJiti } from "jiti";
 // cross-test caching is harmless.
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });
 const { apiSuccess, apiErrorResponse } = await jiti.import("./api-envelope.ts");
-const { BackendError } = await jiti.import("../packages/pi-backend/errors.ts");
+const { BackendError } = await jiti.import("./backend-errors.ts");
 const { STATUS_BY_CODE } = await jiti.import("./backend-error-response.ts");
 
 test("apiSuccess wraps any payload in { data } and forwards status/headers", async () => {

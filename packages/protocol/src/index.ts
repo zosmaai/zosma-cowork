@@ -71,8 +71,10 @@ export {
 } from "./envelope.ts";
 
 // --- commands (client -> daemon) ---
-export { HELLO, SAY, STOP, commandTags, hello, say, stop, createHelloEnvelope, createSayEnvelope, createStopEnvelope } from "./commands.ts";
-export type { HelloCommandPayload, SayCommandPayload, StopCommandPayload } from "./commands.ts";
+export { HELLO, SAY, STOP, FILES_LIST, FILES_READ, FILES_STAT, FILES_WRITE, FILES_INDEX, commandTags, hello, say, stop, filesList, filesRead, filesStat, filesWrite, filesIndex, createHelloEnvelope, createSayEnvelope, createStopEnvelope, createFilesListEnvelope, createFilesReadEnvelope, createFilesStatEnvelope, createFilesWriteEnvelope, createFilesIndexEnvelope } from "./commands.ts";
+export type { HelloCommandPayload, SayCommandPayload, StopCommandPayload, FilesListCommandPayload, FilesReadCommandPayload, FilesStatCommandPayload, FilesWriteCommandPayload, FilesIndexCommandPayload } from "./commands.ts";
+export type { ArtifactReference, AttachmentReference } from "./refs.ts";
+export { artifactReference, attachmentReference } from "./refs.ts";
 
 // --- events (daemon -> client stream) ---
 export { MESSAGE, AGENT, eventTags, message, agent } from "./events.ts";

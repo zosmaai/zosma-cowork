@@ -1,184 +1,116 @@
-import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { NextResponse } from "next/server";
+import { daemonConfig, daemonIpc, requireConfig } from "@/lib/daemon-client";
 import { invalidateModelsCache } from "@/lib/models-cache";
 
 export const dynamic = "force-dynamic";
 
-// In-memory registry: loginToken -> resolve/reject for the manualCodeInput promise
-declare global {
-  var __piLoginCallbacks: Map<string, { resolve: (v: string) => void; reject: (e: Error) => void }> | undefined;
-}
+type LoginEvent = Record<string, unknown>;
 
-function getCallbackRegistry() {
-  if (!globalThis.__piLoginCallbacks) globalThis.__piLoginCallbacks = new Map();
-  return globalThis.__piLoginCallbacks;
-}
-
-// POST /api/auth/login/[provider] — frontend sends redirect URL or auth code
+// POST /api/auth/login/[provider] — the UI relays a redirect URL / auth code
+// for a pending manual-code prompt in the daemon's login session.
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ provider: string }> }
+  { params }: { params: Promise<{ provider: string }> },
 ) {
   const { provider } = await params;
-  const { token, code } = (await req.json()) as { token?: string; code?: string };
-
-  if (!token || !code) {
-    return Response.json({ error: "token and code required" }, { status: 400 });
-  }
-
-  const registry = getCallbackRegistry();
-  const callbacks = registry.get(token);
-  if (!callbacks) {
-    return Response.json({ error: "No pending login for token" }, { status: 404 });
-  }
-  // Verify token belongs to this provider (token format: "<provider>-<ts>-<random>")
-  if (!token.startsWith(`${provider}-`)) {
-    return Response.json({ error: "Token does not match provider" }, { status: 400 });
-  }
-
-  callbacks.resolve(code);
-  registry.delete(token);
-  return Response.json({ ok: true, provider });
-}
-
-// GET /api/auth/login/[provider] — SSE stream for OAuth flow
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ provider: string }> }
-) {
-  const { provider } = await params;
-
-  const encoder = new TextEncoder();
-  const send = (controller: ReadableStreamDefaultController, data: unknown) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  const { authId, token, code } = await req.json() as {
+    authId?: string;
+    token?: string;
+    code?: string;
   };
 
-  // AbortController propagates client disconnect into ModelRuntime.login().
-  const abort = new AbortController();
-  req.signal.addEventListener("abort", () => abort.abort());
+  if (!authId || !token || !code) {
+    return Response.json({ error: "authId, token and code required" }, { status: 400 });
+  }
 
-  const stream = new ReadableStream({
+  try {
+    const { status, body } = await daemonIpc({
+      type: "auth:login-callback",
+      authId,
+      token,
+      code,
+      provider,
+    });
+    if (status >= 400) {
+      return Response.json({ error: String(body.error ?? "callback failed") }, { status });
+    }
+    return Response.json({ ok: true, provider });
+  } catch (e) {
+    return Response.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    );
+  }
+}
+
+// GET /api/auth/login/[provider] — SSE stream for the OAuth flow.
+// The daemon runs ModelRuntime.login; this route polls auth:login-status and
+// forwards the queued events with the exact wire shape the UI expects
+// (select_request / prompt_request / auth / device_code / progress /
+// success / error / cancelled), terminating when the session is done.
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ provider: string }> },
+) {
+  const { provider } = await params;
+  requireConfig();
+
+  const encode = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
+  const encoder = new TextEncoder();
+  const closed = new AbortController();
+  req.signal.addEventListener("abort", () => closed.abort());
+
+  const start = await daemonIpc({ type: "auth:login-start", provider });
+  if (start.status >= 400) {
+    return Response.json(
+      { error: String(start.body.error ?? "login start failed") },
+      { status: start.status },
+    );
+  }
+  const authId = (start.body as { data?: { authId?: string } }).data?.authId;
+  if (!authId) {
+    return Response.json({ error: "login start failed: no authId" }, { status: 500 });
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const modelRuntime = await ModelRuntime.create();
-      if (!modelRuntime.getProvider(provider)?.auth.oauth) {
-        send(controller, { type: "error", message: `Unknown provider: ${provider}` });
-        controller.close();
-        return;
-      }
-
-      const registry = getCallbackRegistry();
-      const activeTokens = new Set<string>();
-      let pendingManualRequest: { token: string; promise: Promise<string> } | undefined;
-
-      const createClientInputRequest = () => {
-        const token = `${provider}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        activeTokens.add(token);
-
-        const promise = new Promise<string>((resolve, reject) => {
-          registry.set(token, {
-            resolve: (value) => {
-              activeTokens.delete(token);
-              registry.delete(token);
-              resolve(value);
-            },
-            reject: (error) => {
-              activeTokens.delete(token);
-              registry.delete(token);
-              reject(error);
-            },
-          });
-        });
-
-        return { token, promise };
-      };
-
-      const getManualInputRequest = () => {
-        if (!pendingManualRequest) {
-          pendingManualRequest = createClientInputRequest();
-          pendingManualRequest.promise
-            .finally(() => {
-              pendingManualRequest = undefined;
-            })
-            .catch(() => {});
+      const push = (event: LoginEvent) => {
+        try {
+          controller.enqueue(encoder.encode(encode(event)));
+        } catch {
+          // controller already closed
         }
-        return pendingManualRequest;
       };
-
-      // Cleanup: remove pending token and abort any waiting promise
-      const cleanup = () => {
-        for (const token of activeTokens) {
-          registry.get(token)?.reject(new Error("Login cancelled"));
-          registry.delete(token);
-        }
-        activeTokens.clear();
-      };
-
-      // Also cancel on client disconnect
-      abort.signal.addEventListener("abort", cleanup);
 
       try {
-        await modelRuntime.login(provider, "oauth", {
-          prompt: async (prompt: AuthPrompt) => {
-            const request = prompt.type === "manual_code"
-              ? getManualInputRequest()
-              : createClientInputRequest();
-            if (prompt.type === "select") {
-              send(controller, {
-                type: "select_request",
-                message: prompt.message,
-                options: prompt.options,
-                token: request.token,
-              });
-            } else {
-              send(controller, {
-                type: "prompt_request",
-                message: prompt.message,
-                placeholder: prompt.placeholder ?? null,
-                token: request.token,
-              });
-            }
-            return request.promise;
-          },
-          notify: (event: AuthEvent) => {
-            if (event.type === "auth_url") {
-              const request = getManualInputRequest();
-              send(controller, {
-                type: "auth",
-                url: event.url,
-                instructions: event.instructions ?? null,
-                token: request.token,
-              });
-            } else if (event.type === "device_code") {
-              send(controller, {
-                type: "device_code",
-                userCode: event.userCode,
-                verificationUri: event.verificationUri,
-                intervalSeconds: event.intervalSeconds ?? null,
-                expiresInSeconds: event.expiresInSeconds ?? null,
-              });
-            } else {
-              send(controller, { type: "progress", message: event.message });
-            }
-          },
-          signal: abort.signal,
-        });
-
-        invalidateModelsCache();
-        send(controller, { type: "success" });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg !== "Login cancelled") {
-          send(controller, { type: "error", message: msg });
-        } else {
-          send(controller, { type: "cancelled" });
+        for (;;) {
+          if (closed.signal.aborted) {
+            void daemonIpc({ type: "auth:login-cancel", authId }).catch(() => {});
+            break;
+          }
+          const { status, body } = await daemonIpc({ type: "auth:login-status", authId });
+          if (status >= 400) {
+            push({ type: "error", message: String(body.error ?? "login status failed") });
+            break;
+          }
+          const data = (body as { data?: { events?: LoginEvent[]; done?: boolean; ok?: boolean; error?: string } }).data;
+          for (const event of data?.events ?? []) push(event);
+          if (data?.done) {
+            if (data.ok) invalidateModelsCache();
+            if (data.error) push({ type: "error", message: data.error });
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 300));
         }
+      } catch (e) {
+        push({ type: "error", message: e instanceof Error ? e.message : String(e) });
       } finally {
-        cleanup();
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       }
     },
     cancel() {
-      abort.abort();
+      closed.abort();
+      void daemonIpc({ type: "auth:login-cancel", authId }).catch(() => {});
     },
   });
 

@@ -19,10 +19,18 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node bin/zosma-daemon.js",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.mjs\""
+    "test": "node --experimental-strip-types --test --test-force-exit \"src/**/*.test.mjs\""
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
+    "@types/proper-lockfile": "4.1.4",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@zosma-cowork/protocol": "file:../packages/protocol",
+    "proper-lockfile": "4.1.2"
   }
 }

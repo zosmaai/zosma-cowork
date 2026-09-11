@@ -9,6 +9,8 @@
 import { createLogger, Logger } from "./log.ts";
 import { startDaemon } from "./orchestrator.ts";
 import type { Daemon } from "./orchestrator.ts";
+import { PiAdapter } from "./pi/adapter.ts";
+import { handlePiRpc, handlePiStream } from "./pi/rpc.ts";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,9 +30,17 @@ export function resolveToken(dataDir: string, env: NodeJS.ProcessEnv = process.e
   return token;
 }
 
+/** Fixed port for supervision (env `ZOSMA_DAEMON_PORT`), else undefined (ephemeral). */
+export function resolvePort(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  if (!env.ZOSMA_DAEMON_PORT) return undefined;
+  const port = Number(env.ZOSMA_DAEMON_PORT);
+  return Number.isInteger(port) && port > 0 && port < 65536 ? port : undefined;
+}
+
 export interface RunArgs {
   dataDir?: string;
   logger?: Logger;
+  port?: number;
   exit?: (code: number) => void;
 }
 
@@ -39,10 +49,14 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
   const logger = args.logger ?? createLogger();
   const dataDir = args.dataDir ?? DATA_DIR;
   const token = resolveToken(dataDir);
+  const pi = new PiAdapter({ storeDir: dataDir });
   const handle = await startDaemon({
     token,
     dataDir,
     logger,
+    piRpc: (request) => handlePiRpc(pi, request),
+    piStream: (request, sink) => handlePiStream(pi, request, sink),
+    port: args.port ?? resolvePort(),
     exit: args.exit ?? ((code) => void (process.exitCode = code)),
   });
   if (!handle.acquired) {

@@ -12,9 +12,12 @@ test("agent namespace separates the static running route from dynamic state rout
   assert.ok(entries.some((e) => e.isDirectory() && e.name === "[id]"), "dynamic [id] directory exists");
   const runningRoute = await readFile(join(agentDir, "running/route.ts"), "utf8");
   const stateRoute = await readFile(join(agentDir, "[id]/state/route.ts"), "utf8");
-  assert.match(runningRoute, /getRunningSessionIds\(\)/);
+  // Both routes are daemon-backed: running filters pi:list by state, the
+  // state route asks the daemon session for get_state.
+  assert.match(runningRoute, /piList\(\)/);
   assert.doesNotMatch(runningRoute, /getAgentState\(/);
-  assert.match(stateRoute, /getAgentState\(/);
+  assert.match(stateRoute, /piList\(\)/);
+  assert.match(stateRoute, /piCommand\(\s*.*\s*\{ type: "get_state" \}\)/);
   // No bare `[id]/route.ts` exists at the agent root, so an id can never be "running".
   await assert.rejects(stat(join(agentDir, "[id]/route.ts")));
 });

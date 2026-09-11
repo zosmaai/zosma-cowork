@@ -1,6 +1,7 @@
+import { NextResponse } from "next/server";
 import { stat } from "fs/promises";
 import { resolve } from "path";
-import { getModels } from "@/lib/models-cache";
+import { daemonToBackend, piRead } from "@/lib/daemon-client";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +14,23 @@ export async function GET(req: Request) {
   try {
     cwdStat = await stat(cwd);
   } catch {
-    return Response.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
+    return NextResponse.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
   }
   if (!cwdStat.isDirectory()) {
-    return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
+    return NextResponse.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
   }
   const allowedRoots = await getAllowedFileRoots();
   if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  return Response.json(await getModels(cwd));
+  try {
+    return NextResponse.json(await piRead("models", { cwd }));
+  } catch (error) {
+    const backend = daemonToBackend(error);
+    if (backend) {
+      return NextResponse.json({ error: backend.message }, { status: 500 });
+    }
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
 }

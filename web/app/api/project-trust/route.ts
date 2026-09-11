@@ -1,11 +1,9 @@
 import { stat } from "fs/promises";
 import { resolve } from "path";
 import { NextResponse } from "next/server";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { legacyDaemonError, piRead } from "@/lib/daemon-client";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { getProjectTrustStatus, trustProject } from "@/lib/project-trust";
-import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -32,30 +30,35 @@ async function validateCwd(value: unknown): Promise<
   return { cwd };
 }
 
+// GET /api/project-trust?cwd=<path> — status relay to daemon read:project-trust.
 export async function GET(req: Request) {
   const result = await validateCwd(new URL(req.url).searchParams.get("cwd"));
   if ("response" in result) return result.response;
-  return NextResponse.json(getProjectTrustStatus(result.cwd, getAgentDir()));
+  try {
+    return NextResponse.json(await piRead("project-trust", { cwd: result.cwd }));
+  } catch (e) {
+    const { status, error } = legacyDaemonError(e);
+    return NextResponse.json({ error }, { status });
+  }
 }
 
+// POST /api/project-trust — record a trust decision (daemon-persisted in the
+// shared SDK trust store). Live sessions are daemon-owned and the SDK consults
+// trust markers per tool call, so no in-process destroy is needed.
 export async function POST(req: Request) {
   try {
     const body = await req.json() as { cwd?: unknown };
     const result = await validateCwd(body.cwd);
     if ("response" in result) return result.response;
 
-    const agentDir = getAgentDir();
-    const current = getProjectTrustStatus(result.cwd, agentDir);
-    if (!current.requiresTrust) {
+    const status = await piRead("project-trust", { cwd: result.cwd, trust: true }) as {
+      requiresTrust: boolean;
+      trusted: boolean;
+    };
+    if (!status.requiresTrust) {
       return NextResponse.json({ error: "This project has no resources that require trust" }, { status: 409 });
     }
-    if (hasBusyRpcSessionForCwd(result.cwd)) {
-      return NextResponse.json({ error: "Wait for the active session to finish before trusting this project" }, { status: 409 });
-    }
-
-    const status = trustProject(result.cwd, agentDir);
     invalidateModelsCache();
-    await destroyRpcSessionsForCwd(result.cwd);
     return NextResponse.json(status);
   } catch (error) {
     return NextResponse.json(

@@ -11,7 +11,6 @@ async function loadSubject(path) {
 }
 
 const { buildModelsListUrl, parseDiscoveredModels } = await loadSubject("./model-discovery.ts");
-const { resolveModelDiscoveryAuth } = await loadSubject("./model-discovery-auth.ts");
 
 test("builds protocol-appropriate model list URLs", () => {
   assert.equal(buildModelsListUrl("https://api.example.com/v1/", "openai-completions").toString(), "https://api.example.com/v1/models");
@@ -34,17 +33,3 @@ test("parses OpenAI, Anthropic, Google, and string model lists", () => {
   ]);
 });
 
-test("resolves environment-backed headers without an API key", async () => {
-  process.env.PI_WEB_DISCOVERY_TEST_TOKEN = "resolved-token";
-  try {
-    const auth = await resolveModelDiscoveryAuth("pi-web-header-only-test", {
-      baseUrl: "https://example.invalid/v1",
-      api: "openai-completions",
-      headers: { "X-Discovery-Token": "$PI_WEB_DISCOVERY_TEST_TOKEN" },
-    });
-    assert.equal(auth.apiKey, undefined);
-    assert.deepEqual(auth.headers, { "X-Discovery-Token": "resolved-token" });
-  } finally {
-    delete process.env.PI_WEB_DISCOVERY_TEST_TOKEN;
-  }
-});

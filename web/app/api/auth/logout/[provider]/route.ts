@@ -1,22 +1,21 @@
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { NextResponse } from "next/server";
+import { legacyDaemonError, piAuth } from "@/lib/daemon-client";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { removeStoredCredentialIfType } from "@/lib/provider-credential-store";
 
 export const dynamic = "force-dynamic";
 
+// POST /api/auth/logout/[provider] — remove the stored OAuth credential.
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params;
-  const modelRuntime = await ModelRuntime.create();
-  if (!modelRuntime.getProvider(provider)?.auth.oauth) {
-    return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
+  try {
+    await piAuth("logout", { provider });
+    invalidateModelsCache();
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const { status, error } = legacyDaemonError(e);
+    return NextResponse.json({ error }, { status });
   }
-  const removal = await removeStoredCredentialIfType(provider, "oauth");
-  if (removal.status === "type_mismatch") {
-    return Response.json({ error: `${provider} is authenticated with an API key, not OAuth` }, { status: 409 });
-  }
-  invalidateModelsCache();
-  return Response.json({ ok: true });
 }

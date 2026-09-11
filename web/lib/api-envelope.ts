@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isBackendError } from "@/packages/pi-backend/errors";
+import { isBackendError } from "./backend-errors.ts";
 import { STATUS_BY_CODE } from "./backend-error-response";
 
 export function apiSuccess<T>(data: T, init?: ResponseInit): NextResponse {

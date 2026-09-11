@@ -36,13 +36,10 @@
     "start:lan": "next start -H 0.0.0.0 -p 30141",
     "lint": "eslint .",
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"packages/**/*.test.mjs\" \"public/**/*.test.mjs\"",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
+    "dev:all": "node scripts/dev-daemon.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.2",
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",

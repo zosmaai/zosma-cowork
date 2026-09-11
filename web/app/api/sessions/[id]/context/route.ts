@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/session-reader";
+import { daemonToBackend, piRead } from "@/lib/daemon-client";
 import { backendErrorResponse } from "@/lib/backend-error-response";
 
 export async function GET(
@@ -9,7 +9,7 @@ export async function GET(
   const { id } = await params;
   const url = new URL(req.url);
   try {
-    const context = await getSessionContext({
+    const context = await piRead("session-context", {
       sessionId: id,
       leafId: url.searchParams.get("leafId") ?? undefined,
       deferThinking: url.searchParams.has("deferThinking"),
@@ -17,7 +17,7 @@ export async function GET(
     });
     return NextResponse.json({ context });
   } catch (error) {
-    const mapped = backendErrorResponse(error);
+    const mapped = backendErrorResponse(daemonToBackend(error) ?? error);
     if (mapped) return mapped;
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

@@ -1,0 +1,30 @@
+# zosma-daemon.service — run the daemon as a supervised system service
+# (roadmap item 5, prod path). Web-first: the daemon is a sibling process to
+# the Next.js web service, never bundled into it.
+#
+# Install:
+#   sudo cp zosma-daemon.service /etc/systemd/system/
+#   # point ExecStart at your checkout; set the token/port (shared with web)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now zosma-daemon
+#
+# Web side: export ZOSMA_DAEMON_URL / ZOSMA_DAEMON_TOKEN / ZOSMA_DAEMON_PORT
+# in its own unit / env so both processes share the same contract.
+[Unit]
+Description=Zosma Cowork daemon (Pi native adapter + git/files RPC)
+After=network.target
+
+[Service]
+Type=simple
+# Node >=22.19 (strip-types runner). Adjust path/version as installed.
+ExecStart=/usr/bin/env node --experimental-strip-types /opt/zosma-cowork/daemon/src/index.ts
+WorkingDirectory=/opt/zosma-cowork/daemon
+Environment=ZOSMA_DAEMON_PORT=64713
+# Set a static token in production; leave unset to auto-persist one under
+# ${TMPDIR}/zosma-cowork/daemon/daemon.token (mode 0600) on first boot.
+# Environment=ZOSMA_DAEMON_TOKEN=replace-me
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

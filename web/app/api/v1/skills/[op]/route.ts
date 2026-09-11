@@ -1,13 +1,20 @@
-import { getPiBackend } from "@/lib/pi-backend-host";
 import { apiSuccess, apiErrorResponse } from "@/lib/api-envelope";
-import { BackendError } from "@/packages/pi-backend/errors";
+import { daemonToBackend, piRead } from "@/lib/daemon-client";
+import { BackendError } from "@/lib/backend-errors";
 
 export const dynamic = "force-dynamic";
 
-// Skill management operations over /api/v1 (ZOS-82, slice 2). The handler is
-// transport-neutral — no NextResponse, no spawn. The spawn + project-trust gated
-// work lives in the pi-backend facade (web/packages/pi-backend/skills.ts).
+// Skill management operations over /api/v1 (ZOS-82, slice 2), relayed to the
+// daemon. The handler is transport-neutral; the spawn + project-trust gated
+// work lives in the daemon's read:skills-* ops.
 const OP_PERMITTED = new Set(["install", "check", "update", "search"]);
+
+const OP_TO_READ = {
+  install: "skills-install",
+  check: "skills-check",
+  update: "skills-update",
+  search: "skills-search",
+} as const;
 
 export async function POST(req: Request, { params }: { params: Promise<{ op: string }> }) {
   const { op } = await params;
@@ -18,37 +25,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ op: str
   }
 
   try {
-    const body = await req.json();
-    const backend = getPiBackend();
-    switch (op) {
-      case "install":
+    const body = await req.json() as {
+      package?: string;
+      scope?: string;
+      cwd?: string;
+      query?: string;
+      limit?: number;
+    };
+    const readOp = OP_TO_READ[op as keyof typeof OP_TO_READ];
+    switch (readOp) {
+      case "skills-search":
         return apiSuccess(
-          await backend.installSkill({
-            package: body.package,
+          await piRead(readOp, { query: body.query, limit: body.limit }),
+        );
+      default:
+        return apiSuccess(
+          await piRead(readOp, {
+            source: body.package,
             scope: body.scope,
             cwd: body.cwd,
           }),
         );
-      case "check":
-        return apiSuccess(
-          await backend.checkSkillUpdates({
-            package: body.package,
-            scope: body.scope,
-            cwd: body.cwd,
-          }),
-        );
-      case "update":
-        return apiSuccess(
-          await backend.updateSkill({
-            package: body.package,
-            scope: body.scope,
-            cwd: body.cwd,
-          }),
-        );
-      case "search":
-        return apiSuccess(await backend.searchSkills({ query: body.query, limit: body.limit }));
     }
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(daemonToBackend(error) ?? error);
   }
 }
