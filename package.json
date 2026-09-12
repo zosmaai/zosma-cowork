@@ -16,6 +16,7 @@
     "website:dev": "pnpm -C apps/website dev",
     "website:build": "pnpm -C apps/website build",
     "server:package": "node scripts/package-server-release.mjs",
+    "server:smoke": "node scripts/smoke-server-release.mjs",
     "test:server": "node --test scripts/*.test.mjs",
     "daemon:dev": "pnpm -C apps/daemon start",
     "daemon:build": "pnpm -C apps/daemon build",
