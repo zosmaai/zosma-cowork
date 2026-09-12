@@ -1,0 +1,41 @@
+{
+  "name": "@zosma-cowork/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone TypeScript Cowork daemon — owns local harness execution independently of the Next.js web server.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "zosma-daemon": "bin/zosma-daemon.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node bin/zosma-daemon.js",
+    "test": "node --experimental-strip-types --test --test-force-exit \"src/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/proper-lockfile": "4.1.4",
+    "@types/ws": "^8.18.1",
+    "@zosma-cowork/control-plane": "workspace:*",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@hono/node-server": "^2.1.1",
+    "@zosma-cowork/protocol": "workspace:*",
+    "hono": "^4.13.7",
+    "proper-lockfile": "4.1.2",
+    "ws": "^8.21.3"
+  }
+}

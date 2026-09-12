@@ -36,6 +36,8 @@ export type CapabilityName =
   | "permissions"
   | "attachments"
   | "commands"
+  | "bash"
+  | "compaction"
   | "extensions"
   | "subagents";
 
@@ -49,6 +51,8 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = [
   "permissions",
   "attachments",
   "commands",
+  "bash",
+  "compaction",
   "extensions",
   "subagents",
 ] as const satisfies readonly CapabilityName[];

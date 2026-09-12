@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tracked=$(git ls-files | grep -Ei '(^|/)(\.env$|client[_-]?secret|credentials?|.*secret.*\.json)' || true)
+          tracked=$(git ls-files | grep -Ei '(^|/)(\.env$|client[_-]?secret($|\.)|credentials?($|\.)|.*secret.*\.json$)' || true)
           if [ -n "$tracked" ]; then
             echo "Tracked credential-like files found:"
             echo "$tracked"
@@ -47,16 +47,14 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-      # The web app is the repository's JavaScript workspace. Audit its lockfile
-      # directly; the root lockfile is a stale pre-workspace projection.
-      - run: pnpm -C web install --frozen-lockfile
-      # audit-ci wraps the audit with an allowlist (audit-ci.jsonc) so a
-      # build-tooling-only advisory can't red-gate unrelated PRs. Every
-      # allowlist entry carries a reason + removal condition. See issue #264.
-      - name: Audit web dependencies
-        working-directory: web
-        run: npx audit-ci --config ../audit-ci.jsonc
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fail on any moderate-or-higher workspace advisory.
+      - name: Audit workspace dependencies
+        run: npx audit-ci --config audit-ci.jsonc
 
   cargo-audit:
     name: cargo audit
@@ -65,9 +63,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-audit --locked
-      # Workspace lockfile lives at the repo root after the workspace migration
-      # (Agent sidecar uses pi-mono SDK).
-      - run: cargo audit
+      - name: Audit desktop dependencies
+        working-directory: apps/desktop
+        run: cargo audit
 
   codeql:
     name: CodeQL Analysis
@@ -83,4 +81,3 @@ jobs:
           languages: typescript, rust
           config-file: ./.github/codeql/codeql-config.yml
       - uses: github/codeql-action/analyze@v3
-

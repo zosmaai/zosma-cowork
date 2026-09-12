@@ -1,0 +1,11 @@
+{
+  "name": "@zosma-cowork/desktop",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Zosma Cowork — Tauri shell (Rust-native; CLI via root @tauri-apps/cli)",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  }
+}

@@ -25,30 +25,33 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm -C web install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Port contract guard
         # SHARED_PORT (shell) and the next scripts (web) must agree on 30141.
         run: node scripts/check-shared-port.mjs
 
       - name: Lint
-        run: pnpm -C web lint
+        run: pnpm lint
 
       - name: Type check
-        run: pnpm -C web exec tsc --noEmit
+        run: pnpm typecheck
 
       - name: Test
-        run: pnpm -C web test
+        run: pnpm test
+
+      - name: Build daemon
+        run: pnpm daemon:build
 
   docs:
     name: Docs Site Build
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: website
+        working-directory: apps/website
     steps:
       - uses: actions/checkout@v4
 
@@ -83,21 +86,23 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Fetch bundled Node.js binary
         # tauri.conf.json's bundle.resources declares binaries/node*, so the
         # build script needs it at compile time (the binary itself is
-        # gitgenerated at build time by fetch-node.mjs).
-        run: node src-tauri/scripts/fetch-node.mjs
+        # generated at build time by fetch-node.mjs).
+        run: node apps/desktop/scripts/fetch-node.mjs
 
       - name: Build web server (standalone dist-server resource)
-        # tauri.conf.json's bundle.resources also declares
-        # ../web/dist-server/**/* — build it so compile-time resource
-        # validation passes (same commands as beforeBuildCommand).
+        # tauri.conf.json's bundle.resources also declares the packaged web
+        # server, so compile-time resource validation needs it.
         run: |
-          pnpm -C web install --frozen-lockfile
-          pnpm -C web build
-          pnpm -C web package-server
+          pnpm -C apps/web build
+          pnpm -C apps/web package-server
 
       - name: Setup Rust
         run: |
@@ -114,10 +119,13 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Format check
+        working-directory: apps/desktop
         run: cargo fmt --all --check
 
       - name: Clippy
+        working-directory: apps/desktop
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build check
+        working-directory: apps/desktop
         run: cargo build --workspace

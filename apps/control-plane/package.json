@@ -1,0 +1,35 @@
+{
+  "name": "@zosma-cowork/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zosma Cowork control plane — outbound WebSocket endpoint for employee daemons (ZOS-96).",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "zosma-control-plane": "bin/zosma-control-plane.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node bin/zosma-control-plane.js",
+    "test": "node --experimental-strip-types --test --test-force-exit \"src/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "@zosma-cowork/protocol": "workspace:*",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  }
+}

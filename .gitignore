@@ -1,10 +1,10 @@
 # Dependencies
 /node_modules
-web/node_modules
+apps/web/node_modules
 
 # Builds / generated
 /dist
-/src-tauri/gen
+/apps/desktop/gen
 *.tsbuildinfo
 /coverage
 /.cache
@@ -12,20 +12,20 @@ web/node_modules
 
 # Rust
 /target
-/src-tauri/target
+/apps/desktop/target
 
-# Web artifacts (web/ is its own workspace package; see web/.gitignore)
-web/.next/
-web/dist-server/
+# Web artifacts (apps/web; see apps/web/.gitignore)
+apps/web/.next/
+apps/web/dist-server/
 
 # Local env + agent/editor state
 .env
 .env.local
 .zosma-google.env
 .pi/
-!web/.pi/
-!web/.pi/extensions/
-!web/.pi/extensions/zosma-ui-audit.ts
+!apps/web/.pi/
+!apps/web/.pi/extensions/
+!apps/web/.pi/extensions/zosma-ui-audit.ts
 .llm-wiki/
 .obsidian/
 .worktrees/

@@ -38,70 +38,55 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 
 ### Testing Stack
 
-| Layer | Framework | Command |
+| Layer | Framework | Command (repo root) |
 |---|---|---|
-| Frontend | Vitest + React Testing Library + `@testing-library/jest-dom` | `npm test` |
-| Agent Sidecar | TypeScript `tsc --noEmit` | `cd agent-sidecar && npx tsc --noEmit` |
-| Tauri Relay | `cargo test` | `cargo test --workspace` |
+| Workspace | pnpm 10 monorepo | `npm test` runs `pnpm -r test` (single root lockfile) |
+| Agent Daemon | TypeScript `tsc --noEmit` | `pnpm daemon:build` / `pnpm -C apps/daemon build` |
+| Tauri Relay | `cargo test` | `cd apps/desktop && cargo test` |
 
 ---
 
 ## 3. Code Architecture
 
-### Frontend (React + TypeScript)
+### Monorepo layout (pnpm workspace)
 
 ```
-src/
-├── components/ui/          # shadcn-style primitives (Button, Badge, etc.)
-│   └── NEVER import app-specific code
-├── components/             # App-specific components
-│   ├── ActivityBar.tsx
-│   ├── ChatMessage.tsx
-│   ├── MessageInput.tsx
-│   ├── Sidebar.tsx
-│   └── WelcomeScreen.tsx
-├── hooks/                  # Reusable React hooks
-│   └── usePiStatus.ts
-├── lib/                    # Pure utilities (no React)
-│   └── utils.ts            # cn(), formatters, parsers
-├── types/                  # Shared TypeScript types
-│   └── index.ts
-├── services/               # Business logic / API wrappers (future)
-│   └── pi-client.ts
-└── store/                  # State management (future)
-    └── session-store.ts
+zosma-cowork/
+├── apps/
+│   ├── web/                  # Next.js app (React + TypeScript)
+│   │   ├── app/              # Next app router routes (incl. /api/v1 boundary)
+│   │   ├── components/       # App-specific components (ActivityBar, ChatMessage, …)
+│   │   │   └── ui/           # shadcn-style primitives — NEVER import app-specific code
+│   │   ├── lib/              # Pure utilities (cn(), daemon-client, models-cache) — no React
+│   │   ├── hooks/            # Reusable React hooks (usePiStatus, …)
+│   │   ├── services/         # Business logic / API wrappers (pi-client, …)
+│   │   ├── bin/              # Launch options (pi-web-options.js)
+│   │   └── scripts/          # package-server, dev-daemon supervisor
+│   ├── daemon/               # Standalone Hono HTTP server (apps/daemon/src/server.ts)
+│   │   └── src/              # index (entry), orchestrator, auth/, files/, git/, pi/, read/
+│   ├── desktop/              # Tauri shell (apps/desktop/src — Rust)
+│   │   ├── src/main.rs       # Entry point only
+│   │   ├── src/lib.rs        # Tauri commands, sidecar process management (WEB_ENTRY_REL)
+│   │   ├── scripts/          # fetch-node.mjs (downloads node binaries)
+│   │   └── binaries/         # node + npm bundled for the runtime
+│   ├── website/              # Marketing / docs site (Next.js + Turbopack)
+│   └── oauth-broker/         # Google OAuth broker (standalone — own npm lockfile)
+├── packages/
+│   └── protocol/             # Shared runtime schemas, commands, events (not an app)
+├── docs/                     # Design docs, security, plans, superpowers roadmaps
+└── scripts/                  # Shared helpers (check-shared-port, validate-release-config)
 ```
 
 **Rules:**
-- `components/ui/` are pure, reusable primitives. They know nothing about pi.
+- `components/ui/` are pure, reusable primitives. They know nothing about pi, daemon, or wire protocols.
 - `lib/` contains pure functions with zero side effects. These are the easiest to test.
-- `hooks/` wrap imperative APIs (Tauri invoke, browser APIs) into declarative React.
-- `services/` encapsulate all Tauri command calls and external I/O.
-
-### Backend (Tauri Relay — Rust)
-
-```
-src-tauri/src/
-├── main.rs                 # Entry point only
-└── lib.rs                  # Tauri commands, sidecar process management
-```
-
-**Rules:**
-- The Tauri relay is intentionally thin — it spawns the Node.js sidecar and forwards JSON commands.
-- All agent logic lives in `agent-sidecar/`.
-- Tauri commands return `Result<T, String>` with user-friendly error messages.
-
-### Agent Sidecar (Node.js)
-
-```
-agent-sidecar/src/
-└── index.ts                # pi-mono SDK: auth, models, sessions, extensions
-```
-
-**Rules:**
-- Communicates with Tauri via stdin/stdout JSON lines.
-- Uses `@earendil-works/pi-coding-agent` (pi-mono SDK) for all agent capabilities.
-- Never write to stdout except JSON protocol messages (logging goes to stderr).
+- `hooks/` wrap imperative APIs (fetch, browser APIs) into declarative React.
+- `services/` encapsulate all HTTP calls (`daemon-client` → daemon `/ipc`) and external I/O.
+- The daemon HTTP server (Hono) is the only server besides Next. Web routes proxy to it over `/api/v1` (see `apps/web/lib/daemon-client.ts`).
+- Tauri (`apps/desktop`) is intentionally thin — it spawns/supervises the daemon + packaged Next server and renders `apps/web`.
+- The pi-mono SDK (`@earendil-works/pi-coding-agent`) is only used inside `apps/daemon/src/pi/adapter.ts`.
+- Never write to stdout except protocol messages (daemon logging goes to stderr).
+- Tauri commands return `Result<T, String>` with user-friendly error messages; never panic in production code.
 
 ---
 
@@ -139,11 +124,11 @@ chore: bump @tauri-apps/api to 2.5.0
 
 ### PR Requirements
 
-- [ ] All tests pass (`npm test`, `cargo test --workspace`)
-- [ ] Lint passes (`npm run lint`, `cargo clippy`)
-- [ ] Type check passes (`tsc --noEmit`)
-- [ ] Agent sidecar builds (`cd agent-sidecar && npm run build`)
-- [ ] Security scan passes (npm audit, cargo audit)
+- [ ] All tests pass (`pnpm test`, `cd apps/desktop && cargo test`)
+- [ ] Lint passes (`pnpm lint`, `cd apps/desktop && cargo clippy -- -D warnings`)
+- [ ] Type check passes (`pnpm typecheck`)
+- [ ] Daemon + web build (`pnpm daemon:build`, `pnpm web:build`)
+- [ ] Security scan passes (pnpm/npm audit, cargo audit)
 - [ ] PR description explains what and why
 
 ---
@@ -155,22 +140,21 @@ chore: bump @tauri-apps/api to 2.5.0
 Triggers: `push` to `main`, `pull_request`
 
 Jobs:
-1. **Frontend Lint & Test**
-   - `npm ci`
-   - `npm run lint`
-   - `npm run typecheck`
-   - `npm test`
-   - `npm run build:frontend`
+1. **Workspace Lint, Typecheck & Test**
+   - `pnpm install --frozen-lockfile`
+   - `pnpm lint`
+   - `pnpm typecheck`
+   - `pnpm test`
+   - `pnpm web:build`
 
-2. **Agent Sidecar Lint & Build**
-   - `cd agent-sidecar && npm ci`
-   - `npx tsc --noEmit`
-   - `npm run build`
+2. **Daemon Build**
+   - `pnpm install --frozen-lockfile`
+   - `pnpm daemon:build`
 
-3. **Tauri Build Check**
+3. **Tauri Build Check** (cwd `apps/desktop`)
    - `cargo fmt --check`
    - `cargo clippy -- -D warnings`
-   - `cargo build --workspace`
+   - `cargo build`
 
 ### Security Scan (`.github/workflows/security.yml`)
 
@@ -257,5 +241,5 @@ Before claiming a feature is complete:
 
 ---
 
-**Last Updated:** 2026-05-08  
+**Last Updated:** 2026-09-11  
 **Enforced By:** CI gates + code review

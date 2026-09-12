@@ -8,6 +8,6 @@ name: "CodeQL config — zosma-cowork"
 # intentional harnessed paths. Re-enable per-query suppressions with
 # `// lgtm[js/...]` once the harness moves to a real multi-tenant boundary.
 paths-ignore:
-  - web/**
-  - website/**
+  - apps/web/**
+  - apps/website/**
   - .github/skills/impeccable/scripts/**

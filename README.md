@@ -126,32 +126,27 @@ The Expo application provides native mobile sessions, push notifications, voice 
 
 The Tauri application does not maintain a second frontend. In development it loads `apps/web`; release builds bundle the Next.js standalone server and machine daemon, supervise both processes, and render the local Next.js application in an Tauri window.
 
-## Target repository structure
+## Repository structure
 
 ```text
 zosma-cowork/
 ├── apps/
-│   ├── web/                  # Next.js
-│   ├── app/                  # React Native + Expo
-│   └── desktop/              # Tauri; bundles apps/web and daemon/
-├── backend/                  # TypeScript control plane: HTTP, realtime, teams, policy
-├── daemon/                   # TypeScript service installed on each machine
+│   ├── daemon/              # TypeScript machine service: HTTP (Hono) + RPC + SSE, supervised by desktop
+│   ├── desktop/             # Tauri shell; bundles apps/web + apps/daemon (Rust, per-app package.json)
+│   ├── oauth-broker/        # Google OAuth broker for desktop sign-in (standalone, own npm lockfile)
+│   ├── web/                 # Next.js app + packaged standalone server (dev port 30141)
+│   └── website/             # Marketing / documentation site (Next.js, Turbopack)
 ├── packages/
-│   ├── protocol/             # Shared runtime schemas, commands, and events
-│   └── api-client/           # Shared authenticated HTTP/WebSocket client
-├── extensions/
-│   ├── pi/                   # Pi-native extensions
-│   ├── mcp/                  # Portable tools for multiple harnesses
-│   └── skills/               # Portable instruction-based skills
-├── infra/                    # Deployment and OS service packaging
-├── docs/
-├── scripts/
+│   └── protocol/            # Shared runtime schemas, commands, and events
+├── docs/                    # Design docs, security notes, plans, superpowers roadmaps
+├── scripts/                 # Shared helper scripts (check-shared-port, validate-release-config)
+├── .github/                 # CI/CD: ci.yml, security.yml, release.yml
 ├── pnpm-workspace.yaml
-├── package.json
-└── tsconfig.base.json
+├── pnpm-lock.yaml
+└── package.json
 ```
 
-This is the migration target. Useful functionality from the current repository will move into these boundaries rather than preserving the old layout.
+The desktop app bundles the packaged Next.js server (`web/dist-server`) and the machine daemon, supervises both processes, and renders the local Next.js application in a Tauri window. The daemon is a standalone Hono HTTP server (health, IPC dispatch, SSE) that the web tier proxies to over `/api/v1`.
 
 ## Deployment modes
 
@@ -207,13 +202,13 @@ The current release is a local Pi-powered Cowork application with persistent ses
 
 Download the current release from [GitHub Releases](https://github.com/zosmaai/zosma-cowork/releases/latest).
 
-### Build the current implementation
+### Build
 
 Requirements:
 
 - Node.js 22.19 or newer
 - pnpm 10
-- Rust 1.85 or newer for the current Tauri shell
+- Rust 1.85 or newer for the Tauri shell (`apps/desktop`)
 
 ```bash
 git clone https://github.com/zosmaai/zosma-cowork.git
@@ -221,26 +216,27 @@ cd zosma-cowork
 
 corepack enable
 pnpm install
-pnpm -C web install
 
-# Browser development server
+# Browser development server (web + daemon supervisor)
 pnpm web:dev
 
-# Current desktop application
+# Full desktop application (Tauri window loading apps/web)
 pnpm dev
+
+# Marketing/docs site
+pnpm website:dev
 ```
 
-Useful checks:
+Useful checks (run from the repo root):
 
 ```bash
-pnpm -C web lint
-pnpm -C web test
-pnpm -C web build
-cargo fmt --all --check
-cargo clippy --workspace -- -D warnings
+pnpm test          # all workspace packages (protocol, web, daemon)
+pnpm lint
+pnpm typecheck
+pnpm web:build     # Next.js build + package-server → web/dist-server
+pnpm daemon:build
+pnpm desktop:build # Tauri release bundle (needs TAURI_SIGNING_PRIVATE_KEY for signed updater)
 ```
-
-Development commands will change as the repository moves to the target pnpm workspace.
 
 ## Principles
 
