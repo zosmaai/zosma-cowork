@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
+const source = await readFile(new URL("./useSessionLoader.ts", import.meta.url), "utf8");
+const rootSource = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 const loadSessionSource = source.slice(
   source.indexOf("const loadSession = useCallback"),
   source.indexOf("const loadContext = useCallback"),
 );
-const switchSource = source.slice(
-  source.indexOf("const handleModelChange = useCallback"),
-  source.indexOf("const handleCompact = useCallback"),
+const switchSource = rootSource.slice(
+  rootSource.indexOf("const handleModelChange = useCallback"),
+  rootSource.indexOf("const handleCompact = useCallback"),
 );
 
 test("existing-session model changes are optimistic and serialized", () => {
@@ -26,12 +27,12 @@ test("existing-session model changes are optimistic and serialized", () => {
 test("session reloads cannot clear an in-flight optimistic model", () => {
   assert.match(
     loadSessionSource,
-    /setCurrentModelOverride\(\(current\) => modelSwitchPendingRef\.current \? current : null\)/,
+    /setCurrentModelOverride\(\(current\) => core\.modelSwitchPendingRef\.current \? current : null\)/,
   );
 });
 
 test("a completed model switch reloads canonical session state and reports failures", () => {
-  assert.match(switchSource, /modelSwitchPendingRef\.current = false;\s*await loadSession\(sid\)/);
+  assert.match(switchSource, /modelSwitchPendingRef\.current = false;\s*await loadSessionFn\(sid\)/);
   assert.match(switchSource, /setCurrentModelOverride\(previousOverride\)/);
   assert.match(switchSource, /Failed to switch model:/);
 });

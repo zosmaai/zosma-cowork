@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { PluginPackageInfo, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
+import { pluginsService } from "@/services/plugins.service";
+import { TAGS } from "@/services/tags";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -625,9 +628,19 @@ export function PluginsConfig({
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
-  const [data, setData] = useState<PluginsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useQuery(pluginsService.byCwdQueryOptions(cwd));
+  const loading = isFetching;
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : String(queryError)
+    : null;
   const [selected, setSelected] = useState<string | null>(null);
   const [addMode, setAddMode] = useState(false);
   const [installSource, setInstallSource] = useState("");
@@ -646,29 +659,27 @@ export function PluginsConfig({
       .filter((group) => group.packages.length > 0);
   }, [packages]);
 
-  const loadPlugins = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/plugins?cwd=${encodeURIComponent(cwd)}`);
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
-      setAddMode((current) => next.packages.length === 0 || current);
-      setSelected((current) => {
-        if (current && next.packages.some((pkg) => packageKey(pkg) === current)) return current;
-        return next.packages[0] ? packageKey(next.packages[0]) : null;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [cwd]);
+  const loadPlugins = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
+  // Selection / add-mode defaults once the (cached) list arrives. Fetch
+  // itself lives in the TanStack Query cache — remounts are instant.
   useEffect(() => {
-    void loadPlugins();
-  }, [loadPlugins]);
+    if (!data) return;
+    setAddMode((current) => data.packages.length === 0 || current);
+    setSelected((current) => {
+      if (current && data.packages.some((pkg) => packageKey(pkg) === current)) return current;
+      return data.packages[0] ? packageKey(data.packages[0]) : null;
+    });
+  }, [data]);
+
+  const writePlugins = useCallback(
+    (next: PluginsResponse) => {
+      queryClient.setQueryData(TAGS.plugins.byCwd(cwd), next);
+    },
+    [queryClient, cwd],
+  );
 
   const runAction = useCallback(async (action: PluginAction, pkg: PluginPackageInfo) => {
     const key = packageKey(pkg);
@@ -683,7 +694,7 @@ export function PluginsConfig({
       });
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
+      writePlugins(next);
       if (action === "remove") {
         setSelected(next.packages[0] ? packageKey(next.packages[0]) : null);
         if (next.packages.length === 0) setAddMode(true);
@@ -702,7 +713,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd]);
+  }, [cwd, writePlugins]);
 
   const installPlugin = useCallback(async () => {
     const source = normalizePluginSourceInput(installSource).trim();
@@ -720,7 +731,7 @@ export function PluginsConfig({
       });
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
+      writePlugins(next);
       const installed = findInstalledPackage(next.packages, source, installScope);
       setSelected(installed ? packageKey(installed) : key);
       setAddMode(false);
@@ -731,7 +742,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd, installScope, installSource]);
+  }, [cwd, installScope, installSource, writePlugins]);
 
   const reloadSession = useCallback(async () => {
     if (!sessionId) return;

@@ -61,12 +61,17 @@ test("offers the downstream context-menu hook only on a normal session row", () 
   );
 });
 
-test("manual and lifecycle refreshes bypass the server session-list cache", () => {
+test("lifecycle refreshes stay cache-friendly; only explicit actions force a rescan", () => {
   assert.match(modelSource, /listSessions\(force\)/);
   assert.match(clientSource, /cache: "no-store"/);
-  assert.match(modelSource, /loadSessions\(isFirst, !isFirst\)/);
+  // Lifecycle churn (session created / agent ended) must NOT force a disk
+  // re-scan: the daemon merges fresh sessions into its cache via the
+  // supplemental registry. Only the explicit Refresh button and the
+  // background-task sweep force one.
+  assert.match(modelSource, /loadSessions\(isFirst, false\)/);
   assert.match(workspacePanelSource, /onClick=\{\(\) => loadSessions\(false, true\)\}/);
-  assert.match(modelSource, /loadSessions\(false, true\);[\s\S]*?onBackgroundTaskDone/);
+  assert.match(modelSource, /loadSessions\(false, completedInBackground\.length > 0\);[\s\S]*?onBackgroundTaskDone/);
+  assert.match(modelSource, /loadSessions\(false, completedInBackground\.length > 0\)/);
 });
 
 test("does not expose disk-backed actions for transient sessions", () => {

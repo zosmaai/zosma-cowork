@@ -12,6 +12,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "../git/file-access.ts";
 import { toSlashPath } from "../git/paths.ts";
 import type { NormalizedEvent, Turn } from "@zosma-cowork/protocol";
+import { registerSupplementalSession } from "../read/sessions.ts";
 
 // RPC op identifiers dispatched to the Pi adapter below.
 export const PI_RPC_OPS = [
@@ -103,6 +104,15 @@ export async function handlePiRpc(adapter: PiAdapter, request: PiRpcRequest): Pr
           ...(request.model ? { model: request.model } : {}),
           ...(request.thinkingLevel ? { thinkingLevel: request.thinkingLevel } : {}),
           ...(request.toolNames ? { toolNames: request.toolNames } : {}),
+        });
+        registerSupplementalSession({
+          id: handle.sessionId,
+          cwd: cwd ?? "",
+          name: undefined,
+          created: new Date(),
+          modified: new Date(),
+          messageCount: 0,
+          firstMessage: "(no messages)",
         });
         return ok(handle as unknown as Record<string, unknown>);
       }

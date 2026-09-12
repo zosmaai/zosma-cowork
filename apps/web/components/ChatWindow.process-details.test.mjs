@@ -8,6 +8,6 @@ test("renders completed process messages directly with final-ref ownership", () 
   assert.doesNotMatch(source, /function ProcessDetailsGroup/);
   assert.doesNotMatch(source, /<ProcessDetailsGroup/);
   assert.match(source, /visibleProcessIndices\.forEach/);
-  assert.match(source, /attachRef: attachFinalProcessRef/);
-  assert.match(source, /shouldAttachFinalProcessRef\(Boolean\(finalAnswerMessage\)\)/);
+  assert.match(source, /finalProcessMessage/);
+  assert.match(source, /splitFinalAssistantBlocks/);
 });

@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ModelsContent, PluginsContent, SkillsContent } from "./SettingsContent";
 import type { ZosmaNotice } from "./ZosmaAuthCard";
+import { pluginsService } from "@/services/plugins.service";
+import { skillsService } from "@/services/skills.service";
 
 export type SettingsCategory =
   | "models"
@@ -200,6 +203,14 @@ export function SettingsShell({
   initialCategory = "models",
   zosmaNotice,
 }: SettingsShellProps) {
+  const queryClient = useQueryClient();
+
+  // Prefetch skills + plugins the moment the settings dialog opens, so the
+  // first tab click renders from cache instead of a live daemon resolve.
+  useEffect(() => {
+    void queryClient.prefetchQuery(pluginsService.byCwdQueryOptions(cwd));
+    void queryClient.prefetchQuery(skillsService.byCwdQueryOptions(cwd));
+  }, [queryClient, cwd]);
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory);

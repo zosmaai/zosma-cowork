@@ -22,5 +22,7 @@ test("offers friendly rotating new-session titles", () => {
   assert.match(source, /newSessionTitleKey/);
   assert.match(source, /newSessionTitlesRef/);
   assert.match(source, /setNewSessionTitle\(title\)/);
-  assert.match(source, /new-session-title-text">\{newSessionTitle\}<\/span>/);
+  // The title renders in the empty-composer hero (single scroll container,
+  // one branch of the conversation surface — no layer swap at first send).
+  assert.match(source, /new-session-title-text">\{title\}<\/span>/);
 });

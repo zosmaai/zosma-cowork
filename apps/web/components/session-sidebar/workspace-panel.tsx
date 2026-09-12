@@ -71,7 +71,7 @@ function SidebarHeader({ model, rail = false, isMobile = false, onToggleRail }: 
           title={t("sidebar.expand")}
           aria-label={t("sidebar.expand")}
         >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="3" />
             <polyline points="10 8 14 12 10 16" />
           </svg>

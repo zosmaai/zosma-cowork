@@ -70,6 +70,19 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
     ipc: `http://127.0.0.1:${handle.port}/ipc`,
     tokenHint: token.slice(0, 6) + "…",
   });
+  // Warm the session-list cache in the background: the sidebar's first load
+  // otherwise stalls on a cold multi-second disk scan right after a restart.
+  void import("./read/sessions.ts").then(({ listAllSessions }) => {
+    listAllSessions().catch((err) => logger.warn("session list prefetch failed", { error: String(err) }));
+  });
+  // Prewarm a pi session for the default workspace (repo root passed by the
+  // supervisor) so the FIRST chat fires the prompt immediately — the daemon
+  // session-spawn+SSE-cold-open gap used to sit inside the send path (the
+  // "first-chat flicker": optimistic bubble, dead air, everything at once).
+  const warmCwd = process.env.ZOSMA_WARM_CWD;
+  if (warmCwd) {
+    void pi.warmSession(warmCwd).catch((err) => logger.warn("session prewarm failed", { error: String(err) }));
+  }
   return handle;
 }
 

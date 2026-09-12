@@ -77,9 +77,14 @@ export async function listAllSessions(options: { force?: boolean } = {}): Promis
   const generation = globalThis.__piSessionListGeneration ?? 0;
 
   // Return cached result if still fresh (avoids re-scanning session files
-  // and re-spawning git processes on every page load).
+  // and re-spawning git processes on every page load). Freshly created
+  // sessions are merged in from the supplemental registry so the sidebar
+  // sees them instantly without paying for a disk scan.
   if (globalThis.__piSessionListCache && Date.now() - globalThis.__piSessionListCache.ts < SESSION_LIST_CACHE_TTL_MS) {
-    return globalThis.__piSessionListCache.data;
+    const supplemental = getSupplementalSessions();
+    return supplemental.length > 0
+      ? mergeSessionLists(globalThis.__piSessionListCache.data, supplemental)
+      : globalThis.__piSessionListCache.data;
   }
 
   // Coalescing dedup: concurrent callers share the same in-flight promise
@@ -94,6 +99,11 @@ export async function listAllSessions(options: { force?: boolean } = {}): Promis
     // refresh race indistinguishable from a successful refresh.
     if ((globalThis.__piSessionListGeneration ?? 0) !== generation) {
       return listAllSessions();
+    }
+    // This scan is authoritative: drop supplemental entries it now covers so
+    // the overlay cannot shadow fresher persisted data on later cache reads.
+    if (globalThis.__piSupplementalSessions) {
+      for (const session of data) globalThis.__piSupplementalSessions.delete(session.id);
     }
     globalThis.__piSessionListCache = { data, ts: Date.now() };
     return data;
@@ -120,9 +130,48 @@ declare global {
   var __piSessionListPromiseGeneration: number | undefined;
   var __piSessionListGeneration: number | undefined;
   var __piSessionListCache: { data: SessionInfo[]; ts: number } | undefined;
+  var __piSupplementalSessions: Map<string, SessionInfo> | undefined;
 }
 
-const SESSION_LIST_CACHE_TTL_MS = 30_000;
+// Recents list: mutations invalidate explicitly (new session / delete / resume),
+// so a long TTL just avoids re-scanning 1000+ session files on idle churn.
+const SESSION_LIST_CACHE_TTL_MS = 5 * 60_000;
+
+function getSupplementalSessions(): SessionInfo[] {
+  if (!globalThis.__piSupplementalSessions) return [];
+  return [...globalThis.__piSupplementalSessions.values()];
+}
+
+export type SupplementalSessionInput = {
+  id: string;
+  cwd: string;
+  name?: string;
+  created: Date;
+  modified: Date;
+  messageCount: number;
+  firstMessage?: string;
+};
+
+/**
+ * Record a just-created/resumed session so cached list reads see it without
+ * paying for a disk scan. A later authoritative scan replaces these entries
+ * (persisted list wins in {@link mergeSessionLists}).
+ */
+export function registerSupplementalSession(info: SupplementalSessionInput): void {
+  if (!globalThis.__piSupplementalSessions) globalThis.__piSupplementalSessions = new Map();
+  const session: SessionInfo = {
+    path: "",
+    id: info.id,
+    cwd: info.cwd,
+    name: info.name,
+    created: info.created instanceof Date ? info.created.toISOString() : String(info.created ?? new Date().toISOString()),
+    modified: info.modified instanceof Date ? info.modified.toISOString() : String(info.modified ?? new Date().toISOString()),
+    messageCount: info.messageCount ?? 0,
+    firstMessage: info.firstMessage ?? "(no messages)",
+    transient: true,
+  };
+  globalThis.__piSupplementalSessions.set(info.id, session);
+}
 
 export function invalidateSessionListCache(): void {
   globalThis.__piSessionListGeneration = (globalThis.__piSessionListGeneration ?? 0) + 1;
@@ -401,7 +450,12 @@ export async function getSessionDetails(
 ): Promise<SessionDetailsResponse> {
   const { sessionId: id } = input;
   const resolvedPath = await resolveSessionPath(id);
-  if (!resolvedPath) {
+  if (!resolvedPath || !existsSync(resolvedPath)) {
+    // existsSync guard: a just-created session's path is now cached at spawn
+    // time, but the file itself is only written by pi after the first
+    // assistant message. Until then the session legitimately has no
+    // persisted content — answer 404 (same as a cache miss) instead of a
+    // half-read 500.
     throw new BackendError("session_not_found", "Session not found");
   }
 

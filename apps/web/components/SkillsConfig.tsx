@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useIsMobile } from "@/hooks/useIsMobile";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useI18n } from "@/hooks/useI18n";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { skillsService } from "@/services/skills.service";
+import { TAGS } from "@/services/tags";
 import type {
   SkillInfo as Skill,
   SkillInstallScope,
@@ -715,9 +718,20 @@ export function SkillsConfig({
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data: queryData,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useQuery(skillsService.byCwdQueryOptions(cwd));
+  const skills = useMemo(() => queryData?.skills ?? [], [queryData?.skills]);
+  const loading = isFetching;
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : String(queryError)
+    : null;
   const [selected, setSelected] = useState<string | null>(null);
   const [toggling, setToggling] = useState<Set<string>>(new Set());
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -730,40 +744,32 @@ export function SkillsConfig({
   const [projectResourcesLoaded, setProjectResourcesLoaded] = useState(true);
   const [dormantGroupsOpen, setDormantGroupsOpen] = useState<Record<string, boolean>>({});
 
-  const loadSkills = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`);
-      const d = (await res.json()) as Partial<SkillsResponse> & { error?: string };
-      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
-      const list = d.skills ?? [];
-      setSkills(list);
-      setProjectResourcesLoaded(d.projectResourcesLoaded ?? true);
-      if (list.length > 0 && !selected) {
-        const initialSkill = list.find((skill) => !skill.disableModelInvocation) ?? list[0];
-        setSelected(initialSkill.filePath);
-        if (initialSkill.disableModelInvocation) {
-          setDormantGroupsOpen((current) => ({
-            ...current,
-            [skillGroupLabel(initialSkill)]: true,
-          }));
-        }
-      }
-      return list;
-    } catch (e) {
-      setError(String(e));
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [cwd, selected]);
+  const loadSkills = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
+  // Auto-select first skill + project scope flags once the (cached) list
+  // arrives. Fetch itself lives in the TanStack Query cache.
   useEffect(() => {
     setUpdateStatuses({});
     setUpdateError(null);
-    void loadSkills();
-  }, [cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!queryData) return;
+    setProjectResourcesLoaded(queryData.projectResourcesLoaded ?? true);
+    const list = queryData.skills ?? [];
+    if (list.length > 0 && !selected) {
+      const initialSkill = list.find((skill) => !skill.disableModelInvocation) ?? list[0];
+      setSelected(initialSkill.filePath);
+      if (initialSkill.disableModelInvocation) {
+        setDormantGroupsOpen((current) => ({
+          ...current,
+          [skillGroupLabel(initialSkill)]: true,
+        }));
+      }
+    }
+  }, [queryData, selected]);
 
   const checkForUpdates = useCallback(async (skill?: Skill) => {
     const targets = skill
@@ -871,12 +877,18 @@ export function SkillsConfig({
         setSaveError(d.error ?? `HTTP ${res.status}`);
         return;
       }
-      setSkills((prev) =>
-        prev.map((s) =>
-          s.filePath === skill.filePath
-            ? { ...s, disableModelInvocation: next }
-            : s,
-        ),
+      // sync into the query cache so the list stays fresh on remount
+      queryClient.setQueryData<SkillsResponse>(TAGS.skills.byCwd(cwd), (prev) =>
+        prev
+          ? {
+              ...prev,
+              skills: prev.skills.map((s) =>
+                s.filePath === skill.filePath
+                  ? { ...s, disableModelInvocation: next }
+                  : s,
+              ),
+            }
+          : prev,
       );
       if (next) {
         setDormantGroupsOpen((current) => ({
@@ -893,7 +905,7 @@ export function SkillsConfig({
         return n;
       });
     }
-  }, []);
+  }, [cwd, queryClient]);
 
   const selectedSkill = skills.find((s) => s.filePath === selected) ?? null;
 

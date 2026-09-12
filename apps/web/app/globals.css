@@ -2323,8 +2323,8 @@ span.token.table {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 50px;
+  height: 50px;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -2454,6 +2454,7 @@ span.token.table {
   flex: 1 1 auto;
   min-height: 0 !important;
   padding: 0 14px 12px !important;
+  overflow-y: auto;
 }
 .workspace-list {
   display: flex;
@@ -2543,22 +2544,17 @@ span.token.table {
 .sidebar-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-  padding: 6px;
+  padding: 6px 8px 8px;
   border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
 }
 .sidebar-footer button {
-  display: flex !important;
-  height: 34px !important;
-  font-size: 0 !important;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
-.sidebar-footer button > svg {
-  font-size: 14px !important;
-}
-.sidebar-footer button svg {
-  width: 18px;
-  height: 18px;
+.sidebar-footer button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Desktop: centering + padding driven purely by inline Tailwind on the
@@ -2721,43 +2717,19 @@ span.token.table {
   height: 32px !important;
   border-radius: 50% !important;
   background: color-mix(in srgb, var(--text) 5%, transparent) !important;
-}
-.new-session-empty .composer-attach-trigger svg {
-  display: none;
-}
-.new-session-empty .composer-attach-trigger::before {
-  content: "+";
   color: var(--text-muted);
-  font-size: 22px;
-  font-weight: 300;
-  line-height: 1;
+}
+.new-session-empty .composer-attach-trigger:hover {
+  color: var(--text);
 }
 .new-session-empty .composer-tool-trigger {
   order: 2;
+  gap: 5px !important;
   padding: 0 8px !important;
-}
-.new-session-empty .composer-tool-trigger svg {
-  display: none;
-}
-.new-session-empty .composer-tool-trigger::before {
-  width: 14px;
-  height: 14px;
-  content: "";
-  background: currentColor;
-  clip-path: polygon(50% 0,88% 15%,84% 60%,50% 100%,16% 60%,12% 15%);
-  opacity: .9;
+  color: var(--text-muted);
 }
 .new-session-empty .composer-tool-trigger span {
-  font-size: 0;
-}
-.new-session-empty .composer-tool-trigger span::after {
-  content: "Full access";
-  font-size: 11px;
-}
-.new-session-empty .composer-tool-trigger::after {
-  content: "⌄";
-  color: var(--text-dim);
-  font-size: 11px;
+  font-size: 11px !important;
 }
 .new-session-empty .composer-toolbar-left > div {
   order: 4;
@@ -2770,12 +2742,8 @@ span.token.table {
   padding: 0 6px !important;
   font-size: 11px !important;
 }
-.new-session-empty .composer-model-trigger > svg {
-  display: none;
-}
-.new-session-empty .composer-model-trigger::after {
-  content: "⌄";
-  color: var(--text-dim);
+.new-session-empty .composer-model-trigger svg {
+  opacity: .6;
 }
 .new-session-empty .composer-thinking-trigger,
 .new-session-empty .composer-compact-trigger,
@@ -2787,34 +2755,34 @@ span.token.table {
   right: 14px;
   bottom: 12px;
   z-index: 2;
-  width: 38px !important;
-  height: 38px !important;
-  min-height: 38px !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
   border-radius: 50% !important;
-  background: color-mix(in srgb, var(--accent) 30%, var(--surface-elevated)) !important;
+  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   padding: 0 !important;
   font-size: 0 !important;
-  color: rgba(255,255,255,.5) !important;
+  color: var(--text-dim) !important;
   transition: background .15s, color .15s, transform .12s, box-shadow .15s;
 }
 .new-session-empty .composer-send:not(:disabled) {
   background: var(--accent) !important;
   color: #fff !important;
-  box-shadow: 0 4px 14px rgba(65,118,230,.32);
+  box-shadow: 0 4px 16px rgba(65,118,230,.40);
 }
 .new-session-empty .composer-send:not(:disabled):hover {
   transform: translateY(-1px);
-  box-shadow: 0 7px 18px rgba(65,118,230,.38);
+  box-shadow: 0 8px 22px rgba(65,118,230,.48);
 }
-.new-session-empty .composer-send svg {
+.new-session-empty .composer-send svg,
+.new-session-empty .composer-send .lucide {
   width: 17px;
   height: 17px;
   display: block;
-  transform: rotate(-90deg);
-  margin: 1px 0 0 1px;
+  margin: 0 auto;
 }
 .new-session-empty .composer-send svg + * {
   display: none;

@@ -55,7 +55,15 @@ async function main() {
     log(`starting daemon (${DAEMON_ENTRY}) on :${PORT}`);
     daemon = spawn("node", ["--experimental-strip-types", DAEMON_ENTRY], {
       cwd: join(dirname(DAEMON_ENTRY)),
-      env: { ...process.env, ZOSMA_DAEMON_PORT: String(PORT), ZOSMA_DAEMON_TOKEN: TOKEN },
+      env: {
+        ...process.env,
+        ZOSMA_DAEMON_PORT: String(PORT),
+        ZOSMA_DAEMON_TOKEN: TOKEN,
+        // Prewarm a pi session for the repo root at daemon boot, so the
+        // first chat (default workspace) sends the prompt immediately
+        // instead of paying the session-spawn inside the send path.
+        ZOSMA_WARM_CWD: join(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+      },
       stdio: "inherit",
     });
     daemon.on("exit", (status) => {
