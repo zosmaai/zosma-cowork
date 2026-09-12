@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDaemonServer } from "./server.ts";
 
 function req(port, opts, body) {
@@ -33,16 +36,46 @@ function req(port, opts, body) {
 
 const TOKEN = randomUUID();
 
-test("health reports 503 while starting, 200 ready once ready", async () => {
+test("health rejects requests without the supervisor token", async () => {
   const server = createDaemonServer({ token: TOKEN });
   const { port } = await server.start();
   try {
-    const starting = await req(port, { method: "GET", path: "/health" });
-    assert.equal(starting.status, 503);
+    const res = await req(port, { method: "GET", path: "/health" });
+    assert.equal(res.status, 401);
+    assert.deepEqual(res.body, { ok: false, error: "unauthorized" });
+  } finally {
+    await server.stop();
+  }
+});
+
+test("authorized health reports starting before readiness", async () => {
+  const server = createDaemonServer({ token: TOKEN });
+  const { port } = await server.start();
+  try {
+    const res = await req(port, {
+      method: "GET",
+      path: "/health",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 503);
+    assert.deepEqual(res.body, { status: "starting" });
+  } finally {
+    await server.stop();
+  }
+});
+
+test("authorized health reports ready after readiness", async () => {
+  const server = createDaemonServer({ token: TOKEN });
+  const { port } = await server.start();
+  try {
     server.setReady("ready");
-    const ready = await req(port, { method: "GET", path: "/health" });
-    assert.equal(ready.status, 200);
-    assert.deepEqual(ready.body, { status: "ready" });
+    const res = await req(port, {
+      method: "GET",
+      path: "/health",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { status: "ready" });
   } finally {
     await server.stop();
   }
@@ -173,6 +206,46 @@ test("binds a fixed port when configured (supervision)", async () => {
     assert.equal(res.status, 200);
   } finally {
     await server.stop();
+  }
+});
+
+test("Git operations report git_unavailable when Git is absent", async () => {
+  const server = createDaemonServer({ token: TOKEN, gitAvailable: false });
+  const { port } = await server.start();
+  try {
+    server.setReady("ready");
+    const res = await req(port, {
+      method: "POST",
+      path: "/ipc",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${TOKEN}`,
+      },
+    }, { type: "git:status", cwd: "/tmp" });
+    assert.equal(res.status, 503);
+    assert.equal(res.body.error, "git_unavailable");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("cwd validation remains available when Git is absent", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "zosma-no-git-"));
+  const server = createDaemonServer({ token: TOKEN, gitAvailable: false });
+  const { port } = await server.start();
+  try {
+    const res = await req(port, {
+      method: "POST",
+      path: "/ipc",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${TOKEN}`,
+      },
+    }, { type: "cwd:validate", cwd });
+    assert.equal(res.status, 200);
+  } finally {
+    await server.stop();
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

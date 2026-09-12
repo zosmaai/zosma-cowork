@@ -27,6 +27,16 @@ export const GIT_RPC_OPS = [
 ] as const;
 export type GitRpcOp = (typeof GIT_RPC_OPS)[number];
 
+// Ops that truly require a Git executable. `cwd:validate` deliberately stays
+// out: choosing a normal directory must keep working without Git.
+export const GIT_REQUIRED_RPC_OPS = [
+  "git:status",
+  "git:diff",
+  "worktrees:list",
+  "worktrees:create",
+  "worktrees:remove",
+] as const;
+
 export interface GitRpcRequest {
   type: string;
   cwd?: string;

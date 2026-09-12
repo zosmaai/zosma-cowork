@@ -14,7 +14,13 @@
 import { Hono } from "hono";
 import { serve, type ServerType } from "@hono/node-server";
 import { streamSSE } from "hono/streaming";
-import { GIT_RPC_OPS, handleGitRpc, type GitRpcRequest } from "./git/rpc.ts";
+import { spawnSync } from "node:child_process";
+import {
+  GIT_REQUIRED_RPC_OPS,
+  GIT_RPC_OPS,
+  handleGitRpc,
+  type GitRpcRequest,
+} from "./git/rpc.ts";
 import { FILES_RPC_OPS, handleFilesRpc, type FilesRpcRequest } from "./files/rpc.ts";
 import { READ_RPC_OPS, handleReadRpc, type ReadRpcRequest } from "./read/rpc.ts";
 import { AUTH_RPC_OPS, handleAuthRpc, type AuthRpcRequest } from "./auth/rpc.ts";
@@ -41,6 +47,8 @@ export type PiStreamHandler = (
 
 export interface DaemonServerOptions {
   token: string;
+  /** When false, Git-backed operations reply with a stable git_unavailable. */
+  gitAvailable?: boolean;
   logger?: {
     debug(msg: string, fields?: Record<string, unknown>): void;
     info(msg: string, fields?: Record<string, unknown>): void;
@@ -81,6 +89,14 @@ function authHeld(authorization: string | undefined, token: string): boolean {
   return timingSafeEqual(s.slice(i + 1).trim(), token);
 }
 
+function detectGit(): boolean {
+  try {
+    return spawnSync("git", ["--version"], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -114,6 +130,7 @@ async function readBodyRaw(c: import("hono").Context): Promise<string> {
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
   const log = options.logger;
+  const gitAvailable = options.gitAvailable ?? detectGit();
   let state: Readiness = "starting";
   let server: ServerType | null = null;
   let boundPort = 0;
@@ -148,6 +165,12 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     // file-access security. File/workspace/index ops route to the file
     // service with the same gate. Any other op echoes back unchanged.
     if ((GIT_RPC_OPS as readonly string[]).includes(type)) {
+      if (
+        !gitAvailable
+        && (GIT_REQUIRED_RPC_OPS as readonly string[]).includes(type)
+      ) {
+        return c.json({ ok: false, type, error: "git_unavailable" }, 503);
+      }
       try {
         const request: GitRpcRequest = {
           type,
@@ -324,6 +347,9 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
   }
 
   app.get("/health", (c) => {
+    if (!authHeld(c.req.header("authorization"), options.token)) {
+      return c.json({ ok: false, error: "unauthorized" }, 401);
+    }
     if (state === "ready") return c.json({ status: "ready" }, 200);
     if (state === "shutting-down") return c.json({ status: "shutting-down" }, 503);
     return c.json({ status: state }, 503);
