@@ -129,3 +129,71 @@ jobs:
       - name: Build check
         working-directory: apps/desktop
         run: cargo build --workspace
+
+  server-artifact:
+    name: Server artifact (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: linux-x64
+          - runner: ubuntu-22.04-arm
+            target: linux-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: macos-15
+            target: darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup build Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run server unit and daemon tests
+        run: |
+          pnpm test:server
+          pnpm -C apps/daemon test
+          pnpm -C apps/daemon typecheck
+
+      - name: Package host archive
+        run: pnpm server:package --target "${{ matrix.target }}" --version v0.0.0-ci
+
+      - name: Verify archive checksum
+        working-directory: dist/server
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check SHA256SUMS
+          else
+            shasum -a 256 --check SHA256SUMS
+          fi
+
+      - name: Smoke extracted archive
+        shell: bash
+        run: |
+          archive="dist/server/zosma-cowork-server-v0.0.0-ci-${{ matrix.target }}.tar.gz"
+          pnpm server:smoke --archive "$archive"
+
+      - name: Debian 12 compatibility smoke
+        if: matrix.target == 'linux-x64'
+        shell: bash
+        run: |
+          archive="dist/server/zosma-cowork-server-v0.0.0-ci-linux-x64.tar.gz"
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          tar -xzf "$archive" -C "$temp"
+          docker run --rm --network host \
+            -v "$PWD:/repo" -v "$temp:$temp:ro" -w /repo debian:12-slim \
+            "$temp/runtime/bin/node" scripts/smoke-server-release.mjs --archive "$archive"
