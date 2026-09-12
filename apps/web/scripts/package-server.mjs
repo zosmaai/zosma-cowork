@@ -65,6 +65,14 @@ const dist = join(root, "dist-server");
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
+// Drop dangling pnpm links for external packages; step 4 fills them from web/node_modules.
+for (const pkg of external) {
+  const traced = join(standalone, "node_modules", pkg);
+  if (!(await stat(traced).then(() => true).catch(() => false))) {
+    await rm(traced, { recursive: true, force: true });
+  }
+}
+
 // 1. Standalone server: server.js, pinned package.json, trimmed node_modules, .next/server
 await cp(standalone, dist, { recursive: true, dereference: true });
 
