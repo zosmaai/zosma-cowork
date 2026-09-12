@@ -26,6 +26,7 @@ import {
   CONTROL_PING,
   CONTROL_PONG,
   FRAME_VALIDATORS,
+  isControlTag,
 } from "@zosma-cowork/protocol";
 
 export interface RpcReply {
@@ -243,8 +244,9 @@ export class OutboundConnector {
       return;
     }
     const tag = typeof msg.type === "string" ? msg.type : "";
+    if (!isControlTag(tag)) return;
     const validator = FRAME_VALIDATORS[tag];
-    if (!validator) return;
+    if (typeof validator !== "function") return;
     const payload = { ...msg };
     delete payload.type;
     const res = validator(payload);
