@@ -9,7 +9,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, copyFileSync, writ
 import { join, resolve } from "node:path";
 import { platform, arch } from "node:os";
 
-const NODE_VERSION = "v24.15.0"; // Current LTS as of May 2026
+import { BUNDLED_NODE_VERSION as NODE_VERSION } from "../../../scripts/bundled-node-version.mjs";
 
 // Map Rust target triples to Node.js download targets
 const TARGET_MAP = {

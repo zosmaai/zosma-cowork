@@ -296,10 +296,12 @@ zosma-cowork-server-<version>-darwin-arm64.tar.gz
 Each archive contains:
 
 ```text
-runtime/node
+runtime/bin/node
+runtime/lib/node_modules/npm/
 web/dist-server/
 daemon/
 supervisor/run-server.mjs
+supervisor/healthcheck.mjs
 VERSION
 ```
 
