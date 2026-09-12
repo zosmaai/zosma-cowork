@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject } from "@/lib/worktree";
 import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
+import { isGitAvailable } from "@/lib/git-availability";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -23,6 +24,10 @@ export async function GET(req: Request) {
     }
     const denied = await checkCwdAllowed(cwd);
     if (denied) return denied;
+
+    if (!isGitAvailable()) {
+      return NextResponse.json({ error: "git_unavailable" }, { status: 503 });
+    }
 
     const project = await resolveProject(cwd);
     let worktrees: Awaited<ReturnType<typeof listWorktrees>> = [];
@@ -69,6 +74,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
+    if (!isGitAvailable()) {
+      return NextResponse.json({ error: "git_unavailable" }, { status: 503 });
+    }
+
     const result = await addWorktree(body.cwd, body.branch);
     return NextResponse.json(result);
   } catch (error) {
@@ -89,6 +98,10 @@ export async function DELETE(req: Request) {
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
+
+    if (!isGitAvailable()) {
+      return NextResponse.json({ error: "git_unavailable" }, { status: 503 });
+    }
 
     await removeWorktree(body.cwd, body.path, body.force === true);
     return NextResponse.json({ success: true });
