@@ -1,0 +1,552 @@
+#!/bin/sh
+# zosma — Zosma Cowork lifecycle CLI (POSIX sh, dependency-free).
+#
+# One assignment of the development version; Phase 4 release CI stamps this
+# line when producing the versioned CLI asset.
+# shellcheck disable=SC2034
+ZOSMA_CLI_VERSION=v0.0.0-dev
+ZOSMA_INSTALLER_SCHEMA=1
+
+CONFIG_SCHEMA=1
+TRANSACTION_SCHEMA=1
+MARKER_NAME=.zosma-cowork-owned
+MARKER_LINE=ZOSMA_COWORK_INSTALLER_SCHEMA=1
+DEFAULT_WEB_PORT=30141
+FIXED_DAEMON_PORT=64713
+COMPOSE_PROJECT=zosma-cowork
+LAUNCH_AGENT_LABEL=ai.zosma.cowork
+SYSTEMD_UNIT_BASENAME=zosma-cowork.service
+EXIT_OK=0
+EXIT_INTERNAL=1
+EXIT_USAGE=2
+EXIT_PREREQ=3
+EXIT_VERIFY=4
+EXIT_RUNTIME=5
+EXIT_CANCEL=6
+
+set -eu
+
+# ---------------------------------------------------------------------------
+# Output and error helpers
+# ---------------------------------------------------------------------------
+
+out() { printf '%s\n' "$*"; }
+err() { printf '%s\n' "$*" >&2; }
+warn() { printf '%s\n' "warning: $*" >&2; }
+
+usage_error() {
+  err "error: $*"
+  err "usage: zosma <command> [options]  (see 'zosma --help')"
+  exit "$EXIT_USAGE"
+}
+
+prereq_error() { err "error: $*"; exit "$EXIT_PREREQ"; }
+verify_error() { err "error: $*"; exit "$EXIT_VERIFY"; }
+runtime_error() { err "error: $*"; exit "$EXIT_RUNTIME"; }
+cancel_error() { err "error: $*"; exit "$EXIT_CANCEL"; }
+internal_error() { err "error: $*"; exit "$EXIT_INTERNAL"; }
+
+# ---------------------------------------------------------------------------
+# Pure value validators (never touch the filesystem)
+# ---------------------------------------------------------------------------
+
+is_absolute() {
+  case "$1" in /*) return 0 ;; esac
+  return 1
+}
+
+has_nonprintable() {
+  # True when the value contains a byte outside printable ASCII (space..~).
+  printf '%s' "$1" | LC_ALL=C grep -q '[^ -~]'
+}
+
+valid_version() {
+  case $(printf '%s\n' "$1" | sed -n \
+    's/^v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\(-[0-9A-Za-z][0-9A-Za-z.-]*\)*$/ok/p') in
+    ok) return 0 ;;
+  esac
+  return 1
+}
+
+valid_port() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+valid_hex() {
+  case "$1" in ''|*[!0-9a-f]*) return 1 ;; esac
+  return 0
+}
+
+valid_digest_ref() {
+  hex=${1#ghcr.io/zosmaai/zosma-cowork@sha256:}
+  case "$1" in
+    ghcr.io/zosmaai/zosma-cowork@sha256:*) : ;;
+    *) return 1 ;;
+  esac
+  valid_hex "$hex" || return 1
+  [ "${#hex}" -eq 64 ] || return 1
+  return 0
+}
+
+valid_hostname() {
+  h=$1
+  case "$h" in
+    ''|*[!0-9A-Za-z.-]*) return 1 ;;
+    *..*|.*|*.) return 1 ;;
+  esac
+  [ "${#h}" -le 253 ] || return 1
+  remaining=$h
+  while [ -n "$remaining" ]; do
+    label=${remaining%%.*}
+    case "$label" in
+      ''|-*|*-) return 1 ;;
+    esac
+    [ "${#label}" -le 63 ] || return 1
+    case "$remaining" in
+      *.*) remaining=${remaining#*.} ;;
+      *) break ;;
+    esac
+  done
+  return 0
+}
+
+valid_null_or_absolute() {
+  [ -z "$1" ] && return 0
+  is_absolute "$1" || return 1
+  has_nonprintable "$1" && return 1
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Path resolution (pure: no filesystem side effect)
+# ---------------------------------------------------------------------------
+
+resolve_xdg_base() {
+  # $1 = var name to set, $2 = XDG env name, $3 = fallback under HOME
+  eval "xdg_value=\${$2:-}"
+  if [ -z "$xdg_value" ]; then
+    eval "$1=\$HOME/$3"
+    return 0
+  fi
+  if is_absolute "$xdg_value"; then
+    eval "$1=\$xdg_value"
+    return 0
+  fi
+  warn "ignoring relative $2=$xdg_value; using the fallback under \$HOME"
+  eval "$1=\$HOME/$3"
+}
+
+resolve_roots() {
+  # Computed roots become command-global state.
+# shellcheck disable=SC2034
+  case "${HOME:-}" in
+    '') err "error: HOME is not set"; exit "$EXIT_USAGE" ;;
+  esac
+  case "$HOME" in
+    /*) : ;;
+    *) err "error: HOME must be an absolute path: $HOME"; exit "$EXIT_USAGE" ;;
+  esac
+  if has_nonprintable "$HOME"; then
+    err "error: HOME contains non-printable characters"; exit "$EXIT_USAGE"
+  fi
+  ZM_HOME=$HOME
+  resolve_xdg_base ZM_XDG_DATA XDG_DATA_HOME .local/share
+  resolve_xdg_base ZM_XDG_CONFIG XDG_CONFIG_HOME .config
+  resolve_xdg_base ZM_XDG_STATE XDG_STATE_HOME .local/state
+  resolve_xdg_base ZM_XDG_CACHE XDG_CACHE_HOME .cache
+  ZM_BIN_DIR=$ZM_HOME/.local/bin
+  ZM_DATA_ROOT=$ZM_XDG_DATA/zosma-cowork
+  ZM_CONFIG_ROOT=$ZM_XDG_CONFIG/zosma-cowork
+  ZM_STATE_ROOT=$ZM_XDG_STATE/zosma-cowork
+  ZM_CACHE_ROOT=$ZM_XDG_CACHE/zosma-cowork
+  ZM_TRANSACTION_ROOT=$ZM_STATE_ROOT/transaction
+  ZM_TRANSACTION_JOURNAL=$ZM_TRANSACTION_ROOT/journal
+  ZM_CLI_VERSIONS=$ZM_DATA_ROOT/cli/versions
+  ZM_CLI_CURRENT=$ZM_DATA_ROOT/cli/current
+  ZM_RUNTIME_VERSIONS=$ZM_DATA_ROOT/runtime/versions
+  ZM_RUNTIME_CURRENT=$ZM_DATA_ROOT/runtime/current
+  ZM_DOCKER_ROOT=$ZM_CONFIG_ROOT/docker
+  ZM_DOCKER_PI_STATE=$ZM_DATA_ROOT/docker/pi-agent
+  ZM_SYSTEMD_UNIT=$ZM_XDG_CONFIG/systemd/user/$SYSTEMD_UNIT_BASENAME
+  ZM_LAUNCH_AGENT=$ZM_HOME/Library/LaunchAgents/$LAUNCH_AGENT_LABEL.plist
+}
+
+# ---------------------------------------------------------------------------
+# Fixed-key configuration and secrets parsers (values are data, never shell)
+# ---------------------------------------------------------------------------
+
+# Parses the installed configuration. On failure prints an error and exits 2.
+parse_config_files() {
+  cfg_path=$1
+  sec_path=$2
+  CFG_MODE=
+  CFG_VERSION=
+  CFG_PORT=
+  CFG_BIND=
+  CFG_ALLOWED_HOST=
+  CFG_PI_DIR=
+  CFG_WORKSPACE=
+  CFG_IMAGE=
+  CFG_SERVICE_MANAGER=
+  cfg_seen_schema=0
+  cfg_seen_mode=0
+  cfg_seen_version=0
+  cfg_seen_port=0
+  cfg_seen_bind=0
+  cfg_seen_allowed_host=0
+  cfg_seen_pi_dir=0
+  cfg_seen_workspace=0
+  cfg_seen_image=0
+  cfg_seen_service_manager=0
+  cfg_unknown=0
+
+  while IFS= read -r line; do
+    case "$line" in
+      '') continue ;;
+      CONFIG_SCHEMA=*)
+        [ "$cfg_seen_schema" -eq 0 ] || { err "error: duplicate CONFIG_SCHEMA"; exit "$EXIT_USAGE"; }
+        cfg_seen_schema=1
+        case "$line" in
+          "CONFIG_SCHEMA=$CONFIG_SCHEMA") : ;;
+          *) err "error: unsupported CONFIG_SCHEMA value"; exit "$EXIT_USAGE" ;;
+        esac
+        ;;
+      MODE=*)
+        [ "$cfg_seen_mode" -eq 0 ] || { err "error: duplicate MODE"; exit "$EXIT_USAGE"; }
+        cfg_seen_mode=1
+        CFG_MODE=${line#MODE=}
+        case "$CFG_MODE" in local|docker) : ;;
+          *) err "error: invalid MODE value"; exit "$EXIT_USAGE" ;;
+        esac
+        ;;
+      VERSION=*)
+        [ "$cfg_seen_version" -eq 0 ] || { err "error: duplicate VERSION"; exit "$EXIT_USAGE"; }
+        cfg_seen_version=1
+        CFG_VERSION=${line#VERSION=}
+        valid_version "$CFG_VERSION" || { err "error: invalid VERSION value"; exit "$EXIT_USAGE"; }
+        ;;
+      PORT=*)
+        [ "$cfg_seen_port" -eq 0 ] || { err "error: duplicate PORT"; exit "$EXIT_USAGE"; }
+        cfg_seen_port=1
+        CFG_PORT=${line#PORT=}
+        valid_port "$CFG_PORT" || { err "error: invalid PORT value"; exit "$EXIT_USAGE"; }
+        ;;
+      BIND_ADDRESS=*)
+        [ "$cfg_seen_bind" -eq 0 ] || { err "error: duplicate BIND_ADDRESS"; exit "$EXIT_USAGE"; }
+        cfg_seen_bind=1
+        CFG_BIND=${line#BIND_ADDRESS=}
+        case "$CFG_BIND" in 127.0.0.1|0.0.0.0) : ;;
+          *) err "error: invalid BIND_ADDRESS value"; exit "$EXIT_USAGE" ;;
+        esac
+        ;;
+      ALLOWED_HOST=*)
+        [ "$cfg_seen_allowed_host" -eq 0 ] || { err "error: duplicate ALLOWED_HOST"; exit "$EXIT_USAGE"; }
+        cfg_seen_allowed_host=1
+        CFG_ALLOWED_HOST=${line#ALLOWED_HOST=}
+        valid_hostname "$CFG_ALLOWED_HOST" || { err "error: invalid ALLOWED_HOST value"; exit "$EXIT_USAGE"; }
+        ;;
+      PI_DIR=*)
+        [ "$cfg_seen_pi_dir" -eq 0 ] || { err "error: duplicate PI_DIR"; exit "$EXIT_USAGE"; }
+        cfg_seen_pi_dir=1
+        CFG_PI_DIR=${line#PI_DIR=}
+        is_absolute "$CFG_PI_DIR" || { err "error: PI_DIR must be absolute"; exit "$EXIT_USAGE"; }
+        has_nonprintable "$CFG_PI_DIR" && { err "error: PI_DIR contains non-printable characters"; exit "$EXIT_USAGE"; }
+        ;;
+      WORKSPACE=*)
+        [ "$cfg_seen_workspace" -eq 0 ] || { err "error: duplicate WORKSPACE"; exit "$EXIT_USAGE"; }
+        cfg_seen_workspace=1
+        CFG_WORKSPACE=${line#WORKSPACE=}
+        valid_null_or_absolute "$CFG_WORKSPACE" || {
+          err "error: WORKSPACE must be empty or an absolute path"; exit "$EXIT_USAGE";
+        }
+        ;;
+      IMAGE=*)
+        [ "$cfg_seen_image" -eq 0 ] || { err "error: duplicate IMAGE"; exit "$EXIT_USAGE"; }
+        cfg_seen_image=1
+        CFG_IMAGE=${line#IMAGE=}
+        if [ -n "$CFG_IMAGE" ]; then
+          valid_digest_ref "$CFG_IMAGE" || { err "error: invalid IMAGE digest reference"; exit "$EXIT_USAGE"; }
+        fi
+        ;;
+      SERVICE_MANAGER=*)
+        [ "$cfg_seen_service_manager" -eq 0 ] || { err "error: duplicate SERVICE_MANAGER"; exit "$EXIT_USAGE"; }
+        cfg_seen_service_manager=1
+        CFG_SERVICE_MANAGER=${line#SERVICE_MANAGER=}
+        case "$CFG_SERVICE_MANAGER" in systemd|launchd|none) : ;;
+          *) err "error: invalid SERVICE_MANAGER value"; exit "$EXIT_USAGE" ;;
+        esac
+        ;;
+      *=*)
+        warn "ignoring unknown configuration key: ${line%%=*}"
+        cfg_unknown=$((cfg_unknown + 1))
+        ;;
+      *)
+        err "error: malformed configuration line"; exit "$EXIT_USAGE"
+        ;;
+    esac
+  done < "$cfg_path"
+
+  for key in schema mode version port bind allowed_host pi_dir workspace image service_manager; do
+    eval seen=\$cfg_seen_$key
+    [ "$seen" -eq 1 ] || { err "error: missing required configuration key: $key"; exit "$EXIT_USAGE"; }
+  done
+
+  # Secrets: unknown keys are rejected; values are never printed.
+  SEC_DAEMON_TOKEN=
+  SEC_WEB_PASSWORD=
+  sec_seen_token=0
+  sec_seen_web_password=0
+  while IFS= read -r line; do
+    case "$line" in
+      '') continue ;;
+      DAEMON_TOKEN=*)
+        [ "$sec_seen_token" -eq 0 ] || { err "error: duplicate DAEMON_TOKEN"; exit "$EXIT_USAGE"; }
+        sec_seen_token=1
+        SEC_DAEMON_TOKEN=${line#DAEMON_TOKEN=}
+        valid_hex "$SEC_DAEMON_TOKEN" || { err "error: invalid DAEMON_TOKEN"; exit "$EXIT_USAGE"; }
+        [ "${#SEC_DAEMON_TOKEN}" -eq 64 ] || { err "error: invalid DAEMON_TOKEN length"; exit "$EXIT_USAGE"; }
+        ;;
+      WEB_PASSWORD=*)
+        [ "$sec_seen_web_password" -eq 0 ] || { err "error: duplicate WEB_PASSWORD"; exit "$EXIT_USAGE"; }
+        sec_seen_web_password=1
+        SEC_WEB_PASSWORD=${line#WEB_PASSWORD=}
+        if [ -n "$SEC_WEB_PASSWORD" ]; then
+          valid_hex "$SEC_WEB_PASSWORD" || { err "error: invalid WEB_PASSWORD"; exit "$EXIT_USAGE"; }
+          [ "${#SEC_WEB_PASSWORD}" -le 64 ] || { err "error: invalid WEB_PASSWORD length"; exit "$EXIT_USAGE"; }
+        fi
+        ;;
+      *=*)
+        err "error: unknown secrets entry: ${line%%=*}"
+        exit "$EXIT_USAGE"
+        ;;
+      *)
+        err "error: malformed secrets line"; exit "$EXIT_USAGE"
+        ;;
+    esac
+  done < "$sec_path"
+  [ "$sec_seen_token" -eq 1 ] || { err "error: missing DAEMON_TOKEN"; exit "$EXIT_USAGE"; }
+  [ "$sec_seen_web_password" -eq 1 ] || { err "error: missing WEB_PASSWORD"; exit "$EXIT_USAGE"; }
+
+  # Cross-field invariants that are purely structural.
+  if [ "$CFG_MODE" = "local" ]; then
+    [ -z "$CFG_WORKSPACE" ] || { err "error: WORKSPACE must be empty in local mode"; exit "$EXIT_USAGE"; }
+    [ -z "$CFG_IMAGE" ] || { err "error: IMAGE must be empty in local mode"; exit "$EXIT_USAGE"; }
+  else
+    [ -n "$CFG_WORKSPACE" ] || { err "error: WORKSPACE is required in docker mode"; exit "$EXIT_USAGE"; }
+    valid_digest_ref "$CFG_IMAGE" || { err "error: IMAGE digest is required in docker mode"; exit "$EXIT_USAGE"; }
+  fi
+  case "$CFG_BIND" in
+    127.0.0.1)
+      [ "$CFG_ALLOWED_HOST" = "127.0.0.1" ] || {
+        err "error: loopback binding requires ALLOWED_HOST=127.0.0.1"; exit "$EXIT_USAGE";
+      }
+      [ -z "$SEC_WEB_PASSWORD" ] || {
+        err "error: loopback binding requires an empty web password"; exit "$EXIT_USAGE";
+      }
+      ;;
+    0.0.0.0)
+      [ "$CFG_ALLOWED_HOST" = "127.0.0.1" ] && {
+        err "error: LAN binding requires an allowed hostname"; exit "$EXIT_USAGE";
+      }
+      [ -n "$SEC_WEB_PASSWORD" ] || {
+        err "error: LAN binding requires a generated web password"; exit "$EXIT_USAGE";
+      }
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Strict fixed-key release-manifest reader (values are data, never shell)
+# ---------------------------------------------------------------------------
+
+parse_manifest_file() {
+  # Manifest fields become command-global state.
+# shellcheck disable=SC2034
+  mf_path=$1
+  ZM_MF_SCHEMA=
+  ZM_MF_VERSION=
+  ZM_MF_SUMS_URL=
+  ZM_MF_CLI_URL=
+  ZM_MF_CLI_SHA256=
+  # archive_<target>_url / _sha256
+  ZM_MF_ARCHIVE=
+  seen=
+  count=0
+
+  while IFS= read -r line; do
+    case "$line" in
+      '') continue ;;
+      *=*)
+        key=${line%%=*}
+        value=${line#*=}
+        case " $seen " in
+          *" $key "*) { err "error: duplicate manifest key: $key"; return "$EXIT_VERIFY"; } ;;
+        esac
+        seen=$seen" $key"
+        count=$((count + 1))
+        case "$key" in
+          installer_schema)
+            [ "$value" = "$ZOSMA_INSTALLER_SCHEMA" ] || {
+              err "error: unsupported installer schema"; return "$EXIT_VERIFY";
+            }
+            ZM_MF_SCHEMA=$value
+            ;;
+          version)
+            valid_version "$value" || { err "error: invalid manifest version"; return "$EXIT_VERIFY"; }
+            ZM_MF_VERSION=$value
+            ;;
+          sha256sums_url)
+            case "$value" in
+              https://*) : ;;
+              *) err "error: manifest URL must use https: $key"; return "$EXIT_VERIFY" ;;
+            esac
+            [ "${value##*/}" = "SHA256SUMS" ] || {
+              err "error: SHA256SUMS URL basename mismatch"; return "$EXIT_VERIFY";
+            }
+            ZM_MF_SUMS_URL=$value
+            ;;
+          cli_url)
+            case "$value" in
+              https://*) : ;;
+              *) err "error: manifest URL must use https: $key"; return "$EXIT_VERIFY" ;;
+            esac
+            ZM_MF_CLI_URL=$value
+            ;;
+          cli_sha256)
+            valid_hex "$value" || { err "error: invalid cli_sha256"; return "$EXIT_VERIFY"; }
+            [ "${#value}" -eq 64 ] || { err "error: invalid cli_sha256 length"; return "$EXIT_VERIFY"; }
+            ZM_MF_CLI_SHA256=$value
+            ;;
+          archive_*_url)
+            case "$value" in
+              https://*) : ;;
+              *) err "error: manifest URL must use https: $key"; return "$EXIT_VERIFY" ;;
+            esac
+            ZM_MF_ARCHIVE=$key:$value
+            ;;
+          archive_*_sha256)
+            valid_hex "$value" || { err "error: invalid archive checksum: $key"; return "$EXIT_VERIFY"; }
+            [ "${#value}" -eq 64 ] || { err "error: invalid archive checksum length: $key"; return "$EXIT_VERIFY"; }
+            ;;
+          docker_image)
+            valid_digest_ref "$value" || {
+              err "error: invalid docker_image digest reference"; return "$EXIT_VERIFY";
+            }
+            ZM_MF_DOCKER_IMAGE=$value
+            ;;
+          *)
+            err "error: unknown manifest key: $key"
+            return "$EXIT_VERIFY"
+            ;;
+        esac
+        ;;
+      *)
+        err "error: malformed manifest line"
+        return "$EXIT_VERIFY"
+        ;;
+    esac
+  done < "$mf_path"
+
+  expected=""
+  for key in installer_schema version sha256sums_url cli_url cli_sha256 \
+    archive_linux_x64_url archive_linux_x64_sha256 \
+    archive_linux_arm64_url archive_linux_arm64_sha256 \
+    archive_darwin_x64_url archive_darwin_x64_sha256 \
+    archive_darwin_arm64_url archive_darwin_arm64_sha256 \
+    docker_image; do
+    expected=$expected" $key"
+  done
+  [ "$seen" = "$expected" ] || {
+    err "error: manifest is missing required keys"
+    return "$EXIT_VERIFY"
+  }
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+print_help() {
+  cat <<'HELP'
+zosma — Zosma Cowork lifecycle command
+
+usage: zosma <command> [options]
+
+commands:
+  install [local|docker]   install or reinstall Cowork
+  serve                    run the local server in the foreground
+  start | stop | restart   manage the installed service
+  status                   show installation state
+  logs [--follow]          show service logs
+  open                     open the web interface
+  doctor                   diagnose the installation
+  access [--show-password] show access information
+  update [--version V]     update Cowork
+  uninstall [--purge-data] remove Cowork
+  version [--machine]      print version information
+  --help                   show this help
+
+Run 'zosma <command> --help' for command options.
+HELP
+}
+
+cmd_version() {
+  case "${1:-}" in
+    '') out "Zosma Cowork CLI $ZOSMA_CLI_VERSION (installer schema $ZOSMA_INSTALLER_SCHEMA)" ;;
+    --machine)
+      [ $# -eq 1 ] || usage_error "version accepts only --machine"
+      out "installer_schema=$ZOSMA_INSTALLER_SCHEMA"
+      out "version=$ZOSMA_CLI_VERSION"
+      ;;
+    *) usage_error "unknown version option: $1" ;;
+  esac
+}
+
+cmd_install() { usage_error "install is not implemented yet"; }
+cmd_serve() { usage_error "serve is not implemented yet"; }
+cmd_start() { usage_error "start is not implemented yet"; }
+cmd_stop() { usage_error "stop is not implemented yet"; }
+cmd_restart() { usage_error "restart is not implemented yet"; }
+cmd_status() { usage_error "status is not implemented yet"; }
+cmd_logs() { usage_error "logs is not implemented yet"; }
+cmd_open() { usage_error "open is not implemented yet"; }
+cmd_doctor() { usage_error "doctor is not implemented yet"; }
+cmd_access() { usage_error "access is not implemented yet"; }
+cmd_update() { usage_error "update is not implemented yet"; }
+cmd_uninstall() { usage_error "uninstall is not implemented yet"; }
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+main() {
+  [ $# -gt 0 ] || usage_error "no command given"
+  cmd=$1
+  shift
+  case "$cmd" in
+    version) cmd_version "$@" ;;
+    install) cmd_install "$@" ;;
+    serve) cmd_serve "$@" ;;
+    start) cmd_start "$@" ;;
+    stop) cmd_stop "$@" ;;
+    restart) cmd_restart "$@" ;;
+    status) cmd_status "$@" ;;
+    logs) cmd_logs "$@" ;;
+    open) cmd_open "$@" ;;
+    doctor) cmd_doctor "$@" ;;
+    access) cmd_access "$@" ;;
+    update) cmd_update "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
+    help|-h|--help) print_help ;;
+    *) usage_error "unknown command: $cmd" ;;
+  esac
+}
+
+if [ "${ZOSMA_TESTING:-}" = "1" ] && [ "${ZOSMA_SOURCE_MODE:-}" = "1" ]; then
+  # Sourced test mode: definitions only, the caller drives the pure helpers.
+  :
+else
+  main "$@"
+fi
