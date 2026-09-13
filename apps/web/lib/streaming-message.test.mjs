@@ -162,6 +162,17 @@ test("ignores deltas without a baseline and unknown future deltas", () => {
   );
 });
 
+test("frozen keeps the partial message but ends streaming (abort path)", () => {
+  const state = snapshot(INITIAL_STREAMING_STATE, assistant([{ type: "text", text: "part" }]));
+  const frozen = streamReducer(state, { type: "frozen" });
+  assert.strictEqual(frozen.isStreaming, false);
+  assert.strictEqual(frozen.streamingMessage, state.streamingMessage);
+  // frozen is idempotent
+  assert.strictEqual(streamReducer(frozen, { type: "frozen" }), frozen);
+  // a fresh start (next turn) replaces the frozen tail
+  assert.strictEqual(streamReducer(frozen, { type: "start" }).streamingMessage, null);
+});
+
 test("normalizes tool calls in snapshots and clears on end", () => {
   const state = snapshot(INITIAL_STREAMING_STATE, assistant([{
     type: "toolCall",

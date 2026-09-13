@@ -9,6 +9,7 @@ import { ExtensionDialog, ExtensionCustomPanel } from "./ExtensionOverlays";
 import { ExtensionStatusBar, partitionExtensionWidgets } from "./ExtensionStatusBar";
 import { SessionMetricsLine } from "./SessionMetricsLine";
 import { ZosmaBrand } from "./ZosmaBrand";
+import { BookOpen, Bug, Code2, Map as MapIcon } from "lucide-react";
 import { MessageView } from "./MessageView";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession } from "@/hooks/useAgentSession";
@@ -58,10 +59,10 @@ export function pickNewSessionTitle(): string {
 }
 
 const PROMPT_SUGGESTIONS = [
-  "Draft a project roadmap for next quarter",
-  "Refactor the auth module and add tests",
-  "Write a test suite for the payment service",
-  "Explain this codebase in a short brief",
+  { icon: MapIcon, label: "Draft a project roadmap for next quarter" },
+  { icon: Code2, label: "Refactor the auth module and add tests" },
+  { icon: Bug, label: "Write a test suite for the payment service" },
+  { icon: BookOpen, label: "Explain this codebase in a short brief" },
 ] as const;
 
 interface Props {
@@ -126,9 +127,11 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
   // Completion sound on agent end (wrapped so the hook's internal ref sync
   // cannot clobber an externally installed handler).
   const playDoneSoundRef = useRef(playDoneSound);
-  playDoneSoundRef.current = playDoneSound;
   const soundEnabledRef = useRef(soundEnabled);
-  soundEnabledRef.current = soundEnabled;
+  useEffect(() => {
+    playDoneSoundRef.current = playDoneSound;
+    soundEnabledRef.current = soundEnabled;
+  });
   const soundedExtensionDialogIdRef = useRef<string | null>(null);
   const wrappedOnAgentEnd = useCallback(() => {
     if (soundEnabledRef.current) {
@@ -143,7 +146,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
 
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, aborting, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -200,7 +203,9 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     ].join("|")
     : null;
   const sessionStatsRef = useRef(sessionStats);
-  sessionStatsRef.current = sessionStats;
+  useEffect(() => {
+    sessionStatsRef.current = sessionStats;
+  });
   useEffect(() => {
     onSessionStatsChange?.(sessionStatsRef.current);
   }, [statsKey, onSessionStatsChange]);
@@ -210,7 +215,9 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     ? `${contextUsage.percent ?? "null"}|${contextUsage.contextWindow}|${contextUsage.tokens ?? "null"}`
     : null;
   const contextUsageRef = useRef(contextUsage);
-  contextUsageRef.current = contextUsage;
+  useEffect(() => {
+    contextUsageRef.current = contextUsage;
+  });
   useEffect(() => {
     onContextUsageChange?.(contextUsageRef.current);
   }, [ctxKey, onContextUsageChange]);
@@ -250,6 +257,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       ref={chatInputRef}
       onSend={sessionLost ? () => {} : handleSend}
       onAbort={handleAbort}
+      aborting={aborting}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
       onPromptWithStreamingBehavior={agentRunning ? handlePromptWithStreamingBehavior : undefined}
@@ -557,73 +565,43 @@ function HeroView({ title, cwd, isMobile, onPrompt }: {
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-8">
       <div className="new-session-panel w-full" style={{ maxWidth: "var(--shell-composer-max-width)" }}>
-        <div
-          className="new-session-hero-title mb-3"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginLeft: 16,
-            marginRight: isMobile ? 16 : 52,
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          <div className="new-session-title-content" style={{ display: "flex", alignItems: "baseline", gap: isMobile ? 7 : 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
+        <div className="mx-auto flex max-w-140 flex-col items-center text-center">
+          {/* Hero: brand mark + rotating title on one centered axis. */}
+          <div className="flex items-center justify-center gap-3">
             <ZosmaBrand className="new-session-brand" />
             <span className="new-session-title-text">{title}</span>
           </div>
-          <div className="new-session-versions" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
-            </span>
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
-            </span>
-          </div>
-        </div>
-        {cwd ? (
+
+          {/* Workspace context chip — a quiet monospace path, centered. */}
+          {cwd ? (
+            <div className="mt-4 flex items-center gap-2 text-[12px] text-(--text-muted)">
+              <span className="uppercase tracking-[0.4px] text-[10px] text-(--text-dim)">
+                {t("sidebar.workspaces")}
+              </span>
+              <span className="max-w-[52ch] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-(--text-dim)">
+                {cwd}
+              </span>
+            </div>
+          ) : null}
+
+          {/* Suggestion cards: icon + label, obviously tappable. */}
           <div
-            className="new-session-workspace"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginLeft: 16,
-              marginRight: isMobile ? 16 : 52,
-              marginBottom: 4,
-              fontSize: 12,
-              color: "var(--text-muted)",
-            }}
+            className="new-session-suggestions mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2"
+            role="group"
+            aria-label={t("chat.promptSuggestions")}
           >
-            <span
-              style={{
-                flexShrink: 0,
-                padding: "1px 8px",
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                color: "var(--text-dim)",
-                fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
-              }}
-            >
-              workspace
-            </span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cwd}</span>
+            {PROMPT_SUGGESTIONS.map(({ icon: Icon, label }) => (
+              <button
+                type="button"
+                key={label}
+                className="new-session-suggestion"
+                onClick={() => onPrompt(label)}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">{label}</span>
+              </button>
+            ))}
           </div>
-        ) : null}
-        <div className="new-session-suggestions" role="group" aria-label={t("chat.promptSuggestions")}>
-          {PROMPT_SUGGESTIONS.map((prompt) => (
-            <button
-              type="button"
-              key={prompt}
-              className="new-session-suggestion"
-              onClick={() => onPrompt(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
         </div>
       </div>
     </div>
@@ -774,7 +752,7 @@ function MessageColumn({
         margin: "0 auto",
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      <div className="min-w-0">
         {hasMore && (
           <div ref={sentinelRef} className="py-3 text-center text-xs text-text-muted">
             {t("chat.loadEarlier", { count: startIndex })}
@@ -783,7 +761,7 @@ function MessageColumn({
         {rendered.slice(startIndex)}
       </div>
       <div style={{ minWidth: 0, marginTop: "auto" }}>
-        {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
+        {streamState.streamingMessage && hasStreamingContent && (
           <MessageView
             message={streamState.streamingMessage as AgentMessage}
             isStreaming

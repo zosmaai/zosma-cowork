@@ -274,7 +274,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
           }}
         >
-          <code style={{ fontFamily: "var(--font-mono)" }}>{code}</code>
+          <code className="font-(--font-mono)">{code}</code>
         </pre>
       ) : (
         <SyntaxHighlighter

@@ -109,19 +109,7 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
     return (
       <button
         onClick={() => setShowRaw(true)}
-        style={{
-          display: "block",
-          width: "100%",
-          margin: "4px 0",
-          padding: "7px 10px",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          background: "var(--bg-panel)",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          textAlign: "left",
-        }}
+        className="block w-full my-1 mx-0 py-[7px] px-2.5 border border-(--border) rounded-md bg-(--bg-panel) text-(--text-muted) cursor-pointer text-xs text-left"
       >
         ⚠ {t("i18n.largeMessageReveal", { size: formatMessageBytes(children.length) })}
       </button>
@@ -130,14 +118,7 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
   return (
     <div className={className} style={{ maxHeight: 420, overflow: "auto", fontSize: 12, lineHeight: 1.5 }}>
       <pre
-        style={{
-          margin: 0,
-          padding: "8px 10px",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          fontFamily: "var(--font-mono)",
-          color: "var(--text-muted)",
-        }}
+        className="m-0 py-2 px-2.5 whitespace-pre-wrap break-words font-(--font-mono) text-(--text-muted)"
       >
         {children}
       </pre>
@@ -340,7 +321,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const editTarget = commandText ? replaceUserMessageText(message, commandText) : message;
 
   const imageBlocksNode = imageBlocks.length > 0 && (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
+    <div className={`flex gap-1.5 flex-wrap ${content ? "mb-2" : "mb-0"}`}>
       {imageBlocks.map((img, i) => {
         // lib/types.ts ImageContent uses {source:{type,data,media_type,url}}
         // pi-ai on-disk format uses flat {data, mimeType} — handle both
@@ -398,29 +379,16 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           }}
         >
           {commandText ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+            <div className="flex flex-col gap-1.5 min-w-0">
               {imageBlocksNode}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+              <div className="flex items-start gap-2 flex-wrap">
                 <button
                   onClick={() => setExpanded((prev) => !prev)}
                   title={expanded ? t("i18n.collapse") : t("i18n.expand")}
                   aria-expanded={expanded}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flexShrink: 0,
-                    padding: 0,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "var(--accent)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 13,
-                    textAlign: "left",
-                  }}
+                  className="flex items-center gap-1.5 shrink-0 p-0 bg-none border-none cursor-pointer text-(--accent) font-(--font-mono) text-[13px] text-left"
                 >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                     {commandName}
                   </span>
                   <svg
@@ -439,15 +407,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   </svg>
                 </button>
                 {commandArgs && (
-                  <span style={{
-                    color: "var(--text)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    minWidth: 0,
-                    flex: 1,
-                  }}>
+                  <span className="text-(--text) text-sm leading-[1.6px] whitespace-pre-wrap break-words min-w-0 flex-1">
                     {commandArgs}
                   </span>
                 )}
@@ -570,7 +530,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               )}
             </div>
           )}
-          {time && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
+          {time && <span className="text-[10px] text-(--text-dim)">{time}</span>}
         </div>
       )}
     </div>
@@ -614,7 +574,9 @@ function AssistantMessageView({
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
-  blockItemsRef.current = blockItems;
+  useEffect(() => {
+    blockItemsRef.current = blockItems;
+  });
   const tokenEstimateCacheRef = useRef<Map<number, TokenEstimateCacheEntry>>(new Map());
   const estimatedTokens = useMemo(() => {
     if (!isStreaming) {
@@ -634,7 +596,9 @@ function AssistantMessageView({
     return total;
   }, [blockItems, isStreaming]);
   const estimatedTokensRef = useRef(estimatedTokens);
-  estimatedTokensRef.current = estimatedTokens;
+  useEffect(() => {
+    estimatedTokensRef.current = estimatedTokens;
+  });
 
   // Streaming-based timing for thinking blocks
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
@@ -736,14 +700,7 @@ function AssistantMessageView({
     >
       {/* Model label */}
       <div
-        style={{
-          fontSize: 11,
-          color: "var(--text-dim)",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
+        className="text-[11px] text-(--text-dim) mb-1 flex items-center gap-1.5"
       >
         {message.provider && (
           <span>{modelNames?.[`${message.provider}:${message.model}`] ?? modelNames?.[message.model] ?? message.model}</span>
@@ -754,8 +711,8 @@ function AssistantMessageView({
             <>
 
               {est > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title={t("i18n.estimatedTokens")}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 400 }}>
+                <span className="flex items-center gap-1 text-(--text)" title={t("i18n.estimatedTokens")}>
+                  <span className="flex items-center gap-0.5 text-[11px]">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
                     </svg>
@@ -791,7 +748,7 @@ function AssistantMessageView({
             border: "1px solid rgba(239,68,68,0.3)",
             borderRadius: 6,
             background: "rgba(239,68,68,0.07)",
-            color: "#ef4444",
+            color: "var(--state-error)",
             fontFamily: "var(--font-mono)",
             fontSize: 12,
             lineHeight: 1.5,
@@ -811,7 +768,7 @@ function AssistantMessageView({
         display: "flex", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {message.usage && !isStreaming && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div className="text-[11px] text-(--text-dim)">
             {formatUsage(message.usage)}
           </div>
         )}
@@ -849,7 +806,7 @@ function AssistantMessageView({
           </button>
         )}
         {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
+          <span className="text-[10px] text-(--text-dim) ml-auto">{time}</span>
         )}
       </div>
     </div>
@@ -1053,29 +1010,21 @@ function SplitPatchView({ text }: { text: string }) {
         >
           {showFileHeaders && (
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                background: "var(--bg-panel)",
-                borderBottom: "1px solid var(--border)",
-              }}
+              className="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)px] sticky top-0 z-10 bg-(--bg-panel) border-b border-(--border)"
             >
                <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
                <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+          <div className="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)px]">
             {file.rows.map((row, rowIndex) => {
               if (row.type === "hunk") {
                 return null;
               }
 
               return (
-                <div key={rowIndex} style={{ display: "contents" }}>
+                <div key={rowIndex} className="contents">
                   <SplitDiffCellView cell={row.left} side="left" />
                   <SplitDiffCellView cell={row.right} side="right" />
                 </div>
@@ -1092,14 +1041,7 @@ function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right
   return (
     <div
       title={title}
-      style={{
-        padding: "5px 10px",
-        color: "var(--text-dim)",
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}
+      className={`py-[5px] px-2.5 text-(--text-dim) overflow-hidden text-ellipsis whitespace-nowrap ${side === "left" ? "border-r border-(--border)" : "border-r-0"}`}
     >
       {title}
     </div>
@@ -1118,7 +1060,7 @@ function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" |
   const marker =
     cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
   const markerColor =
-    cell.type === "added" ? "#22c55e" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
+    cell.type === "added" ? "var(--state-success)" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
 
   return (
     <div
@@ -1156,14 +1098,7 @@ function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" |
         {marker}
       </span>
       <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "0 10px 0 0",
-          color: cell.type === "empty" ? "var(--text-dim)" : "var(--text)",
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
+        className={`flex-1 min-w-0 py-0 pr-2.5 pl-0 whitespace-pre-wrap [overflow-wrap:anywhere] ${cell.type === "empty" ? "text-(--text-dim)" : "text-(--text)"}`}
       >
         {cell.text || "\u00a0"}
       </span>
@@ -1188,7 +1123,7 @@ function PatchTextView({ text }: { text: string }) {
           kind === "hunk" ? "rgba(96,165,250,0.12)" :
           "transparent";
         const color =
-          kind === "added" ? "#22c55e" :
+          kind === "added" ? "var(--state-success)" :
           kind === "removed" ? "#f87171" :
           kind === "hunk" ? "var(--accent)" :
           "var(--text)";
@@ -1200,7 +1135,7 @@ function PatchTextView({ text }: { text: string }) {
               display: "flex",
               background: bg,
               borderLeft: kind === "added"
-                ? "3px solid #22c55e"
+                ? "3px solid var(--state-success)"
                 : kind === "removed"
                 ? "3px solid #f87171"
                 : kind === "hunk"
@@ -1346,7 +1281,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   };
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div className="mb-4">
       <div
         style={{
           border: "1px solid var(--border)",
@@ -1357,28 +1292,19 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
         }}
       >
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 10px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-            fontSize: 12,
-          }}
+          className="flex items-center gap-2 py-[7px] px-2.5 border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-xs"
         >
           <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
             {title}
           </span>
-           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("i18n.hiddenExtensionMessage")}</span>}
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
+           {isHiddenDisplay && <span className="text-(--text-dim) text-[11px]">{t("i18n.hiddenExtensionMessage")}</span>}
+          {time && <span className="ml-auto text-(--text-dim) text-[10px]">{time}</span>}
         </div>
 
         {contentExpanded ? (
-          <div style={{ padding: "6px 9px" }}>
+          <div className="py-1.5 px-[9px]">
             {images.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
+              <div className={`flex gap-1.5 flex-wrap ${text ? "mb-2" : "mb-0"}`}>
                 {images.map((img, i) => {
                   const src = imageSource(img);
                   if (!src) return null;
@@ -1395,48 +1321,24 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 })}
               </div>
             )}
-             {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noMessage")}</span>}
+             {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span className="text-(--text-dim) text-xs">{t("i18n.noMessage")}</span>}
           </div>
         ) : (
           <button
             onClick={() => setContentExpanded(true)}
-            style={{
-              display: "block",
-              width: "100%",
-              padding: "8px 10px",
-              border: "none",
-              background: "transparent",
-              color: "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: 12,
-              textAlign: "left",
-            }}
+            className="block w-full py-2 px-2.5 border-none bg-transparent text-(--text-dim) cursor-pointer text-xs text-left"
           >
              {text ? previewText(text) : t("i18n.showExtensionMessage")}
           </button>
         )}
 
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "4px 9px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-subtle)",
-          }}
+          className="flex items-center gap-2 py-1 px-[9px] border-t border-(--border) bg-(--bg-subtle)"
         >
           {text || detailsText ? (
             <button
               onClick={copyContent}
-              style={{
-                padding: "3px 7px",
-                border: "none",
-                background: "none",
-                color: copied ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: 11,
-              }}
+              className={`py-[3px] px-[7px] border-none bg-none cursor-pointer text-[11px] ${copied ? "text-(--accent)" : "text-(--text-dim)"}`}
             >
                {copied ? t("i18n.copied") : t("i18n.copy")}
             </button>
@@ -1447,15 +1349,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 if (isHiddenDisplay) setContentExpanded((v) => !v);
                 else setDetailsExpanded((v) => !v);
               }}
-              style={{
-                marginLeft: "auto",
-                padding: "3px 7px",
-                border: "none",
-                background: "none",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: 11,
-              }}
+              className="ml-auto py-[3px] px-[7px] border-none bg-none text-(--text-dim) cursor-pointer text-[11px]"
             >
               {isHiddenDisplay
                  ? (contentExpanded ? t("i18n.collapse") : t("i18n.expand"))
@@ -1622,26 +1516,26 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
       };
 
   return (
-    <div style={{ margin: "6px 0" }}>
+    <div className="my-1.5 mx-0">
       <ToolCallBlock block={block} result={result} running={false} active={false} />
       {message.truncated && fullOutputUrl && (
-        <div style={{ padding: "4px 10px", fontSize: 11, marginTop: -1 }}>
+        <div className="py-1 px-2.5 text-[11px] mt-[-1px]">
           {showFullButton && (
             <button
               onClick={loadFullOutput}
               disabled={loadingFull}
-              style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: 11, padding: 0, textDecoration: "underline" }}
+              className={`bg-none border-none text-(--accent) text-[11px] p-0 underline ${loadingFull ? "cursor-default" : "cursor-pointer"}`}
             >
               {loadingFull ? "loading…" : "view full output"}
             </button>
           )}
           <a
             href={`${fullOutputUrl}&download=1`}
-            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: 11, textDecoration: "underline" }}
+            className={`text-(--accent) text-[11px] underline ${showFullButton ? "ml-2.5" : "ml-0"}`}
           >
             download full output
           </a>
-          {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: 11 }}>({fullError})</span>}
+          {fullError && <span className="ml-1.5 text-(--text-dim) text-[11px]">({fullError})</span>}
         </div>
       )}
     </div>

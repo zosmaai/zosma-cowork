@@ -34,18 +34,6 @@ const cardStyle: CSSProperties = {
   background: "var(--bg-subtle)",
   padding: 14,
 };
-const primaryBtnStyle: CSSProperties = {
-  width: "100%",
-  marginTop: 12,
-  padding: "8px 16px",
-  borderRadius: 6,
-  border: "none",
-  background: "var(--accent)",
-  color: "#fff",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-};
 const ghostBtnStyle: CSSProperties = {
   padding: "5px 10px",
   borderRadius: 6,
@@ -178,28 +166,22 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
 
   return (
     <div style={cardStyle}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Zosma Router</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <div className="text-[13px] font-semibold text-(--text)">Zosma Router</div>
+          <div className="text-xs text-(--text-muted)">
             {configured
               ? `${status?.modelCount ?? 0} models via ${status?.baseUrl}`
               : "Sign in to route models through your Zosma account"}
           </div>
         </div>
         {configured && phase === "idle" && (
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => void refreshModels()}
               disabled={refreshing}
-              style={{
-                ...ghostBtnStyle,
-                opacity: refreshing ? 0.5 : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
+              className={`py-[5px] px-2.5 rounded-md border border-(--border) bg-transparent text-(--text-muted) text-xs cursor-pointer inline-flex items-center gap-1.5 ${refreshing ? "opacity-50" : ""}`}
             >
               {refreshing && <Spinner />}
               Refresh
@@ -212,28 +194,28 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
       </div>
 
       {shownError && effectivePhase === "error" && (
-        <div style={{ marginTop: 10, fontSize: 12, color: "var(--state-error)" }}>{shownError}</div>
+        <div className="mt-2.5 text-xs text-(--state-error)">{shownError}</div>
       )}
 
       {!shownError && successText && (
-        <div style={{ marginTop: 10, fontSize: 12, color: "var(--state-success)" }}>{successText}</div>
+        <div className="mt-2.5 text-xs text-(--state-success)">{successText}</div>
       )}
 
       {phase === "waiting_browser" && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text)" }}>
+        <div className="mt-3">
+          <div className="flex items-center gap-2 text-xs text-(--text)">
             <Spinner />
             Complete sign-in in your browser
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div className="flex gap-2 mt-2">
             <button type="button" onClick={() => void cancel()} style={ghostBtnStyle}>
               Cancel
             </button>
-            <details style={{ flex: 1 }}>
-              <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
+            <details className="flex-1">
+              <summary className="cursor-pointer text-xs text-(--text-muted)">
                 Trouble? Paste the result URL
               </summary>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div className="flex gap-2 mt-2">
                 <input
                   type="text"
                   value={pastedUrl}
@@ -244,15 +226,7 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
                 <button
                   type="button"
                   onClick={() => void submitManual(pastedUrl)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
+                  className="py-1.5 px-3 rounded-md border-none bg-(--accent) text-white text-xs cursor-pointer"
                 >
                   Submit
                 </button>
@@ -264,14 +238,7 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
 
       {working && (
         <div
-          style={{
-            marginTop: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12,
-            color: "var(--text-muted)",
-          }}
+          className="mt-3 flex items-center gap-2 text-xs text-(--text-muted)"
         >
           <Spinner />
           {phase === "starting" ? "Opening sign-in..." : "Loading your models..."}
@@ -285,13 +252,7 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
             setLandingNotice(null);
             void start();
           }}
-          style={{
-            ...primaryBtnStyle,
-            background: configured ? "transparent" : "var(--accent)",
-            color: configured ? "var(--text)" : "#fff",
-            border: configured ? "1px solid var(--border)" : "none",
-            fontWeight: configured ? 500 : 600,
-          }}
+          className={`w-full mt-3 py-2 px-4 rounded-md border-none bg-(--accent) text-white text-[13px] font-semibold cursor-pointer ${configured ? "bg-transparent" : "bg-(--accent)"} ${configured ? "text-(--text)" : "text-white"} ${configured ? "border border-(--border)" : "border-none"} ${configured ? "font-medium" : "font-semibold"}`}
         >
           {configured ? "Re-sign in (rotate key)" : "Sign in with Zosma"}
         </button>
@@ -299,13 +260,13 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
 
       <details
         onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}
-        style={{ marginTop: 12 }}
+        className="mt-3"
       >
-        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
+        <summary className="cursor-pointer text-xs text-(--text-muted)">
           Self-hosted router
         </summary>
         {showAdvanced && status && (
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="mt-2 flex flex-col gap-2">
             <input
               type="text"
               value={advancedAuthUrl || status.authBaseUrl}
@@ -320,25 +281,17 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
               placeholder="https://router.example.com/v1"
               style={fieldStyle}
             />
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => void saveConfig()}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "var(--accent)",
-                  color: "#fff",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
+                className="py-1.5 px-3 rounded-md border-none bg-(--accent) text-white text-xs cursor-pointer"
               >
                 Save
               </button>
-              {savedConfig && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Saved</span>}
+              {savedConfig && <span className="text-xs text-(--text-muted)">Saved</span>}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="flex gap-2">
               <input
                 type="password"
                 value={apiKeyInput}
@@ -349,16 +302,7 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
               <button
                 type="button"
                 onClick={() => void saveApiKey()}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "var(--accent)",
-                  color: "#fff",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
+                className="py-1.5 px-3 rounded-md border-none bg-(--accent) text-white text-xs cursor-pointer whitespace-nowrap"
               >
                 Use key
               </button>

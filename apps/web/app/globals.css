@@ -153,19 +153,6 @@ html.dark {
   font-weight: 600;
 }
 
-.new-session-brand .zosma-brand-mark {
-  width: 32px;
-  height: 32px;
-  flex-basis: 32px;
-  border-radius: 9px;
-}
-
-.new-session-brand .zosma-brand-name {
-  font-size: 22px;
-  line-height: 28px;
-}
-
-
 .catppuccin-file-icon {
   display: block;
   flex-shrink: 0;
@@ -2578,241 +2565,52 @@ span.token.table {
   pointer-events: none;
   content: "";
 }
-.new-session-hero-title {
-  display: flex !important;
-  height: 34px;
-  margin: 0 0 22px !important;
-  align-items: center !important;
-  justify-content: center !important;
-  font-family: inherit !important;
+.new-session-brand .zosma-brand-mark {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+  border-radius: 8px;
 }
-.new-session-title-content {
-  flex: 0 0 auto !important;
-  align-items: center !important;
-  gap: 8px !important;
-  overflow: visible !important;
-}
-.new-session-title-content .new-session-brand {
-  gap: 0;
-}
-.new-session-title-content .zosma-brand-mark {
-  width: 26px;
-  height: 26px;
-  flex-basis: 26px;
-  border-radius: 7px;
-}
-.new-session-title-content .zosma-brand-name,
-.new-session-update,
-.new-session-versions {
-  display: none !important;
+.new-session-brand .zosma-brand-name {
+  display: none;
 }
 .new-session-title-text {
   color: var(--text);
-  font-size: 22px;
-  font-weight: 450;
+  font-size: 24px;
+  font-weight: 500;
   letter-spacing: -.02em;
-  line-height: 28px;
+  line-height: 32px;
 }
-.new-session-preview {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--accent) 34%, var(--surface-elevated));
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 16px;
+.new-session-suggestions {
+  gap: 10px;
 }
-.new-session-workspace-selector {
+.new-session-suggestion {
   display: flex;
-  height: 24px;
-  margin: 0 0 6px 12px !important;
   align-items: center;
-  gap: 12px;
-}
-.new-session-workspace-trigger {
-  height: 24px;
-  padding: 0 !important;
-  gap: 5px !important;
-  border: 0 !important;
-  border-radius: 5px !important;
-  font-family: inherit !important;
-  font-size: 11px !important;
-}
-.new-session-workspace-prefix {
-  display: none;
-}
-.new-session-workspace-trigger::after {
-  content: "⌄";
-  color: var(--text-dim);
-  font-size: 11px;
-}
-.new-session-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.new-session-empty .composer-shell {
-  padding: 0 !important;
-}
-.new-session-empty .composer-width {
-  max-width: 780px !important;
-}
-.new-session-empty .composer-card {
-  min-height: 120px;
-  padding: 11px 12px 9px !important;
-  border: 0 !important;
-  border-radius: 22px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-elevated) 96%, white) 0%, var(--surface-elevated) 58%, color-mix(in srgb, var(--surface-elevated) 94%, black) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.055),
-    inset 0 0 0 1px rgba(255,255,255,.028),
-    0 28px 72px rgba(0,0,0,.34),
-    0 10px 36px rgba(40,72,130,.10);
-  transition: box-shadow 180ms ease, background 180ms ease;
-}
-.new-session-empty .composer-card:focus-within {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-elevated) 93%, white) 0%, color-mix(in srgb, var(--surface-elevated) 98%, white) 58%, color-mix(in srgb, var(--surface-elevated) 91%, black) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.065),
-    inset 0 0 0 1px rgba(112,151,224,.06),
-    0 30px 78px rgba(0,0,0,.36),
-    0 12px 42px rgba(48,86,154,.14);
-}
-.new-session-empty .composer-input-row {
-  min-height: 50px;
-  align-items: flex-start;
-}
-.new-session-empty .composer-textarea {
-  min-height: 48px;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  font-size: 15px;
-  line-height: 22px;
-}
-.new-session-empty .composer-textarea:focus,
-.new-session-empty .composer-textarea:focus-visible {
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-}
-.new-session-empty .composer-toolbar {
-  min-height: 32px;
-  margin-top: 4px !important;
-  flex-wrap: nowrap;
-}
-.new-session-empty .composer-toolbar-spacer {
-  display: none !important;
-}
-.new-session-empty .composer-toolbar-left,
-.new-session-empty .composer-toolbar-right,
-.new-session-empty .composer-toolbar-right > div {
-  display: contents !important;
-}
-.new-session-empty .composer-attach-trigger {
-  order: 1;
-  width: 32px !important;
-  height: 32px !important;
-  border-radius: 50% !important;
-  background: color-mix(in srgb, var(--text) 5%, transparent) !important;
-  color: var(--text-muted);
-}
-.new-session-empty .composer-attach-trigger:hover {
-  color: var(--text);
-}
-.new-session-empty .composer-tool-trigger {
-  order: 2;
-  gap: 5px !important;
-  padding: 0 8px !important;
-  color: var(--text-muted);
-}
-.new-session-empty .composer-tool-trigger span {
-  font-size: 11px !important;
-}
-.new-session-empty .composer-toolbar-left > div {
-  order: 4;
-  margin-left: auto;
-  margin-right: 40px;
-}
-.new-session-empty .composer-model-trigger {
-  max-width: 180px !important;
-  height: 32px !important;
-  padding: 0 6px !important;
-  font-size: 11px !important;
-}
-.new-session-empty .composer-model-trigger svg {
-  opacity: .6;
-}
-.new-session-empty .composer-thinking-trigger,
-.new-session-empty .composer-compact-trigger,
-.new-session-empty .composer-sound-trigger {
-  display: none !important;
-}
-.new-session-empty .composer-send {
-  position: absolute;
-  right: 14px;
-  bottom: 12px;
-  z-index: 2;
-  width: 40px !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  border-radius: 50% !important;
-  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  font-size: 0 !important;
-  color: var(--text-dim) !important;
-  transition: background .15s, color .15s, transform .12s, box-shadow .15s;
-}
-.new-session-empty .composer-send:not(:disabled) {
-  background: var(--accent) !important;
-  color: #fff !important;
-  box-shadow: 0 4px 16px rgba(65,118,230,.40);
-}
-.new-session-empty .composer-send:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgba(65,118,230,.48);
-}
-.new-session-empty .composer-send svg,
-.new-session-empty .composer-send .lucide {
-  width: 17px;
-  height: 17px;
-  display: block;
-  margin: 0 auto;
-}
-.new-session-empty .composer-send svg + * {
-  display: none;
-}
-.new-session-empty .new-session-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 16px;
-  width: min(760px, 100%);
-}
-.new-session-empty .new-session-suggestion {
-  padding: 7px 13px;
-  border-radius: 999px;
-  font-size: 12px;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px 15px;
+  border-radius: 12px;
+  font-size: 13px;
   line-height: 1.35;
   text-align: left;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 60%, transparent);
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
-  white-space: nowrap;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease, transform 120ms ease;
 }
-.new-session-empty .new-session-suggestion:hover,
-.new-session-empty .new-session-suggestion:focus-visible {
-  color: var(--accent);
+.new-session-suggestion:hover,
+.new-session-suggestion:focus-visible {
+  color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+  transform: translateY(-1px);
+}
+.new-session-suggestion svg {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: .8;
 }
 
 @media (min-width: 641px) {
@@ -2862,17 +2660,8 @@ span.token.table {
   .new-session-panel {
     left: 0;
   }
-  .new-session-hero-title {
-    margin-bottom: 14px !important;
-  }
   .new-session-title-text {
     font-size: 19px;
-  }
-  .new-session-workspace-selector {
-    margin-left: 8px !important;
-  }
-  .new-session-empty .composer-toolbar-left > div {
-    margin-right: 40px;
   }
 }
 
@@ -2895,30 +2684,9 @@ span.token.table {
   font-size: calc(17px * var(--ui-font-scale));
   line-height: 24px;
 }
-.new-session-title-content .zosma-brand-mark {
-  width: 30px;
-  height: 30px;
-  flex-basis: 30px;
-  border-radius: 8px;
-}
 .new-session-title-text {
-  font-size: calc(22px * var(--ui-font-scale));
+  font-size: calc(24px * var(--ui-font-scale));
   line-height: 32px;
-}
-.new-session-preview {
-  font-size: calc(10px * var(--ui-font-scale));
-  line-height: 18px;
-}
-.new-session-workspace-trigger,
-.new-session-mode,
-.new-session-empty .composer-tool-trigger span::after,
-.new-session-empty .composer-model-trigger {
-  font-size: calc(11px * var(--ui-font-scale)) !important;
-}
-.composer-toolbar button,
-.composer-mode-status,
-.composer-model-trigger {
-  font-size: calc(12px * var(--ui-font-scale));
 }
 
 /* Active-session composer: one soft surface, quiet controls, clear primary action. */

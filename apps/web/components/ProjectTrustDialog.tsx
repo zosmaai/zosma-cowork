@@ -48,7 +48,7 @@ export function ProjectTrustDialog({
           overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", gap: 12, padding: "18px 18px 14px" }}>
+        <div className="flex gap-3 pt-4.5 px-4.5 pb-3.5">
           <svg
             width="20"
             height="20"
@@ -59,49 +59,32 @@ export function ProjectTrustDialog({
             strokeLinecap="round"
             strokeLinejoin="round"
             aria-hidden="true"
-            style={{ flexShrink: 0, marginTop: 1 }}
+            className="shrink-0 mt-px"
           >
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
             <path d="m9 12 2 2 4-4" />
           </svg>
-          <div style={{ minWidth: 0 }}>
-            <div id="project-trust-title" style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+          <div className="min-w-0">
+            <div id="project-trust-title" className="text-[15px] font-bold text-(--text)">
               {t("trust.dialogTitle")}
             </div>
-            <div style={{ marginTop: 7, fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
+            <div className="mt-1.75 text-xs leading-[1.6px] text-(--text-muted)">
               {t("trust.dialogBody")}
             </div>
             <code
-              style={{
-                display: "block",
-                marginTop: 10,
-                padding: "8px 10px",
-                border: "1px solid var(--border)",
-                borderRadius: 5,
-                background: "var(--bg)",
-                color: "var(--text)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                overflowWrap: "anywhere",
-              }}
+              className="block mt-2.5 py-2 px-2.5 border border-(--border) rounded-[5px] bg-(--bg) text-(--text) font-(--font-mono) text-[11px] wrap-anywhere"
             >
               {cwd}
             </code>
             {error && (
-              <div role="alert" style={{ marginTop: 10, color: "#ef4444", fontSize: 12, lineHeight: 1.5 }}>
+              <div role="alert" className="mt-2.5 text-(--state-error) text-xs leading-[1.5px]">
                 {error}
               </div>
             )}
           </div>
         </div>
         <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            padding: "10px 18px",
-            borderTop: "1px solid var(--border)",
-          }}
+          className="flex justify-end gap-2 py-2.5 px-4.5 border-t border-(--border)"
         >
           <button
             type="button"

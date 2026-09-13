@@ -68,6 +68,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [entryIds, setEntryIds] = useState<string[]>([]);
   const [agentRunning, setAgentRunning] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
   const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean } | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
@@ -139,13 +140,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const previousScrollTopRef = useRef(0);
   const liveFollowFrameRef = useRef<number | null>(null);
   const bashRunningRef = useRef(false);
+  const abortedRunIdRef = useRef(-1);
   const executeBashRef = useRef<(command: string, excludeFromContext: boolean) => Promise<void> | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
 
-  sessionPropIdRef.current = session?.id ?? null;
-  sessionRunningRef.current = Boolean(sessionRunning);
+  useEffect(() => {
+    sessionPropIdRef.current = session?.id ?? null;
+    sessionRunningRef.current = Boolean(sessionRunning);
+  });
 
   // --- Setters bag for the sub-hooks (stable object identities) -------------
   const loaderSetters: SessionLoaderSetters = useMemo(() => ({
@@ -334,7 +338,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ].join("|")
     : null;
   const sessionStatsRef = useRef(sessionStats);
-  sessionStatsRef.current = sessionStats;
+  useEffect(() => {
+    sessionStatsRef.current = sessionStats;
+  });
   useEffect(() => {
     onSessionStatsChange?.(sessionStatsRef.current);
   }, [statsKey, onSessionStatsChange]);
@@ -344,7 +350,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ? `${contextUsage.percent ?? "null"}|${contextUsage.contextWindow}|${contextUsage.tokens ?? "null"}`
     : null;
   const contextUsageRef = useRef(contextUsage);
-  contextUsageRef.current = contextUsage;
+  useEffect(() => {
+    contextUsageRef.current = contextUsage;
+  });
   useEffect(() => {
     onContextUsageChange?.(contextUsageRef.current);
   }, [ctxKey, onContextUsageChange]);
@@ -562,6 +570,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         void events.waitForPromptSettlement(sentSessionId, promptRunId);
       }
     } catch (e) {
+      // The user aborted this exact run: settle + notice already happened in
+      // handleAbort. Swallow the late prompt_rejected so it neither flashes an
+      // error toast nor restores a draft over the user's new input.
+      if (abortedRunIdRef.current === promptRunId) {
+        abortedRunIdRef.current = -1;
+        // Only purge prompt flags when this is still the in-flight run — a
+        // newer prompt may have taken over while the aborted turn's POST was
+        // unwinding (clearing here would prematurely settle that run).
+        if (promptRunIdRef.current === promptRunId) {
+          rpcPromptPendingRef.current = false;
+          optimisticUserMessageKeyRef.current = null;
+        }
+        return;
+      }
       console.error("Failed to send message:", e);
       const definitivelyRejected = !promptRequestStarted || isPromptRejectedError(e);
       // A transport/proxy failure after dispatch is ambiguous: the server may
@@ -620,11 +642,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setBashRunning(false);
     }
   }, [addNotice, composerDraftKey, ensureNewSession, loadSessionFn, promoteNewSession, restoreSubmission, session, sendCommand]);
-  executeBashRef.current = executeBash;
+  useEffect(() => {
+    executeBashRef.current = executeBash;
+  });
 
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
-    if (!sid) return;
+    if (!sid || aborting) return;
     if (bashRunningRef.current) {
       try {
         await sendCommand(sid, { type: "abort_bash" });
@@ -633,12 +657,33 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       return;
     }
+    // Claim this run so the late prompt_rejected from the aborted turn is
+    // swallowed as expected (see handleSend catch) — no error toast or draft
+    // restore on top of the abort feedback below.
+    abortedRunIdRef.current = promptRunIdRef.current;
+    setAborting(true);
     try {
       await sendCommand(sid, { type: "abort" });
+      addNotice({ type: "info", message: "Generation aborted" });
+      // Freeze-settle: keep the optimistic/partial tail rendered (frozen), stop
+      // the running UI, and unlock the composer immediately. agentRunning(false)
+      // also makes late SSE frames (message_update/agent_end) no-ops.
+      agentRunningRef.current = false;
+      setAgentRunning(false);
+      setAgentPhase(null);
+      setRetryInfo(null);
+      dispatch({ type: "frozen" });
     } catch (e) {
+      abortedRunIdRef.current = -1;
       console.error("Failed to abort:", e);
+      addNotice({
+        type: "error",
+        message: `Failed to abort: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    } finally {
+      setAborting(false);
     }
-  }, [sendCommand]);
+  }, [aborting, addNotice, dispatch, promptRunIdRef, sendCommand, setAborting, setAgentPhase, setAgentRunning, setRetryInfo]);
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -1127,7 +1172,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
+    agentRunning, aborting, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     sessionLost, resumeSession: resumeSession,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats,

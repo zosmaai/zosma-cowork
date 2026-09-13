@@ -51,6 +51,7 @@
     "next": "16.3.3",
     "proper-lockfile": "4.1.2",
     "react": "^19.2.4",
+    "react-call": "^2.0.2",
     "react-dom": "^19.2.4",
     "remark-frontmatter": "^5.0.0",
     "undici": "8.10.0"

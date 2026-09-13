@@ -25,6 +25,12 @@
       "skillPath": "skills/next-dev-loop/SKILL.md",
       "computedHash": "9a2cd6e78f118086f3b2dc69ba98bb34b3fb873a8bcf622eea86a0fe8e540009"
     },
+    "react-call": {
+      "source": "desko27/react-call",
+      "sourceType": "github",
+      "skillPath": "skills/react-call/SKILL.md",
+      "computedHash": "81852b665736193af9d2fd420dbf1c5e9beffdf36f48c678b9985b3f3bd06ab5"
+    },
     "react-doctor": {
       "source": "millionco/react-doctor",
       "sourceType": "github",

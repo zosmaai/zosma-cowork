@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar } from "./SessionSidebar";
+import { DeleteSessionDialog } from "./session-sidebar/session-dialogs/delete-session-dialog";
+import { RenameSessionDialog } from "./session-sidebar/session-dialogs/rename-session-dialog";
 import { ZosmaLoadingState } from "./ZosmaLoadingState";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
@@ -235,7 +237,9 @@ export function AppShell() {
   const [autoNameStatus, setAutoNameStatus] = useState<AutoNameStatus>({ kind: "idle" });
   const autoNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(selectedSession?.id ?? null);
-  activeSessionIdRef.current = selectedSession?.id ?? null;
+  useEffect(() => {
+    activeSessionIdRef.current = selectedSession?.id ?? null;
+  });
   const handleSessionStatsChange = useCallback((stats: SessionStatsInfo | null) => {
     setSessionStats(stats);
   }, []);
@@ -1303,11 +1307,11 @@ export function AppShell() {
           minHeight: mobileBanner ? 32 : undefined,
           height: mobileBanner ? undefined : "100%",
           padding: mobileBanner ? "6px 12px" : "0 12px",
-          background: mobileBanner ? "color-mix(in srgb, #d97706 8%, var(--bg-panel))" : "none",
+          background: mobileBanner ? "color-mix(in srgb, var(--state-warning) 8%, var(--bg-panel))" : "none",
           border: "none",
           borderRight: mobileBanner ? "none" : "1px solid var(--border)",
           borderBottom: mobileBanner ? "1px solid var(--border)" : "none",
-          color: "#d97706",
+          color: "var(--state-warning)",
           cursor: "pointer",
           flexShrink: 0,
           fontSize: 11,
@@ -1390,10 +1394,7 @@ export function AppShell() {
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{
-              color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-              flexShrink: 0,
-            }}
+            className={`shrink-0 ${selectedSession ? "text-(--text-muted)" : "text-(--text-dim)"}`}
             aria-hidden="true"
           >
             <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
@@ -1443,7 +1444,7 @@ export function AppShell() {
                 background: "none", border: "none",
                 borderTop: "2px solid transparent",
                 borderRight: "1px solid var(--border)",
-                color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
+                color: isError ? "var(--state-error)" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
                 cursor: disabled ? "not-allowed" : "pointer",
                 opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
                 flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
@@ -1451,11 +1452,11 @@ export function AppShell() {
               }}
               onMouseEnter={(event) => {
                 if (disabled) return;
-                event.currentTarget.style.color = isError ? "#dc2626" : "var(--text)";
+                event.currentTarget.style.color = isError ? "var(--state-error)" : "var(--text)";
                 event.currentTarget.style.background = "var(--bg-hover)";
               }}
               onMouseLeave={(event) => {
-                event.currentTarget.style.color = isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
+                event.currentTarget.style.color = isError ? "var(--state-error)" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
                 event.currentTarget.style.background = "none";
               }}
               data-mobile-toolbar-action={mobile ? "name" : undefined}
@@ -1502,7 +1503,7 @@ export function AppShell() {
             }}
             data-mobile-toolbar-action="branches"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: branchTree.length > 0 ? "var(--accent)" : "var(--text-dim)" }} aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`${branchTree.length > 0 ? "text-(--accent)" : "text-(--text-dim)"}`} aria-hidden="true">
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
@@ -1551,7 +1552,7 @@ export function AppShell() {
           }}
           data-mobile-toolbar-action={mobile ? "system" : undefined}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: systemPrompt ? "var(--accent)" : "var(--text-dim)", flexShrink: 0 }} aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${systemPrompt ? "text-(--accent)" : "text-(--text-dim)"}`} aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
             <line x1="8" y1="13" x2="16" y2="13" />
@@ -1745,6 +1746,9 @@ export function AppShell() {
       }
     `}</style>
     <div className="app-shell">
+      {/* React-call Roots — one mount, always alive (calls from anywhere). */}
+      <RenameSessionDialog />
+      <DeleteSessionDialog />
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${sidebarOpen ? " is-open" : ""}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -1813,14 +1817,7 @@ export function AppShell() {
             <div
               ref={mobileToolbarRef}
               data-mobile-toolbar="true"
-              style={{
-                position: "relative",
-                display: "flex",
-                alignItems: "stretch",
-                flex: 1,
-                minWidth: 0,
-                height: "100%",
-              }}
+              className="relative flex items-stretch flex-1 min-w-0 h-full"
             >
               <button
                 type="button"
@@ -1969,14 +1966,7 @@ export function AppShell() {
                 <div
                   role="menu"
                   aria-label={translate("common.language")}
-                  style={{
-                    background: "var(--bg-panel)",
-                    borderLeft: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                    borderBottom: "1px solid var(--border)",
-                    overflow: "hidden",
-                    padding: 4,
-                  }}
+                  className="bg-(--bg-panel) border-l border-(--border) border-r border-(--border) border-b border-(--border) overflow-hidden p-1"
                 >
                   {supportedLocales.map((plugin) => (
                     <button
@@ -2009,10 +1999,7 @@ export function AppShell() {
                 </div>
               )}
               {activeTopPanel === "system" && (
-                <div style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}>
+                <div className="bg-(--bg-panel) border-b border-(--border)">
                   {systemPrompt ? (
                     <div className="max-h-[min(600px,75vh)] overflow-y-auto px-4 py-3 text-xs leading-[1.6] whitespace-pre-wrap font-mono text-(--text-muted)">
                       {systemPrompt}
@@ -2246,7 +2233,7 @@ export function AppShell() {
               role="alert"
               className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-(--text-muted)"
             >
-               <div className="text-sm text-[#dc2626]">{translate("workspace.unable")}</div>
+               <div className="text-sm text-[var(--state-error)]">{translate("workspace.unable")}</div>
               <div className="max-w-[min(720px,100%)] font-mono text-xs [overflow-wrap:anywhere]">
                 {initialNavigation.requestedCwd}
               </div>

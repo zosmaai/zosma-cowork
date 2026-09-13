@@ -9,11 +9,11 @@ const sessionItemSource = await readFile(url("session-item.tsx"), "utf8");
 const workspacePanelSource = await readFile(url("workspace-panel.tsx"), "utf8");
 const sessionItem = sessionItemSource.slice(sessionItemSource.indexOf("function SessionItem("));
 
-test("only Shift+click bypasses session deletion confirmation", () => {
-  assert.match(
-    sessionItem,
-    /const handleDeleteClick[\s\S]*?if \(e\.shiftKey\) \{\s*void performDelete\(\);\s*\} else \{\s*setConfirmDelete\(true\);/,
-  );
+test("rename + delete resolve through the react-call dialogs", () => {
+  assert.match(sessionItem, /RenameSessionDialog\.call\(\{ initialName: firstLabel \}\)/);
+  assert.match(sessionItem, /if \(name\) void doRename\(name\);/);
+  assert.match(sessionItem, /DeleteSessionDialog\.call\(\{ title \}\)/);
+  assert.match(sessionItem, /if \(confirmed\) void performDelete\(\);/);
 });
 
 test("does not register row-level session deletion shortcuts", () => {
@@ -46,19 +46,16 @@ test("includes project activity counts in accessible labels", () => {
   );
 });
 
-test("does not persist an unchanged fallback title ending in whitespace", () => {
+test("does not persist an unchanged fallback title", () => {
   assert.match(
     sessionItem,
-    /const name = renameValue\.trim\(\);[\s\S]*?if \(renameValue === title \|\| name === \(session\.name \?\? ""\)\) return;/,
+    /if \(name === \(session\.name \?\? ""\) \|\| name === title\) return;/,
   );
 });
 
-test("offers the downstream context-menu hook only on a normal session row", () => {
+test("offers the downstream context-menu hook on a session row", () => {
   assert.match(sessionItem, /const handleContextMenu[\s\S]*?dispatchSessionRowContextMenu\(\{/);
-  assert.match(
-    sessionItem,
-    /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/,
-  );
+  assert.match(sessionItem, /onContextMenu=\{handleContextMenu\}/);
 });
 
 test("lifecycle refreshes stay cache-friendly; only explicit actions force a rescan", () => {
@@ -76,5 +73,5 @@ test("lifecycle refreshes stay cache-friendly; only explicit actions force a res
 
 test("does not expose disk-backed actions for transient sessions", () => {
   assert.match(sessionItem, /if \(session\.transient\) return;/);
-  assert.match(sessionItem, /\{hovered && !session\.transient && \(/);
+  assert.match(sessionItem, /\{\(hovered \|\| menuOpen\) && !session\.transient && \(/);
 });

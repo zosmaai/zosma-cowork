@@ -47,6 +47,8 @@ interface ModelOption {
 interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   onAbort: () => void;
+  /** Abort RPC in flight — stop button shows a pending/spinner state. */
+  aborting?: boolean;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
   onPromptWithStreamingBehavior?: (message: string, behavior: "steer" | "followUp", images?: AttachedImage[]) => void;
@@ -297,15 +299,7 @@ function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: s
   return (
     <div
       title={text}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 10px",
-        fontSize: 12,
-        color: "var(--text-muted)",
-        minWidth: 0,
-      }}
+      className="flex items-center gap-2 py-0.75 px-2.5 text-xs text-(--text-muted) min-w-0"
     >
       <span
         style={{
@@ -320,7 +314,7 @@ function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: s
       >
         {kind}
       </span>
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{text}</span>
     </div>
   );
 }
@@ -346,10 +340,10 @@ function ModelNoticeBanner({ tone, title, body }: { tone: "error" | "warning"; t
         lineHeight: 1.45,
       }}
     >
-      <TriangleAlert size={13} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{body}</div>
+      <TriangleAlert size={13} strokeWidth={2} className="shrink-0 mt-[1px]" aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="font-semibold">{title}</div>
+        <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{body}</div>
       </div>
     </div>
   );
@@ -373,7 +367,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, isNewSession = false, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
+  onSend, onAbort, aborting = false, onSteer, onFollowUp, isStreaming, isNewSession = false, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
@@ -439,8 +433,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
-  valueRef.current = value;
-  attachedImagesRef.current = attachedImages;
+  useEffect(() => {
+    valueRef.current = value;
+    attachedImagesRef.current = attachedImages;
+  });
 
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
@@ -1137,7 +1133,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
 
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
-      if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
+      if (e.key === "Escape" && !isComposing && isStreaming && onAbort && !aborting) {
         e.preventDefault();
         onAbort();
         return;
@@ -1153,7 +1149,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isMobile, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
+    [aborting, isMobile, isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, displayedSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value]
   );
 
   const handleInput = useCallback(() => {
@@ -1440,7 +1436,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             borderRadius: 6, fontSize: 12, color: "rgba(180,130,0,0.9)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
-            <RotateCcw size={12} strokeWidth={2} style={{ flexShrink: 0 }} aria-hidden="true" />
+            <RotateCcw size={12} strokeWidth={2} className="shrink-0" aria-hidden="true" />
              {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
           </div>
         )}
@@ -1451,7 +1447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             borderRadius: 6, fontSize: 12, color: "rgba(5,150,105,0.95)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
-            <CircleCheck size={12} strokeWidth={2} style={{ flexShrink: 0 }} aria-hidden="true" />
+            <CircleCheck size={12} strokeWidth={2} className="shrink-0" aria-hidden="true" />
             {compactResultText}
           </div>
         )}
@@ -1465,7 +1461,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               background: "rgba(239,68,68,0.07)",
               border: "1px solid rgba(239,68,68,0.3)",
               borderRadius: 6,
-              color: "#ef4444",
+              color: "var(--state-error)",
               fontFamily: "var(--font-mono)",
               fontSize: 12,
               lineHeight: 1.5,
@@ -1480,7 +1476,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {attachedImages.length > 0 && (
           <div className="composer-attachments" style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
-              <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+              <div key={i} className="relative shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={img.previewUrl}
@@ -1505,7 +1501,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
 
         {/* Main input */}
-        <div className={`composer-card${isNewSession ? " is-new-session" : ""}${bashMode ? " is-bash" : ""}${isStreaming ? " is-streaming" : ""}`}>
+        <div className={`composer-card${bashMode ? " is-bash" : ""}${isStreaming ? " is-streaming" : ""}`}>
           {historyMenuOpen && inputHistory.length > 0 && (
             <div
               ref={historyMenuRef}
@@ -1526,14 +1522,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             >
               <div
                 title="Input history"
-                style={{
-                  height: 30,
-                  padding: "0 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  color: "var(--text-dim)",
-                }}
+                className="h-7.5 py-0 px-2.5 border-b border-(--border) flex items-center text-(--text-dim)"
               >
                 <Undo2 size={14} strokeWidth={1.8} aria-hidden="true" />
               </div>
@@ -1568,7 +1557,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         lineHeight: 1.45,
                       }}
                     >
-                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)", paddingTop: 1 }}>
+                      <span className="shrink-0 font-(--font-mono) text-[11px] text-(--text-dim) pt-[1px]">
                         {index + 1}
                       </span>
                       <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
@@ -1604,29 +1593,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
             >
               <div
-                style={{
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 11,
-                  color: "var(--text-dim)",
-                  flexShrink: 0,
-                }}
+                className="py-2 px-2.5 border-b border-(--border) flex items-center justify-between gap-2 text-[11px] text-(--text-dim) shrink-0"
               >
                  <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                 <span className="font-(--font-mono)">{t("chat.tabEnter")}</span>
               </div>
               <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", padding: 10 }}>
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div style={{ padding: "2px 2px 4px", fontSize: 12, color: "var(--text-dim)" }}>
+                  <div className="pt-0.5 px-0.5 pb-1 text-xs text-(--text-dim)">
                      {t("chat.noCommands")}
                   </div>
                 ) : (
                   groupedSlashCommands.map((group) => (
-                    <section key={group.source} style={{ marginBottom: 12 }}>
+                    <section key={group.source} className="mb-3">
                       <div
                         style={{
                           position: "sticky",
@@ -1645,14 +1624,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         }}
                       >
                            <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
-                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{group.items.length}</span>
+                        <span className="font-(--font-mono)">{group.items.length}</span>
                       </div>
                       <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: 8,
-                        }}
+                        className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))px] gap-2"
                       >
                         {group.items.map(({ command, index }) => {
                           const active = index === slashActiveIndex;
@@ -1696,15 +1671,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               }}>
                                 /{command.name}
                                 {dormant && (
-                                  <span style={{
-                                    marginLeft: 6,
-                                    padding: "0 4px",
-                                    border: "1px solid var(--border)",
-                                    borderRadius: 3,
-                                    fontSize: 9,
-                                    color: "var(--text-dim)",
-                                    whiteSpace: "nowrap",
-                                  }}>
+                                  <span className="ml-1.5 py-0 px-1 border border-(--border) rounded-[3px] text-[10px] text-(--text-dim) whitespace-nowrap">
                                     {t("chat.dormant")}
                                   </span>
                                 )}
@@ -1758,27 +1725,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 }}
               >
                 <div
-                  style={{
-                    padding: "8px 10px",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    fontSize: 11,
-                    color: "var(--text-dim)",
-                  }}
+                  className="py-2 px-2.5 border-b border-(--border) flex items-center justify-between gap-2 text-[11px] text-(--text-dim)"
                 >
                   <span>
                     {indexLoading
                        ? t("chat.loadingFiles")
                        : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
                   </span>
-                   <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+                   <span className="font-(--font-mono)">{t("chat.tabEnter")}</span>
                 </div>
                 <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
                   {!indexLoading && atMatches.length === 0 ? (
-                    <div style={{ padding: "6px 8px", fontSize: 12, color: "var(--text-dim)" }}>
+                    <div className="py-1.5 px-2 text-xs text-(--text-dim)">
                        {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
                     </div>
                   ) : (
@@ -1814,13 +1772,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             fontFamily: "var(--font-mono)",
                           }}
                         >
-                          <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                          <span className="shrink-0 flex items-center">
                             {entry.isDir ? <FolderIcon size={14} /> : getFileIcon(name, 14)}
                           </span>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {dirPrefix && <span style={{ color: "var(--text-dim)" }}>{dirPrefix}</span>}
+                          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                            {dirPrefix && <span className="text-(--text-dim)">{dirPrefix}</span>}
                             {name}
-                            {entry.isDir && <span style={{ color: "var(--text-dim)" }}>/</span>}
+                            {entry.isDir && <span className="text-(--text-dim)">/</span>}
                           </span>
                         </button>
                       );
@@ -1969,9 +1927,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
              title={t("chat.attachImage")}
               style={{
                 flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                width: 32, height: 32, padding: 0,
+                width: 34, height: 34, padding: 0,
                 background: "none", border: "none",
-                borderRadius: 9,
+                borderRadius: 9999,
                 color: attachedImages.length ? "var(--accent)" : "var(--text-muted)",
                 cursor: "pointer",
                 opacity: 1,
@@ -2036,10 +1994,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     ) : (
                       <Cpu size={12} strokeWidth={2} aria-hidden="true" />
                     )}
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                    <span className="overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
                       {currentName ?? (modelOptions.length > 0 ? "Select model" : "No models")}
                     </span>
-                    {!isMobile && <ChevronDown size={12} strokeWidth={2} style={{ flexShrink: 0, opacity: 0.6 }} aria-hidden="true" />}
+                    {!isMobile && <ChevronDown size={12} strokeWidth={2} className="shrink-0 opacity-60" aria-hidden="true" />}
                   </button>
                   {modelDropdownOpen && modelDropdownRect && (() => {
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
@@ -2060,7 +2018,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       overflow: "hidden", maxHeight: maxH, display: "flex", flexDirection: "column",
                       }}>
                       {showModelFilter && (
-                        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                        <div className="py-1.5 px-2 border-b border-(--border) shrink-0">
                           <input
                             value={modelFilter}
                             onChange={(e) => setModelFilter(e.target.value)}
@@ -2093,18 +2051,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       )}
                       <div style={{ minHeight: 0, overflowY: "auto" }}>
                         {modelsByProvider.length === 0 ? (
-                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap" }}>
+                          <div className="py-2 px-3 text-(--text-dim) text-xs whitespace-nowrap">
                             {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
                           </div>
                         ) : modelsByProvider.map((group, gi) => (
                           <div key={group.provider}>
                             {(modelsByProvider.length > 1) && (
-                              <div style={{
-                                padding: "6px 12px 4px",
-                                fontSize: 10, fontWeight: 600, color: "var(--text-dim)",
-                                textTransform: "uppercase", letterSpacing: "0.07em",
-                                borderTop: gi > 0 ? "1px solid var(--border)" : "none",
-                              }}>
+                              <div className={`pt-1.5 px-3 pb-1 text-[10px] font-semibold text-(--text-dim) uppercase tracking-[0.07em] ${gi > 0 ? "border-t border-(--border)" : "border-t-0"}`}>
                                 {group.provider}
                               </div>
                             )}
@@ -2118,21 +2071,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     setModelFilter("");
                                     if (!isActive || isAutoModelSelection) onModelChange(opt.provider, opt.modelId);
                                   }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 8,
-                                    width: "100%", padding: "7px 12px",
-                                    background: isActive ? "var(--bg-selected)" : "none",
-                                    border: "none",
-                                    color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: 12, textAlign: "left",
-                                    fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
-                                  }}
+                                  className={`flex items-center gap-2 w-full py-[7px] px-3 border-none cursor-pointer text-xs text-left whitespace-nowrap ${isActive ? "bg-(--bg-selected)" : "bg-none"} ${isActive ? "text-(--text)" : "text-(--text-muted)"} ${isActive ? "font-semibold" : ""}`}
                                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                                 >
                                   {isActive
-                                    ? <Check size={11} strokeWidth={2.5} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />
+                                    ? <Check size={11} strokeWidth={2.5} className="text-(--accent) shrink-0" aria-hidden="true" />
                                     : <span style={{ width: 11, flexShrink: 0 }} />}
                                   {opt.name}
                                 </button>
@@ -2228,7 +2172,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               } : null),
             }}>
             {!isStreaming && onThinkingLevelChange && (
-              <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
+              <div ref={thinkingDropdownRef} className="relative">
                 <button
                   className="composer-thinking-trigger"
                   onClick={() => !isStreaming && setThinkingDropdownOpen((v) => !v)}
@@ -2260,7 +2204,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}
                 >
                   <BrainCircuit size={12} strokeWidth={2} aria-hidden="true" />
-                  {(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{thinkingDisplayLabel}</span>}
+                  {(!isMobile || controlsMenuOpen) && <span className="whitespace-nowrap">{thinkingDisplayLabel}</span>}
                 </button>
                 {thinkingDropdownOpen && (
                   <div style={{
@@ -2284,27 +2228,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <button
                           key={lvl}
                           onClick={() => { setThinkingDropdownOpen(false); if (!isActive) onThinkingLevelChange(lvl); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
+                          className={`flex items-center gap-2 w-full py-[7px] px-3 border-none cursor-pointer text-xs text-left whitespace-nowrap ${isActive ? "bg-(--bg-selected)" : "bg-none"} ${isActive ? "text-(--text)" : "text-(--text-muted)"} ${isActive ? "font-semibold" : ""}`}
                           onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
-                            ? <Check size={11} strokeWidth={2.5} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />
+                            ? <Check size={11} strokeWidth={2.5} className="text-(--accent) shrink-0" aria-hidden="true" />
                             : <span style={{ width: 11, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>
+                          <span className="flex-1">
                             {displayLabel}
-                            {showOriginal && <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
+                            {showOriginal && <span className="text-[10px] text-(--text-dim) font-(--font-mono) ml-[5px]">({lvl})</span>}
                           </span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                          <span className="text-[11px] text-(--text-dim) ml-2">{desc}</span>
                         </button>
                       );
                     })}
@@ -2313,7 +2248,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
             {!isStreaming && onToolPresetChange && (
-              <div ref={toolDropdownRef} style={{ position: "relative" }}>
+              <div ref={toolDropdownRef} className="relative">
                 <button
                   className="composer-tool-trigger"
                   onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
@@ -2345,7 +2280,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}
                 >
                   <Wrench size={12} strokeWidth={2} aria-hidden="true" />
-                  {(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{toolPresetLabel}</span>}
+                  {(!isMobile || controlsMenuOpen) && <span className="whitespace-nowrap">{toolPresetLabel}</span>}
                 </button>
                 {toolDropdownOpen && (
                   <div style={{
@@ -2369,24 +2304,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <button
                           key={lvl}
                           onClick={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            width: "100%", padding: "7px 12px",
-                            background: isActive ? "var(--bg-selected)" : "none",
-                            border: "none",
-                            color: isActive ? "var(--text)" : "var(--text-muted)",
-                            cursor: "pointer", fontSize: 12, textAlign: "left",
-                            fontWeight: isActive ? 600 : 400,
-                            whiteSpace: "nowrap",
-                          }}
+                          className={`flex items-center gap-2 w-full py-1.75 px-3 border-none cursor-pointer text-xs text-left whitespace-nowrap ${isActive ? "bg-(--bg-selected)" : "bg-none"} ${isActive ? "text-(--text)" : "text-(--text-muted)"} ${isActive ? "font-semibold" : ""}`}
                           onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
                         >
                           {isActive
-                            ? <Check size={11} strokeWidth={2.5} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />
+                            ? <Check size={11} strokeWidth={2.5} className="text-(--accent) shrink-0" aria-hidden="true" />
                             : <span style={{ width: 11, flexShrink: 0 }} />}
-                          <span style={{ flex: 1 }}>{lvl}</span>
-                          <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                          <span className="flex-1">{lvl}</span>
+                          <span className="text-[11px] text-(--text-dim) ml-2">{desc}</span>
                         </button>
                       );
                     })}
@@ -2409,7 +2335,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     background: isCompacting ? "rgba(239,68,68,0.08)" : "none",
                     border: "none",
                     borderRadius: 9,
-                    color: isCompacting ? "#ef4444" : "var(--text-muted)",
+                    color: isCompacting ? "var(--state-error)" : "var(--text-muted)",
                     cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
                     fontSize: 12, opacity: (isStreaming && !isCompacting) ? 0.5 : 1,
                     transition: "background 0.12s, color 0.12s",
@@ -2417,19 +2343,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   onMouseEnter={(e) => {
                     if (isStreaming && !isCompacting) return;
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.16)" : "var(--bg-hover)";
-                    e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text)";
+                    e.currentTarget.style.color = isCompacting ? "var(--state-error)" : "var(--text)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = isCompacting ? "rgba(239,68,68,0.08)" : "none";
-                    e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
+                    e.currentTarget.style.color = isCompacting ? "var(--state-error)" : "var(--text-muted)";
                   }}
                    title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                    aria-label={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
                 >
                   {isCompacting ? (
-                    <><Square size={10} fill="currentColor" strokeWidth={0} aria-hidden="true" />{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("chat.compacting")}</span>}</>
+                    <><Square size={10} fill="currentColor" strokeWidth={0} aria-hidden="true" />{(!isMobile || controlsMenuOpen) && <span className="whitespace-nowrap">{t("chat.compacting")}</span>}</>
                   ) : (
-                    <><Shrink size={12} strokeWidth={2} aria-hidden="true" />{(!isMobile || controlsMenuOpen) && <span style={{ whiteSpace: "nowrap" }}>{t("chat.compact")}</span>}</>
+                    <><Shrink size={12} strokeWidth={2} aria-hidden="true" />{(!isMobile || controlsMenuOpen) && <span className="whitespace-nowrap">{t("chat.compact")}</span>}</>
                   )}
                 </button>
               </div>
@@ -2439,8 +2365,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <button
                 className="composer-stop"
                 aria-label={t("chat.stopAgent")}
-                onClick={onAbort}
-                 title={t("chat.stopAgent")}
+                onClick={aborting ? undefined : onAbort}
+                 title={aborting ? t("chat.stopping") : t("chat.stopAgent")}
+                disabled={aborting}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "8px 14px",
@@ -2448,17 +2375,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   background: "rgba(239,68,68,0.08)",
                   border: "1px solid rgba(239,68,68,0.3)",
                   borderRadius: 9,
-                  color: "#ef4444",
-                  cursor: "pointer",
+                  color: "var(--state-error)",
+                  cursor: aborting ? "progress" : "pointer",
                   fontSize: 12, fontWeight: 600,
                   whiteSpace: "nowrap", letterSpacing: "-0.01em",
+                  opacity: aborting ? 0.7 : 1,
                   transition: "background 0.12s",
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.16)"; }}
+                onMouseEnter={(e) => { if (!aborting) e.currentTarget.style.background = "rgba(239,68,68,0.16)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.08)"; }}
               >
-                <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden="true" />
-                 {t("chat.stop")}
+                {aborting ? (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 11, height: 11, borderRadius: "50%",
+                      border: "2px solid currentColor", borderTopColor: "transparent",
+                      animation: "spin .8s linear infinite",
+                    }}
+                  />
+                ) : (
+                  <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden="true" />
+                )}
+                 {aborting ? t("chat.stopping") : t("chat.stop")}
               </button>
             )}
 

@@ -62,32 +62,10 @@ function Toggle({
           ? t("i18n.visibleInPrompt")
           : t("i18n.hiddenFromPrompt")
       }
-      style={{
-        flexShrink: 0,
-        width: 40,
-        height: 22,
-        borderRadius: 11,
-        border: "none",
-        padding: 0,
-        cursor: loading ? "wait" : "pointer",
-        background: enabled ? "var(--accent)" : "var(--border)",
-        position: "relative",
-        transition: "background 0.18s",
-        outline: "none",
-      }}
+      className={`shrink-0 w-10 h-5.5 rounded-[11px] border-none p-0 relative transition-colors duration-150 outline-none ${loading ? "cursor-wait" : "cursor-pointer"} ${enabled ? "bg-(--accent)" : "bg-(--border)"}`}
     >
       <span
-        style={{
-          position: "absolute",
-          top: 3,
-          left: enabled ? 21 : 3,
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: "var(--bg)",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.22)",
-          transition: "left 0.18s cubic-bezier(.4,0,.2,1)",
-        }}
+        className={`absolute top-0.75 w-4 h-4 rounded-full bg-(--bg) shadow-[0_1px_4px_rgba(0,0,0,0.22)] transition-[left] duration-[0.18s] ease-in-out ${enabled ? "left-5.25" : "left-0.75"}`}
       />
     </button>
   );
@@ -131,36 +109,17 @@ function SkillDetail({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="flex flex-col gap-20">
       {/* Path + tag + toggle, with a stable status row below. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-7">
           <span
-            style={{
-              fontSize: 10,
-              padding: "1px 5px",
-              borderRadius: 3,
-              flexShrink: 0,
-              background:
-                label === "project"
-                  ? "rgba(99,102,241,0.12)"
-                  : "rgba(120,120,120,0.12)",
-              color:
-                label === "project" ? "rgba(99,102,241,0.8)" : "var(--text-dim)",
-            }}
+            className={`text-[11px] py-px px-1.5 rounded-[3px] shrink-0 ${label === "project" ? "bg-indigo-500/15" : "bg-black/10"} ${label === "project" ? "text-indigo-500/80" : "text-(--text-dim)"}`}
           >
             {label}
           </span>
           <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--text-dim)",
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+            className="font-(--font-mono) text-[11px] text-(--text-dim) flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
           >
             {displayPath(skill.filePath)}
           </span>
@@ -171,23 +130,15 @@ function SkillDetail({
           />
         </div>
         <div
-          style={{
-            minHeight: 16,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            gap: 8,
-            flexWrap: "wrap",
-            textAlign: "right",
-          }}
+          className="min-h-4 flex items-center justify-end gap-2 flex-wrap text-right"
         >
           {!enabled && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            <span className="text-[11px] text-(--text-dim)">
               {t("i18n.hiddenButInvocable")}
             </span>
           )}
           {saveError && (
-            <span style={{ fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>
+            <span className="text-xs text-(--state-error) wrap-anywhere">
               {saveError}
             </span>
           )}
@@ -195,9 +146,9 @@ function SkillDetail({
       </div>
 
       {skill.install?.skillsShUrl && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div className="flex flex-col gap-5">
           <span
-            style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+            className="text-xs text-(--text-muted) font-medium"
           >
             Source
           </span>
@@ -206,24 +157,10 @@ function SkillDetail({
             target="_blank"
             rel="noreferrer"
             title={skill.install.skillsShUrl}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "fit-content",
-              maxWidth: "100%",
-              color: "var(--accent)",
-              textDecoration: "none",
-            }}
+            className="flex items-center gap-2 w-fit max-w-full text-(--accent) no-underline"
           >
             <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              className="font-(--font-mono) text-xs overflow-hidden text-ellipsis whitespace-nowrap"
             >
               {skill.install.skillsShUrl.replace(/^https?:\/\//, "")} ↗
             </span>
@@ -232,26 +169,17 @@ function SkillDetail({
       )}
 
       {skill.install && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        <div className="flex flex-col gap-7">
           <span
-            style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+            className="text-xs text-(--text-muted) font-medium"
           >
             Version
           </span>
           <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
+            className="flex items-center gap-2.5 flex-wrap"
           >
             <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--text-muted)",
-              }}
+              className="font-(--font-mono) text-xs text-(--text-muted)"
             >
               {shortVersion(updateStatus?.currentVersion ?? skill.install.versionHash)}
             </span>
@@ -259,27 +187,14 @@ function SkillDetail({
               <button
                 onClick={onCheckUpdate}
                 disabled={checkingUpdate || updating}
-                style={{
-                  padding: "4px 9px",
-                  border: "1px solid var(--border)",
-                  borderRadius: 5,
-                  background: "none",
-                  color: "var(--text-muted)",
-                  cursor: checkingUpdate || updating ? "not-allowed" : "pointer",
-                  opacity: checkingUpdate || updating ? 0.5 : 1,
-                  fontSize: 11,
-                }}
+                className={`py-1 px-2.25 border border-(--border) rounded-[5px] bg-none text-(--text-muted) text-[11px] ${checkingUpdate || updating ? "cursor-not-allowed" : "cursor-pointer"} ${checkingUpdate || updating ? "opacity-50" : ""}`}
               >
                  {t("i18n.check")}
               </button>
             )}
             {updateStatus?.state === "update-available" && (
               <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "#d97706",
-                }}
+                className="font-(--font-mono) text-xs text-(--state-warning)"
               >
                 {shortVersion(updateStatus.latestVersion)}
               </span>
@@ -287,14 +202,14 @@ function SkillDetail({
             {(checkingUpdate ||
               (updateStatus && updateStatus.state !== "update-available")) && (
               <span
+                className="text-xs"
                 style={{
-                  fontSize: 12,
                   color: checkingUpdate
                     ? "var(--accent)"
                     : updateStatus?.state === "up-to-date"
-                      ? "#16a34a"
+                      ? "var(--state-success)"
                       : updateStatus?.state === "error"
-                          ? "#ef4444"
+                          ? "var(--state-error)"
                           : "var(--text-dim)",
                 }}
               >
@@ -311,53 +226,39 @@ function SkillDetail({
               <button
                 onClick={onUpdate}
                 disabled={updating || checkingUpdate}
-                style={{
-                  padding: "4px 10px",
-                  border: "none",
-                  borderRadius: 5,
-                  background: "var(--accent)",
-                  color: "#fff",
-                  cursor: updating || checkingUpdate ? "not-allowed" : "pointer",
-                  opacity: updating || checkingUpdate ? 0.5 : 1,
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
+                className={`py-1 px-2.5 border-none rounded-[5px] bg-(--accent) text-white text-[11px] font-semibold ${updating || checkingUpdate ? "cursor-not-allowed" : "cursor-pointer"} ${updating || checkingUpdate ? "opacity-50" : ""}`}
               >
                  {updating ? t("i18n.updating") : t("i18n.update")}
               </button>
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
+            <span className="text-xs text-(--state-error) leading-normal">{updateError}</span>
           )}
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div className="flex flex-col gap-5">
         <span
-          style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+          className="text-xs text-(--text-muted) font-medium"
         >
           Name
         </span>
         <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 14,
-            color: "var(--text)",
-          }}
+          className="font-(--font-mono) text-sm text-(--text)"
         >
           {skill.name}
         </span>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div className="flex flex-col gap-5">
         <span
-          style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}
+          className="text-xs text-(--text-muted) font-medium"
         >
           Description
         </span>
         <span
-          style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6 }}
+          className="text-sm text-(--text-muted) leading-[1.6px]"
         >
           {skill.description}
         </span>
@@ -456,22 +357,17 @@ function AddSkillPanel({
       : `${shortenPath(cwd)}/.pi/skills/`;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="flex flex-col h-full">
       {/* ── Header area ── */}
       <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          marginBottom: 20,
-        }}
+        className="flex flex-col gap-3 mb-5"
       >
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+        <div className="text-sm font-semibold text-(--text)">
            {t("i18n.addSkill")}
         </div>
 
         {/* Search row */}
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="flex gap-8">
           <input
             ref={inputRef}
             value={query}
@@ -480,47 +376,21 @@ function AddSkillPanel({
               if (e.key === "Enter") search(query);
             }}
              placeholder={t("i18n.skillSearchPlaceholder")}
-            style={{
-              flex: 1,
-              padding: "7px 10px",
-              fontSize: 13,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              color: "var(--text)",
-              outline: "none",
-            }}
+            className="flex-1 py-1.75 px-2.5 text-[13px] bg-(--bg-panel) border border-(--border) rounded-md text-(--text) outline-none"
           />
           <button
             onClick={() => search(query)}
             disabled={searching || !query.trim()}
-            style={{
-              padding: "7px 16px",
-              fontSize: 13,
-              borderRadius: 6,
-              border: "none",
-              background: "var(--accent)",
-              color: "#fff",
-              cursor: searching || !query.trim() ? "not-allowed" : "pointer",
-              opacity: searching || !query.trim() ? 0.5 : 1,
-              flexShrink: 0,
-            }}
+            className={`py-1.75 px-4 text-[13px] rounded-md border-none bg-(--accent) text-white shrink-0 ${searching || !query.trim() ? "cursor-not-allowed" : "cursor-pointer"} ${searching || !query.trim() ? "opacity-50" : ""}`}
           >
              {searching ? t("i18n.searching") : t("i18n.search")}
           </button>
         </div>
 
         {/* Scope + install path row */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="flex items-center gap-10">
           <div
-            style={{
-              display: "flex",
-              borderRadius: 5,
-              border: "1px solid var(--border)",
-              overflow: "hidden",
-              fontSize: 12,
-              flexShrink: 0,
-            }}
+            className="flex rounded-[5px] border border-(--border) overflow-hidden text-xs shrink-0"
           >
             {(["global", "project"] as const).map((s) => (
               <button
@@ -530,31 +400,14 @@ function AddSkillPanel({
                 }}
                 disabled={s === "project" && !projectResourcesLoaded}
                 title={s === "project" && !projectResourcesLoaded ? t("trust.projectScopeUnavailable") : undefined}
-                style={{
-                  padding: "3px 10px",
-                  border: "none",
-                  cursor: s === "project" && !projectResourcesLoaded ? "not-allowed" : "pointer",
-                  background: scope === s ? "var(--bg-selected)" : "none",
-                  color: scope === s ? "var(--text)" : "var(--text-dim)",
-                  fontWeight: scope === s ? 600 : 400,
-                  opacity: s === "project" && !projectResourcesLoaded ? 0.45 : 1,
-                  borderRight:
-                    s === "global" ? "1px solid var(--border)" : "none",
-                }}
+                className={`py-0.75 px-2.5 border-none ${s === "project" && !projectResourcesLoaded ? "cursor-not-allowed" : "cursor-pointer"} ${scope === s ? "bg-(--bg-selected)" : "bg-none"} ${scope === s ? "text-(--text)" : "text-(--text-dim)"} ${scope === s ? "font-semibold" : ""} ${s === "project" && !projectResourcesLoaded ? "opacity-[0.45]" : ""} ${s === "global" ? "border-r border-(--border)" : "border-r-0"}`}
               >
                 {s}
               </button>
             ))}
           </div>
           <span
-            style={{
-              fontSize: 12,
-              color: "var(--text-dim)",
-              fontFamily: "var(--font-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+            className="text-xs text-(--text-dim) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap"
           >
             → {installPath}
           </span>
@@ -562,11 +415,11 @@ function AddSkillPanel({
 
         {/* Errors */}
         {searchError && (
-          <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>
+          <div className="text-xs text-(--state-error)">{searchError}</div>
         )}
         {installError && (
           <div
-            style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}
+            className="text-xs text-(--state-error) wrap-break-word"
           >
             {installError}
           </div>
@@ -575,7 +428,7 @@ function AddSkillPanel({
 
       {/* ── Results list ── */}
       {results.length > 0 ? (
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div className="flex-1 overflow-y-auto">
           {results.map((r) => {
             const isInstalled =
               installedPackages[scope].has(r.package) ||
@@ -588,50 +441,26 @@ function AddSkillPanel({
             return (
               <div
                 key={r.package}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "12px 0",
-                  borderBottom: "1px solid var(--border)",
-                }}
+                className="flex items-center gap-3.5 py-3 px-0 border-b border-(--border)"
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="flex-1 min-w-0">
                   {/* skill name prominent */}
                   <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--text)",
-                      marginBottom: 3,
-                    }}
+                    className="text-[13px] font-semibold text-(--text) mb-0.75"
                   >
                     {skillpart ?? repopart}
                   </div>
                   {/* repo + installs + link row */}
                   <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
+                    className="flex items-center gap-2.5 flex-wrap"
                   >
                     <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        color: "var(--text-dim)",
-                      }}
+                      className="font-(--font-mono) text-[11px] text-(--text-dim)"
                     >
                       {repopart}
                     </span>
                     <span
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-muted)",
-                        fontWeight: 500,
-                      }}
+                      className="text-xs text-(--text-muted) font-medium"
                     >
                       {r.installs}
                     </span>
@@ -640,11 +469,7 @@ function AddSkillPanel({
                         href={r.url}
                         target="_blank"
                         rel="noreferrer"
-                        style={{
-                          fontSize: 12,
-                          color: "var(--accent)",
-                          textDecoration: "none",
-                        }}
+                        className="text-xs text-(--accent) no-underline"
                       >
                         skills.sh ↗
                       </a>
@@ -656,24 +481,18 @@ function AddSkillPanel({
                     !isInstalled && !isInstalling && install(r.package)
                   }
                   disabled={isInstalled || isInstalling || installing !== null}
+                  className="shrink-0 px-3.5 py-1.25 text-xs font-medium rounded-[5px] border border-(--border) transition-colors duration-120"
                   style={{
-                    flexShrink: 0,
-                    padding: "5px 14px",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    borderRadius: 5,
-                    border: "1px solid var(--border)",
                     cursor:
                       isInstalled || isInstalling || installing !== null
                         ? "not-allowed"
                         : "pointer",
                     background: isInstalled ? "rgba(34,197,94,0.1)" : "none",
                     color: isInstalled
-                      ? "#16a34a"
+                      ? "var(--state-success)"
                       : isInstalling
                         ? "var(--accent)"
                         : "var(--text-muted)",
-                    transition: "color 0.12s",
                   }}
                 >
                   {isInstalled
@@ -690,14 +509,14 @@ function AddSkillPanel({
         !searchError &&
         !searching && (
           <div
-            style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.8 }}
+            className="text-[13px] text-(--text-dim) leading-[1.8px]"
           >
             Search{" "}
             <a
               href="https://skills.sh"
               target="_blank"
               rel="noreferrer"
-              style={{ color: "var(--accent)", textDecoration: "none" }}
+              className="text-(--accent) no-underline"
             >
               skills.sh
             </a>{" "}
@@ -911,76 +730,37 @@ export function SkillsConfig({
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+      className="fixed inset-0 z-1000 bg-black/35 flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
+        className="max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] bg-(--bg) border border-(--border) rounded-[10px] flex flex-col shadow-[0_8px_32px_rgba(0,0,0,0.18)] overflow-hidden"
         style={{
           width: isMobile ? "calc(100vw - 16px)" : 860,
-          maxWidth: "calc(100vw - 16px)",
           height: isMobile ? "calc(100dvh - 16px)" : "78vh",
-          maxHeight: "calc(100dvh - 16px)",
-          background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          overflow: "hidden",
         }}
       >
         {/* Header */}
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 18px",
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
+          className="flex items-center justify-between py-3 px-4.5 border-b border-(--border) shrink-0"
         >
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <div className="flex items-baseline gap-10">
             <span
-              style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}
+              className="text-[15px] font-bold text-(--text)"
             >
                {t("common.skills")}
             </span>
             <code
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                fontFamily: "var(--font-mono)",
-                maxWidth: 320,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              className="text-[11px] text-(--text-muted) font-(--font-mono) max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap"
             >
               {shortenPath(cwd)}
             </code>
           </div>
           <button
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 20,
-              lineHeight: 1,
-              padding: "2px 6px",
-            }}
+            className="bg-none border-none text-(--text-muted) cursor-pointer text-xl leading-none py-0.5 px-1.5"
           >
             ×
           </button>
@@ -989,61 +769,40 @@ export function SkillsConfig({
         {!projectResourcesLoaded && (
           <div
             role="status"
-            style={{
-              padding: "8px 18px",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              fontSize: 12,
-            }}
+            className="py-2 px-4.5 border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-xs"
           >
             {t("trust.skillsNotLoaded")}
           </div>
         )}
 
         {/* Body */}
-        <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
+        <div className={`flex-1 flex overflow-hidden ${isMobile ? "flex-col" : "flex-row"}`}>
           {/* Left: skill list */}
           <div
+            className="flex flex-col shrink-0 bg-(--bg-panel)"
             style={{
               width: isMobile ? "100%" : 210,
               maxHeight: isMobile ? "40vh" : undefined,
               borderRight: isMobile ? "none" : "1px solid var(--border)",
               borderBottom: isMobile ? "1px solid var(--border)" : "none",
-              display: "flex",
-              flexDirection: "column",
-              flexShrink: 0,
-              background: "var(--bg-panel)",
             }}
           >
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
+            <div className="flex-1 overflow-y-auto py-2 px-1.5">
               {loading ? (
                 <div
-                  style={{
-                    padding: "10px 8px",
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                  }}
+                  className="py-2.5 px-2 text-xs text-(--text-muted)"
                 >
                    {t("i18n.loading")}
                 </div>
               ) : error ? (
                 <div
-                  style={{
-                    padding: "10px 8px",
-                    fontSize: 11,
-                    color: "#f87171",
-                  }}
+                  className="py-2.5 px-2 text-[11px] text-(--state-error)"
                 >
                   {error}
                 </div>
               ) : skills.length === 0 ? (
                 <div
-                  style={{
-                    padding: "10px 8px",
-                    fontSize: 11,
-                    color: "var(--text-dim)",
-                  }}
+                  className="py-2.5 px-2 text-[11px] text-(--text-dim)"
                 >
                    {t("i18n.noSkills")}
                 </div>
@@ -1096,17 +855,7 @@ export function SkillsConfig({
                           setSelected(skill.filePath);
                           setAddMode(false);
                         }}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 7,
-                          padding: "8px 8px",
-                          borderRadius: 5,
-                          cursor: "pointer",
-                          background: isSelected
-                            ? "var(--bg-selected)"
-                            : "none",
-                        }}
+                        className={`flex items-center gap-1.75 py-2 px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "bg-none"}`}
                         onMouseEnter={(e) => {
                           if (!isSelected)
                             e.currentTarget.style.background =
@@ -1118,34 +867,18 @@ export function SkillsConfig({
                         }}
                       >
                         <span
+                          className="shrink-0 w-1.75 h-1.75 rounded-full transition-[background,box-shadow] duration-150"
                           style={{
-                            flexShrink: 0,
-                            width: 7,
-                            height: 7,
-                            borderRadius: "50%",
                             background: disabled
                               ? "var(--border)"
                               : "var(--accent)",
                             boxShadow: disabled
                               ? "none"
                               : "0 0 4px var(--accent)",
-                            transition:
-                              "background 0.15s, box-shadow 0.15s",
                           }}
                         />
                         <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: isSelected ? 600 : 400,
-                            color: disabled
-                              ? "var(--text-dim)"
-                              : "var(--text)",
-                            fontFamily: "var(--font-mono)",
-                            flex: 1,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
+                          className={`text-xs font-(--font-mono) flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${isSelected ? "font-semibold" : ""} ${disabled ? "text-(--text-dim)" : "text-(--text)"}`}
                         >
                           {skill.name}
                         </span>
@@ -1156,12 +889,7 @@ export function SkillsConfig({
                           return (
                             <span
                                title={t("i18n.updateAvailable")}
-                              style={{
-                                color: "#d97706",
-                                fontSize: 13,
-                                lineHeight: 1,
-                                flexShrink: 0,
-                              }}
+                              className="text-(--state-warning) text-[13px] leading-none shrink-0"
                             >
                               ↑
                             </span>
@@ -1180,16 +908,9 @@ export function SkillsConfig({
                       );
                       const dormantOpen = dormantGroupsOpen[grpLabel] ?? false;
                       return (
-                        <div key={grpLabel} style={{ marginBottom: 6 }}>
+                        <div key={grpLabel} className="mb-6">
                           <div
-                            style={{
-                              padding: "4px 8px 3px",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              color: "var(--text-dim)",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.06em",
-                            }}
+                            className="pt-1 px-2 pb-0.75 text-[11px] font-semibold text-(--text-dim) uppercase tracking-wider"
                           >
                             {grpLabel}
                           </div>
@@ -1203,21 +924,9 @@ export function SkillsConfig({
                                     [grpLabel]: !dormantOpen,
                                   }))
                                 }
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 5,
-                                  padding: "4px 8px 3px",
-                                  fontSize: 10,
-                                  fontWeight: 600,
-                                  color: "var(--text-dim)",
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.06em",
-                                  cursor: "pointer",
-                                  userSelect: "none",
-                                }}
+                                className="flex items-center gap-1.25 pt-1 px-2 pb-0.75 text-[11px] font-semibold text-(--text-dim) uppercase tracking-wider cursor-pointer select-none"
                               >
-                                <span style={{ fontSize: 8 }}>
+                                <span className="text-[10px] leading-none">
                                   {dormantOpen ? "▾" : "▸"}
                                 </span>
                                 {t("i18n.dormant")} ({dormantSkills.length})
@@ -1234,25 +943,11 @@ export function SkillsConfig({
             </div>
             {/* Add skill button */}
             <div
-              style={{
-                padding: "8px 6px",
-                borderTop: "1px solid var(--border)",
-                flexShrink: 0,
-              }}
+              className="py-2 px-1.5 border-t border-(--border) shrink-0"
             >
               <div
                 onClick={() => setAddMode(true)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "7px 8px",
-                  borderRadius: 5,
-                  cursor: "pointer",
-                  background: addMode ? "var(--bg-selected)" : "none",
-                  color: addMode ? "var(--accent)" : "var(--text-dim)",
-                  fontSize: 12,
-                }}
+                className={`flex items-center gap-1.5 py-1.75 px-2 rounded-[5px] cursor-pointer text-xs ${addMode ? "bg-(--bg-selected)" : "bg-none"} ${addMode ? "text-(--accent)" : "text-(--text-dim)"}`}
                 onMouseEnter={(e) => {
                   if (!addMode)
                     e.currentTarget.style.background = "var(--bg-hover)";
@@ -1280,7 +975,7 @@ export function SkillsConfig({
           </div>
 
           {/* Right: detail or add panel */}
-          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <div className="flex-1 overflow-y-auto p-5">
             {addMode ? (
               <AddSkillPanel
                 cwd={cwd}
@@ -1326,14 +1021,7 @@ export function SkillsConfig({
               />
             ) : (
               <div
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--text-dim)",
-                  fontSize: 13,
-                }}
+                className="h-full flex items-center justify-center text-(--text-dim) text-[13px]"
               >
                  {t("i18n.selectSkill")}
               </div>
@@ -1343,33 +1031,14 @@ export function SkillsConfig({
 
         {/* Footer */}
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 18px",
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
+          className="flex items-center justify-between py-2.5 px-4.5 border-t border-(--border) shrink-0"
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="flex items-center gap-10">
             {skills.some((skill) => Boolean(skill.install)) && (
               <button
                 onClick={() => void checkForUpdates()}
                 disabled={checkingAll || updatingSkill !== null}
-                style={{
-                  padding: "6px 12px",
-                  background: "none",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  color: "var(--text-muted)",
-                  cursor:
-                    checkingAll || updatingSkill !== null
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity: checkingAll || updatingSkill !== null ? 0.5 : 1,
-                  fontSize: 12,
-                }}
+                className={`py-1.5 px-3 bg-none border border-(--border) rounded-md text-(--text-muted) text-xs ${checkingAll || updatingSkill !== null ? "cursor-not-allowed" : "cursor-pointer"} ${checkingAll || updatingSkill !== null ? "opacity-50" : ""}`}
               >
                  {checkingAll ? t("i18n.checking") : t("i18n.checkUpdates")}
               </button>
@@ -1377,7 +1046,7 @@ export function SkillsConfig({
             {Object.values(updateStatuses).filter(
               (status) => status.state === "update-available",
             ).length > 0 && (
-              <span style={{ fontSize: 12, color: "#d97706" }}>
+              <span className="text-xs text-(--state-warning)">
                 {
                   Object.values(updateStatuses).filter(
                     (status) => status.state === "update-available",
@@ -1393,15 +1062,7 @@ export function SkillsConfig({
           </div>
           <button
             onClick={onClose}
-            style={{
-              padding: "6px 14px",
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
+            className="py-1.5 px-3.5 bg-none border border-(--border) rounded-md text-(--text-muted) cursor-pointer text-[13px]"
           >
              {t("i18n.close")}
           </button>

@@ -329,7 +329,11 @@ test("keeps composer source handlers and textarea cap contract", async () => {
   const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   for (const handler of ["onChange", "onSelect", "onKeyDown", "onCompositionStart", "onCompositionEnd", "onInput={handleInput}", "onPaste={handlePaste}"]) assert.match(source, new RegExp(handler));
   assert.match(source, /onClick=\{handleSend\}/);
-  assert.match(source, /onClick=\{onAbort\}/);
+  assert.match(source, /onClick=\{aborting \? undefined : onAbort\}/);
+  assert.match(source, /disabled=\{aborting\}/);
+  assert.match(source, /\{aborting \? t\("chat\.stopping"\) : t\("chat\.stop"\)\}/);
+  assert.match(source, /chat\.stopping/);
+  assert.match(source, /if \(e\.key === "Escape" && !isComposing && isStreaming && onAbort && !aborting\)/);
   assert.match(source, /sendQueued\("steer"\)/);
   assert.match(source, /sendQueued\("followup"\)/);
   assert.match(source, /const COMPOSER_TEXTAREA_MAX_HEIGHT = 336/);

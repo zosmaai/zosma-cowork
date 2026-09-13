@@ -222,7 +222,10 @@ export function useSessionEvents(opts: SessionEventsOptions): SessionEvents {
 		setters.setAgentRunning(false);
 		setters.setAgentPhase(null);
 		setters.setRetryInfo(null);
-		dispatch({ type: "end" });
+		// Already settled? The run ended asynchronously (abort-freeze or a late
+		// duplicate terminal frame) — keep the frozen streaming tail instead of
+		// blasting it with `end`, which would wipe an aborted partial bubble.
+		dispatch({ type: wasRunning ? "end" : "frozen" });
 		return wasRunning;
 	}, [core, dispatch, setters]);
 
