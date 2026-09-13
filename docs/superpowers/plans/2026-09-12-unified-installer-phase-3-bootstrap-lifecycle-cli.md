@@ -4,7 +4,7 @@
 
 **Goal:** Let a user install and manage either the self-contained local Cowork server or the digest-pinned production container through one audited bootstrap and one dependency-free POSIX `zosma` command.
 
-**Architecture:** A small root `install.sh` performs only release selection, manifest/checksum verification, and atomic installation of the versioned CLI. The standalone `scripts/zosma` asset owns strict configuration parsing, local/Docker installation, user-service integration, authenticated health checks, lifecycle commands, transactional updates, rollback, and allowlisted uninstall. Node's built-in test runner executes the shell programs under temporary HOME/XDG roots with stubbed external commands; no test contacts a production endpoint or host service manager.
+**Architecture:** A small root `install.sh` performs release selection, manifest/checksum verification, and delegation to the verified temporary CLI candidate. That candidate validates mode/platform before persistent activation, then the standalone `scripts/zosma` asset owns its generation activation together with local/Docker installation, strict configuration parsing, user-service integration, authenticated health checks, lifecycle commands, crash recovery, rollback, and allowlisted uninstall. Node's built-in test runner executes the shell programs under temporary HOME/XDG roots with stubbed external commands; no test contacts a production endpoint or host service manager.
 
 **Tech Stack:** POSIX `sh`, `curl`, `tar`, `mktemp`, `sha256sum`/`shasum`, standard Unix utilities, systemd user services, macOS launchd LaunchAgents, Docker Compose v2, Node.js built-in test runner, ShellCheck.
 
@@ -118,10 +118,10 @@ Validate the complete record before lifecycle or deletion:
 | Bind/auth | Loopback requires host `127.0.0.1` and empty web password; LAN requires `0.0.0.0`, valid host, and generated password | Same |
 | `PI_DIR` | Absolute resolved external path | Exactly the installer-owned absolute Docker Pi-state path |
 | `WORKSPACE` / `IMAGE` | Both empty | Existing absolute workspace and exact approved GHCR digest |
-| `SERVICE_MANAGER` | `systemd` only on Linux with a linked active user manager, `launchd` only on macOS, otherwise `none` | Always `none` |
+| `SERVICE_MANAGER` | Static only: `systemd` on Linux with the expected marked unit/link, `launchd` on macOS with the expected marked plist, otherwise `none` | Always `none` |
 | Secrets | Daemon token is 64 lowercase hex characters; web password follows bind invariant | Same |
 
-Every installer root contains a private regular marker file whose exact content is `ZOSMA_COWORK_INSTALLER_SCHEMA=1`. Generated systemd, plist, and Compose files carry the same marker as a format-safe comment. Existing fixed paths are mutable only when they are absent or have the expected marker/target; a regular `$HOME/.local/bin/zosma`, unmarked service/plist/Compose file, out-of-root `current` link, or symlinked installer root is a collision and must be refused.
+The marker filename is exactly `.zosma-cowork-owned`; its sole line is `ZOSMA_COWORK_INSTALLER_SCHEMA=1`. Require that private regular file in `DATA_ROOT`, `CONFIG_ROOT`, `STATE_ROOT`, `DATA_ROOT/cli`, `CLI_VERSIONS`, each CLI version directory and generation, `DATA_ROOT/runtime`, `RUNTIME_VERSIONS`, each runtime version directory and generation, `DOCKER_ROOT`, `DOCKER_PI_STATE`, `STATE_ROOT/transaction`, and every transaction stage/snapshot directory. Generated systemd, plist, and Compose files carry `ZOSMA_COWORK_INSTALLER_SCHEMA=1` as a format-safe comment. The config file is the sole active-mode record; do not create a second mode marker. Existing fixed paths are mutable only when they are absent or have the exact marker/expected target. A regular `$HOME/.local/bin/zosma`, unmarked service/plist/Compose file, out-of-root `current` link, or symlinked installer root is a collision and must be refused.
 
 ### Installation layout
 
@@ -132,6 +132,8 @@ BIN_DIR=${HOME}/.local/bin
 DATA_ROOT=${XDG_DATA_HOME:-$HOME/.local/share}/zosma-cowork
 CONFIG_ROOT=${XDG_CONFIG_HOME:-$HOME/.config}/zosma-cowork
 STATE_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/zosma-cowork
+TRANSACTION_ROOT=$STATE_ROOT/transaction
+TRANSACTION_JOURNAL=$TRANSACTION_ROOT/journal
 CLI_VERSIONS=$DATA_ROOT/cli/versions
 CLI_GENERATIONS=$CLI_VERSIONS/<version>/generations
 CLI_CURRENT=$DATA_ROOT/cli/current
@@ -169,12 +171,22 @@ Lifecycle meanings are fixed:
 | `doctor` valid-but-stopped or optional-Git-degraded | `0` with warning |
 | `doctor` malformed/insecure installation | `2` |
 | `doctor` required runtime/prerequisite missing | `3` |
+| `start`/`stop`/`restart`/`status`/required uninstall with a recorded-but-unavailable manager | `5` |
 | `start`/`restart`/`open`/`update` health failure, unexpected `serve` exit, or failed rollback | `5` |
 | Idempotent stop of an already stopped managed mode | `0` |
 | Unsupported command/flag/mode combination | `2` |
 | Declined menu/reinstall/purge confirmation | `6` |
 
 Define `INTERACTIVE=1` only when a controlling TTY is available and `--yes` is absent. An explicit mode on a TTY remains interactive. `--yes` suppresses all ordinary prompts, browser opening, and one-time password display even when a TTY exists. Without a TTY, install requires `--yes`, explicit mode, and all mode-required values. Purge always requires a TTY confirmation and ignores `--yes` for that confirmation.
+
+### Dry-run scopes
+
+The two entry points intentionally have different dry-run depth:
+
+- `install.sh --dry-run` validates prerequisites, OS/architecture, release selection, and the manifest, then reports the prospective version/CLI asset. It does not download checksums or CLI/runtime assets and cannot validate CLI-owned mode/workspace/hostname choices.
+- An installed or directly invoked `zosma install --dry-run` validates the complete mode request, including local libc or Docker workspace/LAN requirements, while performing no asset download, secret generation, write, start, browser call, or deletion.
+
+Both help outputs state that distinction. Do not duplicate lifecycle option validation in the bootstrap.
 
 ### Production platform probes
 
@@ -184,29 +196,45 @@ Do not implement production detection through test-result overrides:
 - Linux libc for **local mode only**: first parse `getconf GNU_LIBC_VERSION`; if unavailable, parse `ldd --version`. Accept GNU libc `>=2.35`; reject musl, unknown libc, or older GNU libc for local mode while still allowing Docker selection on supported Linux architectures.
 - macOS: parse `sw_vers -productVersion` and require major version `>=13` for either mode.
 - WSL2: detect `microsoft` case-insensitively in `/proc/sys/kernel/osrelease` or `uname -r`.
-- systemd user manager: require `systemctl --user show-environment` success. A custom unit outside the manager's current search path is made visible with `systemctl --user link <absolute-unit>` before `daemon-reload`/`enable`.
+- systemd user manager: installation-time selection and each lifecycle operation check `systemctl --user show-environment`; this liveness result is not config validity. A custom unit outside the manager's current search path is made visible with `systemctl --user link <absolute-unit>` before `daemon-reload`/`enable`. A later-unavailable recorded manager leaves config valid but makes `start`/`stop`/`restart`/`status`/required uninstall return `5`; `doctor` reports the runtime-manager failure as `5`. A fresh Linux install with no manager records `none` and remains a valid foreground installation.
 
 Tests stub the commands and their real output shapes. Ubuntu/macOS CI also exercises native detection without stubbing the result.
 
-### Update transaction journal
+### Portable link replacement
 
-Write the journal atomically as mode `0600` under `STATE_ROOT/transaction` with exactly these keys:
+Do not call `mv temporary-link parent/current`: when `current` points to a directory, implementations may treat it as the destination directory, and GNU `mv -T` is unavailable on macOS. For each `current` or launcher replacement:
+
+1. create a temporary sibling directory under the destination's parent;
+2. create inside it a symlink whose basename is exactly the final basename (`current` or `zosma`);
+3. call `mv -f "$temporary_directory/$basename" "$destination_parent/"`, making the computed target exactly `$destination_parent/$basename` without passing the existing link as the destination operand;
+4. remove the now-empty temporary directory.
+
+Use the journal for crash recovery around the rename. Fresh local/Docker and update tests use the actual host `mv` (linked into the curated PATH), and the full test suite runs this replacement on native Linux and macOS.
+
+### Activation transaction journal
+
+Write the journal atomically as mode `0600` at the exact path `TRANSACTION_JOURNAL=$STATE_ROOT/transaction/journal` with exactly these keys:
 
 ```text
 TRANSACTION_SCHEMA=1
+INSTALL_KIND=fresh|update|reinstall
 MODE=local|docker
 PHASE=prepared|old_stopped|runtime_switched|cli_switched|config_switched|candidate_started|committed
+KEEP_VERIFIED_CLI=0|1
 OLD_WAS_RUNNING=0|1
-OLD_CLI_TARGET=<installer-owned generation>
+OLD_CLI_TARGET=<installer-owned generation or empty for fresh>
 NEW_CLI_TARGET=<installer-owned generation>
-OLD_RUNTIME_TARGET=<installer-owned generation or empty for Docker>
+OLD_RUNTIME_TARGET=<installer-owned generation or empty for fresh/Docker>
 NEW_RUNTIME_TARGET=<installer-owned generation or empty for Docker>
-OLD_CONFIG_BACKUP=<installer-owned transaction path>
-OLD_IMAGE=<exact digest or empty for local>
+OLD_CONFIG_BACKUP=<installer-owned transaction path or empty for fresh>
+STAGE_ROOT=<installer-owned transaction stage>
+OLD_IMAGE=<exact digest or empty for fresh/local>
 NEW_IMAGE=<exact digest or empty for local>
 ```
 
-`OLD_CONFIG_BACKUP` is a private marked snapshot directory containing the prior config, secrets, and generated service or Compose definition—not a user-supplied path. Validate every journal field and target root before acting. Persist each phase through a sibling temporary file plus `mv`. Any phase before `committed` conservatively restores old links/config/image, restarts the old mode only when `OLD_WAS_RUNNING=1`, health-checks it, and then removes the journal. A surviving `committed` journal keeps the candidate and finishes retention/cleanup. Recover a journal before every command dispatch. Tests inject process death after every persisted phase, including after candidate health but before `committed` and after `committed` but before journal removal.
+`OLD_CONFIG_BACKUP` is a private marked snapshot directory containing the prior config, secrets, and generated service or Compose definition—not a user-supplied path. `STAGE_ROOT` contains fresh/candidate generated files and, for Docker, enough Compose state to run candidate `down` during recovery. Validate every journal field and target root before acting. Persist each phase using the portable same-name move recipe above.
+
+The journal covers fresh install, update, and reinstall. Local transitions are `prepared -> old_stopped -> runtime_switched -> cli_switched -> config_switched -> candidate_started -> committed`; Docker omits `runtime_switched`; `--no-start` transitions from `config_switched` directly to `committed`. Fresh transactions still persist `old_stopped` to record that no old runtime was active, use empty old targets/config/image, `OLD_WAS_RUNNING=0`, and `KEEP_VERIFIED_CLI=1`; recovery stops/down the candidate if started, removes runtime/config/secrets/service/Compose activation, leaves no active config record, and may retain only the verified CLI generation/current launcher. Existing transactions restore old links/config/image and restart the old mode only when `OLD_WAS_RUNNING=1`. Any phase before `committed` conservatively restores the corresponding prior complete state; a surviving `committed` journal keeps the candidate and finishes retention/cleanup. Recover before every command dispatch. Tests inject process death after every persisted phase for fresh local, fresh Docker, update, and reinstall, including after candidate health but before `committed` and after `committed` but before journal removal.
 
 ### TDD execution rule
 
@@ -249,12 +277,9 @@ Cover one behavior per test:
 3. Unknown commands/options return `2` and concise usage.
 4. Absolute XDG variables select the fixed roots; unset or relative XDG values use documented fallbacks, with relative values warned and never used as deletion roots.
 5. Empty/relative HOME and CR/LF in any persisted path fail before writes.
-6. Stubbed production `uname` output normalizes `x86_64`/`amd64` to `x64` and `aarch64`/`arm64` to `arm64`; Windows and unsupported architectures return `3`.
-7. Stubbed `getconf`/`ldd` output accepts glibc 2.35+ for local mode, rejects musl/old/unknown libc only for local mode, and permits Docker mode on the same supported Linux architecture. Stubbed `sw_vers` enforces macOS 13+; stubbed kernel output detects WSL2.
-8. A hostile config value such as `$(touch sentinel)` remains literal and does not create the sentinel.
-9. Every required key appears once; duplicate/malformed known fields and cross-mode invariant violations fail. Unknown config fields produce one warning and are ignored; unknown secret fields fail without printing values.
-10. `--dry-run` with an uninstalled command creates no data/config/state/bin path.
-11. Source contains exactly one `ZOSMA_CLI_VERSION=v0.0.0-dev` assignment for Phase 4 stamping.
+6. A hostile config value such as `$(touch sentinel)` remains literal and does not create the sentinel.
+7. Every required key appears once; duplicate/malformed known fields and cross-mode invariant violations fail. Unknown config fields produce one warning and are ignored; unknown secret fields fail without printing values.
+8. Source contains exactly one `ZOSMA_CLI_VERSION=v0.0.0-dev` assignment for Phase 4 stamping.
 
 - [ ] **Step 3: Run the tests and verify the expected failure**
 
@@ -270,11 +295,11 @@ Implement in `scripts/zosma`:
 
 - `#!/bin/sh`, `set -eu`, constants for schema/version/exit statuses, and a `main "$@"` call only at the final line;
 - path resolution with no filesystem side effect;
-- canonical version/port/hostname/absolute-path/platform/libc validators;
+- canonical version, absolute HOME/XDG path, and fixed config/secret invariant validators required by the foundation tests;
 - fixed-key manifest/config/secret readers using `while IFS= read -r line` and `case`, never shell evaluation;
-- `version`, `--help`, stable dispatch, and dry-run plumbing;
+- `version`, `--help`, and stable dispatch;
 - portable stderr/error helpers and ANSI color only when stdout is a terminal and `TERM != dumb`;
-- test overrides guarded by an explicit `ZOSMA_TESTING=1` check.
+- a `ZOSMA_TESTING=1` source mode used only to call pure path/parser helpers without invoking `main`; production execution always reaches the sole final dispatch.
 
 Do not add a generic shell framework. Keep functions private in the single file.
 
@@ -306,19 +331,19 @@ git commit -m "feat: define zosma CLI contracts"
 Cover:
 
 1. Missing `curl`, `uname`, `mktemp`, `tar`, or both supported SHA tools returns `3` before install paths exist.
-2. Bootstrap parses only enough of the untouched argument list to detect an explicit local mode: musl/old-glibc explicit local returns `3` before persistent writes, while explicit Docker and no-mode interactive flows continue to the verified CLI.
+2. Bootstrap checks only OS/architecture and does not globally reject Linux libc; explicit local, explicit Docker, and no-mode flows all delegate unchanged to the verified temporary candidate, which applies mode-specific libc validation before persistent writes.
 3. Stable and canonical `--version` inputs request only their fixed manifest URL.
 4. Malformed, duplicate, incomplete, unknown-key, non-HTTPS, or schema-mismatched manifests return `4`.
 5. A manifest containing shell syntax is treated as inert data.
 6. Fake curl requires `--proto '=https' --proto-redir '=https'`, TLS 1.2, redirect following, and bounded time options on every request; an HTTPS-to-HTTP redirect is refused.
 7. CLI digest mismatch, checksum-list disagreement, duplicate/conflicting selected entries, malformed selected grammar, wrong URL basename, invalid `sh -n`, or mismatched `version --machine` returns `4` without changing `current`.
-8. A valid asset is installed as a unique mode-`0755` CLI generation; fresh bootstrap atomically points `cli/current` and `$HOME/.local/bin/zosma` at installer-owned locations.
-9. Regular-file/unexpected-symlink launcher or `current` collisions, symlinked CLI roots, and pre-existing unmarked data roots are refused without overwrite.
-10. `--dry-run` may fetch only the manifest and performs no CLI/checksum download or write.
+8. A valid CLI remains in the bootstrap temporary directory and is invoked directly; bootstrap creates no CLI generation, `current`, launcher, or ownership marker before candidate mode/platform validation.
+9. A fresh no-mode fixture candidate that selects unsupported local exits `3` with no persistent install roots/current/launcher, while selecting Docker can proceed to candidate-owned activation.
+10. Bootstrap `--dry-run` validates only release selection/manifest, reports the prospective CLI, clearly says full mode validation requires `zosma install --dry-run`, and performs no checksum/CLI/runtime download or write.
 11. Temporary downloads disappear on success, failure, `INT`, and `TERM`.
 12. Every truncation before the final `main "$@"` line performs no write or command invocation; the complete script does run.
 13. Original install arguments are forwarded unchanged to the verified CLI through `ZOSMA_INSTALL_MANIFEST`, without printing the manifest path or fixture credentials.
-14. With an existing installation, bootstrap stages the candidate generation but leaves `cli/current` unchanged, invokes the candidate directly, and lets its update journal switch the pair. Child failure/cancellation or process death before journal creation leaves the prior CLI/runtime active.
+14. With an existing installation, bootstrap invokes the verified temporary candidate directly while leaving `cli/current` unchanged; the candidate creates its generation and journal. Child failure/cancellation or process death before journal creation leaves the prior CLI/runtime active.
 15. Bootstrap forwards `INT`/`TERM` to its delegated child, waits for it, cleans temporary files, and preserves the old pair.
 
 - [ ] **Step 2: Run the bootstrap tests and verify the expected failure**
@@ -333,19 +358,19 @@ Expected: FAIL because `install.sh` does not exist.
 
 Implement only:
 
-1. strict options, prerequisite checks, and OS/architecture detection; bootstrap performs libc preflight only when the untouched arguments explicitly select local mode, and otherwise allows the CLI/menu to select Docker;
+1. strict bootstrap options, prerequisite checks, and OS/architecture detection only; mode-specific libc/workspace/hostname validation belongs exclusively to the temporary CLI candidate;
 2. stable or exact manifest resolution;
 3. strict fixed-key manifest parsing;
 4. temporary download of manifest, `SHA256SUMS`, and `zosma-<version>` via `curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 10 --max-time 300` in production;
 5. exact URL basename and unambiguous checksum grammar plus agreement of manifest digest, checksum-list entry, and downloaded bytes;
 6. `sh -n` plus exact candidate `version --machine` validation after checksum verification;
-7. ownership/collision checks plus creation/verification of the private installer marker, followed by installation into a new immutable CLI generation;
-8. fresh-install activation through sibling temporary links plus `mv`, followed by child invocation and cleanup; a failed fresh mode install may retain the verified CLI;
-9. existing-install handoff by invoking the staged candidate directly while `cli/current` remains old; the candidate must create the Phase 3 transaction journal before switching CLI/runtime/config;
+7. direct invocation of the verified temporary candidate with original arguments and verified manifest context; bootstrap performs no persistent activation itself;
+8. fresh-install handoff in which the candidate selects and validates mode/platform before creating ownership markers or generations, then journals CLI/runtime/config activation and may retain the verified CLI on later mode-install failure;
+9. existing-install handoff in which the temporary candidate creates its immutable generation and Phase 3 transaction journal before switching CLI/runtime/config while `cli/current` remains old;
 10. traps that forward `INT`/`TERM` to the delegated child, wait, preserve the prior active pair, and clean temporary files;
 11. all function definitions before the sole final `main "$@"` invocation.
 
-The bootstrap must not download/extract a server archive, call Docker, generate secrets/configuration, manage services, or duplicate lifecycle logic.
+Bootstrap `--dry-run` exits immediately after strict manifest validation and prospective CLI reporting; it does not download `SHA256SUMS` or the CLI and does not claim mode validation. The bootstrap must not download/extract a server archive, call Docker, generate secrets/configuration, manage services, or duplicate lifecycle logic.
 
 - [ ] **Step 4: Run bootstrap and combined trust checks**
 
@@ -384,7 +409,7 @@ Cover:
 7. `--mode` and positional mode agree; conflicting or repeated scalar options and install-only options on other commands return `2`.
 8. Stubbed production probes allow musl/old-glibc users to choose Docker but reject local mode; an interactive musl host can reach and choose the Docker menu entry.
 9. Local dry-run resolves a custom absolute `PI_CODING_AGENT_DIR` or `$HOME/.pi/agent` without reading or creating it.
-10. `--dry-run` resolves and validates manifest/mode inputs, prints a redacted plan, and performs no artifact download, secret generation, path creation, start, browser call, or deletion.
+10. Direct/installed `zosma install --dry-run` performs the full CLI-owned manifest/mode/local-libc/workspace/hostname validation, prints a redacted plan, and performs no artifact download, secret generation, path creation, start, browser call, or deletion.
 11. `native-platform.test.mjs`, enabled by `ZOSMA_NATIVE_PROBE=1`, uses actual runner `uname` plus libc or `sw_vers` output through curated safe command links and verifies the detected local tuple through dry-run output.
 
 - [ ] **Step 2: Run and observe the expected failures**
@@ -436,23 +461,24 @@ git commit -m "feat: validate Cowork install requests"
 
 Use generated archives with the exact Phase 1 shape and fail-closed fake `curl`, `systemctl`, `launchctl`, and browser commands. Cover:
 
-1. The selected platform tuple picks exactly its manifest archive URL/name/digest; local musl/old-glibc fails `3`, while Docker selection remains reachable.
+1. The selected platform tuple picks exactly its manifest archive URL/name/digest. Direct and no-mode bootstrap-to-candidate local selection on musl/old glibc returns `3` before any persistent root/current/launcher; the equivalent Docker menu path is completed in Task 6.
 2. Manifest, unambiguous `SHA256SUMS`, and downloaded archive must agree before extraction.
 3. Required entries exactly match `assertRuntimeTree`: bundled node/npm/npx, web `server.js`/`bin/pi-web.js`, daemon `src/index.ts`/`bin/zosma-daemon.js`, both supervisor files, and `VERSION`.
 4. Corrupt archives, wrong `VERSION`, absent/non-regular required entries, absolute/parent-traversing members, dangling symlinks, or extracted symlinks escaping the stage return `4` before activation.
-5. A valid archive stages beside its destination, validates, renames to a unique immutable generation, and atomically updates `runtime/current`; two installs of one semantic version retain distinct generations.
+5. A valid fresh archive stages beside its destination, validates, renames to one immutable generation, and updates `runtime/current` through the portable replacement recipe.
 6. Secret generation reads `/dev/urandom` through curated utilities and produces independent fixed-length lowercase-hex values. Loopback stores an empty web password; LAN stores a non-empty one.
 7. Config/secrets and containing directories use `0600`/`0700`; no secret or six-character prefix appears in output, fake-command argv logs, or generated service arguments.
 8. Interactive LAN install writes the password once to TTY only; `--yes`/non-interactive install reports only the secrets-file path.
 9. Linux with an active user manager renders a marked private user unit invoking `$HOME/.local/bin/zosma serve --service`, captures HOME plus resolved XDG data/config/state bases and `PI_CODING_AGENT_DIR`, uses `systemctl --user link` when the custom-XDG unit is outside the running manager's load path, then reloads/enables it.
 10. macOS renders a marked, parseable `ai.zosma.cowork.plist` with stable CLI arguments, KeepAlive, log paths, HOME/XDG/Pi environment, and installer ownership marker.
-11. Service output safely represents spaces, `%`, backslashes, quotes, ampersands, and XML characters; CR/LF is rejected. Launchd files are parsed structurally, and Linux fixtures pass `systemd-analyze verify`.
+11. Service output safely represents spaces, `%`, backslashes, quotes, ampersands, and XML characters; CR/LF is rejected. Launchd files are parsed structurally, and Linux fixtures pass `systemd-analyze --user verify`.
 12. Existing unmarked unit/plist collisions, launcher regular files, unexpected `current` targets, or symlinked installer roots are refused without overwrite.
 13. WSL2 or Linux without an active user manager commits `SERVICE_MANAGER=none`, calls no manager, and directs the user to `zosma serve`.
 14. Before local activation, the staged bundled Node probes both web and fixed daemon ports; an occupied web port suggests `--port`, while an occupied fixed daemon port explains that the conflicting listener must be stopped; either leaves no active mode.
 15. `--no-start` commits the statically verified installation as stopped and performs no health/browser command.
 16. Default non-interactive install starts and health-checks but never opens a browser; interactive install opens only after health succeeds.
-17. Any failure before commit removes stage/config/secrets/marked service files and leaves no active mode/current link; a post-start health failure stops the attempted service. Pre-existing unrelated files and external local Pi data remain byte-for-byte untouched.
+17. Any ordinary failure before commit removes stage/config/secrets/marked service files and leaves no active config/runtime; a post-start health failure stops the attempted service. Pre-existing unrelated files and external local Pi data remain byte-for-byte untouched.
+18. Process death after every fresh-local persisted journal phase recovers on the next invocation to no active config/runtime/service; `KEEP_VERIFIED_CLI=1` may retain only the verified CLI generation/current/launcher.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -469,12 +495,13 @@ Extend `scripts/zosma` to:
 - resolve or consume the verified manifest, then download archive and checksum list;
 - verify exact basename and unambiguous three-way digest agreement before `tar -xzf`;
 - reject absolute or parent-traversing archive members before extraction, validate the exact Phase 1 required-entry list, require `runtime/bin/node` itself to be a non-symlink regular executable, then use that verified bundled Node runtime to ensure all other required entries resolve to regular files and every extracted symlink stays within the generation root;
-- generate protected config/secrets and a unique immutable runtime generation;
+- after mode/platform validation, create the candidate's protected CLI generation, config/secrets, and unique immutable runtime generation;
 - probe both local ports with the staged bundled Node before activation;
+- persist a `fresh`/`prepared` transaction before any CLI/runtime/config/service link or file becomes active, advance every phase around activation/start/health, and use the portable link-replacement recipe;
 - render marked private systemd/LaunchAgent definitions directly from the standalone CLI, safely escaping HOME/XDG/Pi/log paths and invoking only the stable launcher;
 - refuse unowned collisions and unexpected roots/links; link a custom-XDG systemd unit into the active user manager before reload/enable;
 - detect systemd user-manager/launchd/foreground fallback without root or `sudo`;
-- activate config, secrets, marked service definition, mode marker, and `runtime/current` only after all static checks pass;
+- activate config (the sole mode record), secrets, marked service definition, `cli/current`, stable launcher, and `runtime/current` only after all static checks pass, then report missing PATH without editing profiles;
 - start by default, use authenticated health, open only for an interactive successful install, and perform fresh-install cleanup on failure;
 - leave the verified CLI installed when mode installation fails.
 
@@ -489,7 +516,7 @@ node --test scripts/installer/*.test.mjs
 shellcheck -s sh scripts/zosma
 ```
 
-On Linux, additionally render the fixture unit into a temporary root and run `systemd-analyze verify` against it without installing it. Expected: all tests pass and no host service starts.
+On Linux, additionally render the fixture unit into a temporary root and run `systemd-analyze --user verify` against it without installing it. Expected: all tests pass and no host service starts.
 
 - [ ] **Step 5: Commit local installation**
 
@@ -508,7 +535,7 @@ git commit -m "feat: install local Cowork runtimes"
 
 Cover each command and mode branch separately:
 
-1. `serve` exports only validated config/secrets and `exec`s `runtime/current/runtime/bin/node runtime/current/supervisor/run-server.mjs` in foreground.
+1. `serve` exports only validated config/secrets, starts `runtime/current/runtime/bin/node runtime/current/supervisor/run-server.mjs` as its foreground child, forwards `INT`/`TERM`, waits, returns `0` for clean shutdown, and maps every non-zero supervisor exit to runtime status `5`.
 2. `serve --service` is internal-only and suppresses interactive/browser behavior.
 3. `start`, `stop`, and `restart` map to the selected systemd user or launchd domain commands, preserve captured HOME/XDG/Pi values under a clean manager environment, and wait for the expected health transition.
 4. With `SERVICE_MANAGER=none`, `start` explains `zosma serve`; `stop`/`restart` refuse to kill a foreground process and mention Ctrl-C.
@@ -520,6 +547,7 @@ Cover each command and mode branch separately:
 10. `access` prints URL and LAN username but no password.
 11. `access --show-password` requires TTY confirmation and writes the password only to the TTY; cancellation returns `6`; loopback reports that no password is configured.
 12. Every lifecycle command fails safely on absent, malformed, or unsupported-schema configuration.
+13. A marked static `SERVICE_MANAGER=systemd|launchd` config remains valid when that manager later becomes unavailable: manager-dependent commands and `doctor` return `5`, not malformed-config `2`; a valid `none` fallback remains usable for `serve`.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -537,9 +565,9 @@ Add only small mode-dispatched functions. Use:
 - bounded authenticated health polling with per-request `--connect-timeout`/`--max-time`, an overall deadline, and a POSIX background-process watchdog so even a stalled curl is killed;
 - a mode-`0600` temporary curl config for Basic auth and Host selection so secrets never enter argv, removed on every signal/outcome;
 - fixed log paths under `STATE_ROOT`;
-- explicit foreground ownership rules rather than PID-file killing;
+- explicit foreground ownership rules rather than PID-file killing; `serve` remains the signal-forwarding parent of the supervisor and maps its non-zero status to `5`;
 - platform-native browser commands only after health succeeds;
-- read-only doctor checks, with Git optional for local mode.
+- static config validation independent of current manager liveness, plus operation-time manager checks and read-only doctor checks with Git optional for local mode.
 
 Do not implement a generic process manager or background the supervisor directly.
 
@@ -572,7 +600,7 @@ git commit -m "feat: manage local Cowork lifecycle"
 
 Cover:
 
-1. Missing Docker or Compose v2 returns `3` before configuration writes.
+1. Missing Docker or Compose v2 returns `3` before configuration writes; a full no-mode bootstrap-to-candidate flow on musl/old glibc can select Docker and complete without local-libc rejection.
 2. Workspace validation happens before pull/generation; relative, missing, file, or newline-containing paths fail.
 3. Only `ghcr.io/zosmaai/zosma-cowork@sha256:<64 lowercase hex>` is accepted; tags and other repositories fail.
 4. `docker pull` targets the exact manifest digest and local `RepoDigests` must contain that exact reference before activation, including `--no-start` installs.
@@ -582,10 +610,11 @@ Cover:
 8. Default install runs `up -d`, waits for authenticated health, and never opens a browser non-interactively.
 9. Interactive install opens only after health. `--no-start` still pulls and inspects the exact digest and commits generated configuration, but omits Compose up, health, and browser actions.
 10. Failed pull/digest/generation/start/health or occupied host port removes fresh mode files; a failed Compose bind/start runs down without deleting Pi state and leaves no active mode.
-11. Unmarked generated-file collisions or symlinked installer roots are refused without overwrite.
+11. Unmarked generated-file collisions, regular launcher/unexpected current links, or symlinked installer roots are refused without overwrite.
 12. Docker `serve` returns `2` with guidance; `start`, `stop`, `restart`, `status`, `logs [--follow]`, `open`, `doctor`, and `access` map to Compose/shared behavior.
 13. Doctor rejects forbidden generated policy (mutable tag, host network, privilege, socket, capabilities, devices, or extra mount).
 14. On Ubuntu, `generated-compose.test.mjs` completes a fixture `--no-start` install with fake pull/inspect, then invokes the captured real Docker CLI outside the shell harness to parse both emitted Compose and `deploy/compose.yml.template`. Their canonical JSON models match under identical values and preserve every special path case.
+15. Process death after every fresh-Docker journal phase—including after staged Compose `up`—recovers on the next invocation by running candidate `down`, removing active config/Compose/secrets, preserving Docker Pi data, and optionally retaining only the verified CLI.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -603,11 +632,11 @@ Extend `scripts/zosma` to:
 - validate the absolute existing workspace and exact image reference;
 - use `id -u`/`id -g` on Linux and the current user IDs on Docker Desktop without promising host ownership outside Linux;
 - pull and inspect the exact RepoDigest before committing both started and `--no-start` installs;
-- generate protected secrets/config plus the marked canonical Phase 2 Compose template in the private Docker directory, refusing unowned collisions/roots;
+- after mode/prerequisite validation, create the candidate CLI generation and a fresh transaction stage containing protected secrets/config plus the marked canonical Phase 2 Compose template, refusing unowned collisions/roots;
 - export only parsed and cross-field-validated values for Compose interpolation, so no `.env` file or secret-bearing argv is needed;
 - use one fixed Compose project name and file path for all lifecycle commands;
 - share authenticated health/access/open helpers with local mode;
-- run first `compose up` from staged files and commit active mode/config only after health; on bind/start failure run down and remove the stage, while preserving dedicated Docker Pi state on failures and ordinary stop/down.
+- persist the `fresh` journal before CLI/config activation, install `cli/current` plus the stable launcher through the portable recipe, emit PATH guidance without editing profiles, advance each phase around candidate Compose up/health, and commit active config only after health; recovery uses journaled staged Compose to run down after death, while preserving dedicated Docker Pi state on failures and ordinary stop/down.
 
 Do not add mutable tags, `docker run`, host networking, a socket, devices, capabilities, Tailscale, or more workspace mounts.
 
@@ -657,6 +686,7 @@ Cover:
 9. A journal found before command dispatch validates every target/backup path, restores the prior complete pair for non-committed phases, and finalizes the candidate for `committed`; malicious/out-of-root journal values are rejected without filesystem mutation.
 10. The stable launcher always points to `cli/current/zosma` and is never version-rewritten during update.
 11. Update output and fake command logs contain no secret material.
+12. Generation switching uses the portable same-name move recipe with the actual host `mv`; native Linux and macOS runs prove an existing directory-target symlink is replaced rather than receiving a nested link.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -673,7 +703,7 @@ Add:
 - common verified manifest/asset staging reused from install/bootstrap behavior;
 - candidate `sh -n` and exact `version --machine` compatibility checks;
 - the exact journal schema/phases defined above, atomically persisted under `STATE_ROOT` with mode `0600`;
-- unique immutable generations and same-filesystem temporary symlinks plus `mv` for each link;
+- unique immutable generations and the defined portable temporary-directory/same-basename `mv` recipe for each link;
 - traps and startup recovery that validate journal ownership and restore both old targets/config when any phase before `committed` is incomplete; `committed` recovery finishes candidate cleanup;
 - stop/switch/start/health and paired rollback;
 - post-success retention of exactly current plus immediate previous versions.
