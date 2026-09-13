@@ -354,6 +354,7 @@ export const enLocale: LocalePlugin = {
     "trust.skillsNotLoaded": "Project skills are not loaded because this project is not trusted.",
     "trust.pluginsNotLoaded": "Project plugins are not loaded because this project is not trusted.",
     "trust.projectScopeUnavailable": "Project installs are unavailable while project resources are not loaded.",
+    "trust.directoryMissing": "This project's directory is missing. Pick a different workspace:",
     "i18n.creatingSession": "Creating new session…",
     "i18n.creating": "Creating…",
     "i18n.subscription": "Subscription",

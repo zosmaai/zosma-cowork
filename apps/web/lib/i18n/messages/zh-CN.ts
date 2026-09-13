@@ -354,6 +354,7 @@ export const zhCNLocale: LocalePlugin = {
     "trust.skillsNotLoaded": "此项目尚未受信任，项目技能未加载。",
     "trust.pluginsNotLoaded": "此项目尚未受信任，项目插件未加载。",
     "trust.projectScopeUnavailable": "项目资源未加载时，无法安装到项目范围。",
+    "trust.directoryMissing": "此项目目录不存在。请选择其他工作区：",
     "i18n.creatingSession": "正在创建新会话…",
     "i18n.creating": "创建中…",
     "i18n.subscription": "订阅",

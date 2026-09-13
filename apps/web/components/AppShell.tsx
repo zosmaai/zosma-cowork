@@ -121,6 +121,9 @@ export function AppShell() {
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
+  // Friendly, dismissible notice when the active project's cwd can't be loaded
+  // (e.g. its directory was moved/deleted). Surfaces instead of a silent console error.
+  const [projectTrustLoadNotice, setProjectTrustLoadNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // ChatGPT-style collapse-to-icon-rail. Desktop only; the mobile drawer uses
   // `sidebarOpen` instead. Fixed width — the user cannot drag-resize anymore.
@@ -1046,10 +1049,14 @@ export function AppShell() {
     setProjectTrust(null);
     setProjectTrustDialogOpen(false);
     setProjectTrustError(null);
-    if (!projectTrustCwd) return;
+    if (!projectTrustCwd) {
+      setProjectTrustLoadNotice(null);
+      return;
+    }
 
     const controller = new AbortController();
-    fetch(`/api/project-trust?cwd=${encodeURIComponent(projectTrustCwd)}`, {
+    const cwd = projectTrustCwd;
+    fetch(`/api/project-trust?cwd=${encodeURIComponent(cwd)}`, {
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -1060,6 +1067,13 @@ export function AppShell() {
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         console.error("Failed to load project trust:", error);
+        // Surface a friendly, dismissible notice instead of a silent failure when
+        // the active project directory can't be loaded (moved/deleted/unmounted).
+        const msg = error instanceof Error ? error.message : String(error);
+        const missingDir = /directory does not exist|not a directory|ENOENT/i.test(msg);
+        setProjectTrustLoadNotice(missingDir
+          ? `${translate("trust.directoryMissing")} ${cwd}`
+          : null);
       });
     return () => controller.abort();
   }, [projectTrustCwd]);
@@ -1143,6 +1157,8 @@ export function AppShell() {
         refreshKey={refreshKey}
         onSessionDeleted={handleSessionDeleted}
         selectedCwd={selectedSession?.cwd ?? effectiveNewSessionCwd ?? null}
+        projectTrustLoadNotice={projectTrustLoadNotice}
+        onDismissProjectTrustLoadNotice={() => setProjectTrustLoadNotice(null)}
         onCwdChange={handleCwdChange}
         onAddFolder={openAddFolder}
         onSelectFolder={commitAddFolder}
