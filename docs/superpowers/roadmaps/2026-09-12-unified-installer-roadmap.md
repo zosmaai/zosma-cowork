@@ -133,12 +133,12 @@
 **Why now:** The CLI can be implemented against two already-proven runtime targets. Delaying it until artifacts exist keeps shell logic focused on orchestration rather than compensating for incomplete packaging.
 
 **Scope:**
-- Add the small root `install.sh` bootstrap with platform/libc detection, stable or pinned line-oriented manifest parsing, checksum verification, truncated-pipe safety, atomic versioned CLI installation, and `/dev/tty` menu handoff.
-- Add the POSIX `scripts/zosma` CLI with fixed XDG/user-local layout and strict parsing of known `KEY=value` configuration fields without sourcing shell code.
+- Add the small root `install.sh` bootstrap with OS/architecture detection, stable or pinned line-oriented manifest parsing, checksum verification, truncated-pipe safety, and exact delegation to the verified temporary candidate as `"$candidate" install "$@"`.
+- Add the POSIX `scripts/zosma` CLI with `/dev/tty` mode selection, mode-specific libc validation before persistent writes, atomic versioned CLI-generation activation, fixed XDG/user-local layout, and strict parsing of known `KEY=value` configuration fields without sourcing shell code.
 - Implement local and Docker installation, same-mode reinstall, and explicit refusal of in-place mode switching.
 - Start a successful install by default, honor `--no-start`, open a browser only after interactive health success, and never open one during non-interactive installation.
 - Implement `serve`, `start`, `stop`, `restart`, `status`, `logs`, `open`, `doctor`, `access`, `version`, `update`, and `uninstall` with the mode-specific behavior defined by the spec.
-- Generate systemd-user and LaunchAgent definitions for local background operation; keep foreground `serve` as the WSL2/no-service-manager fallback.
+- Generate systemd-user and LaunchAgent definitions for local background operation; keep foreground `serve` as the WSL2 or unavailable-user-manager fallback, including macOS sessions without a GUI launchd domain.
 - Generate Docker Compose from the production template with a verified image digest, validated absolute workspace, loopback default, optional authenticated LAN mode, and installer-owned Docker Pi state.
 - Generate protected daemon/web secrets and disclose a LAN password only through `/dev/tty` during interactive install or confirmed `zosma access --show-password`.
 - Capture the resolved local `PI_CODING_AGENT_DIR` in service configuration without inspecting, migrating, or claiming ownership of that external data.

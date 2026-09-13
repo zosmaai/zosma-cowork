@@ -71,7 +71,7 @@ The desired experience is one stable command that detects the machine, presents 
 
 ### Chosen: thin POSIX bootstrap, shell lifecycle CLI, released runtimes
 
-A small POSIX `install.sh` downloads and verifies a versioned `zosma` shell CLI, installs it under the user's local prefix, and invokes `zosma install`. The CLI owns the interactive menu and lifecycle operations. Local mode downloads a self-contained server archive; Docker mode writes configuration and pulls a GHCR image.
+A small POSIX `install.sh` downloads and verifies a versioned `zosma` shell CLI, then invokes the verified temporary candidate as `"$candidate" install "$@"`. The candidate owns the interactive menu, mode-specific platform validation, atomic installation into the user's local prefix, and all lifecycle operations. No persistent CLI path is activated before that validation. Local mode downloads a self-contained server archive; Docker mode writes configuration and pulls a GHCR image.
 
 This approach works before Node.js is present, uses tools already available on supported systems, keeps the bootstrap auditable, and avoids duplicating product code in the installer.
 
@@ -154,7 +154,7 @@ Commands operate on the installed mode recorded in configuration. Mode switching
 
 `zosma access` prints the configured URL and, in LAN mode, the Basic-auth username. `--show-password` requires a terminal confirmation and writes the password only to `/dev/tty`, never stdout, so it cannot be captured accidentally by a pipe or log collector.
 
-`zosma uninstall` removes installed binaries, service definitions, versioned runtime files, and generated Compose configuration. It preserves all external Cowork/Pi data. `zosma uninstall --purge-data` removes only installer-owned data named in the Data Ownership section, lists every path, and requires explicit confirmation even when the original installation used `--yes`.
+`zosma uninstall` removes installed binaries, service definitions, versioned runtime files, and generated Compose configuration. It preserves all external Cowork/Pi data. If failed fresh activation leaves no mode config and only a valid marked CLI/current launcher, direct uninstall removes only those CLI artifacts and empty common roots without inferring a mode or touching service, Compose, runtime, workspace, or Pi state. `zosma uninstall --purge-data` removes only installer-owned data named in the Data Ownership section, lists every path, and requires explicit confirmation even when the original installation used `--yes`.
 
 ### Bootstrap and install options
 
@@ -175,7 +175,7 @@ Commands operate on the installed mode recorded in configuration. Mode switching
 
 `--lan` changes the web bind address from loopback to all interfaces. It generates a web password and requires an allowed hostname. Interactive mode proposes the machine hostname; non-interactive mode requires `--hostname`. The installer warns that Basic authentication over HTTP is appropriate only on a trusted LAN or VPN. Interactive installation shows the generated password once on `/dev/tty`; non-interactive installation prints only the protected secrets-file path, and the operator may later use `zosma access --show-password` from a terminal.
 
-A successful fresh installation starts the selected mode unless `--no-start` is supplied. Interactive installation opens the browser after both health checks pass; non-interactive installation starts the runtime but never opens a browser. On WSL2 or Linux without an active user service manager, installation activates the mode but does not attempt a background start and directs the user to `zosma serve`. `--no-start` likewise commits a statically validated installation with status `stopped`; health validation is deferred until the first start. When automatic startup is attempted and fails, the installer removes its staged runtime, generated service/Compose files, mode config, and generated secrets. The verified `zosma` CLI may remain installed so the user can inspect diagnostics and retry.
+A successful fresh installation starts the selected mode unless `--no-start` is supplied. Interactive installation opens the browser after both health checks pass; non-interactive installation starts the runtime but never opens a browser. On WSL2, Linux without an active user service manager, or macOS without an available per-user GUI launchd domain, installation activates local mode with no manager definition, does not attempt a background start, and directs the user to `zosma serve`. `--no-start` likewise commits a statically validated installation with status `stopped`; health validation is deferred until the first start. When automatic startup is attempted and fails, the installer removes its staged runtime, generated service/Compose files, mode config, and generated secrets. Fresh Docker rollback also removes marked Pi state created by that transaction, while valid marked Docker Pi state that predated it is preserved. The verified `zosma` CLI may remain installed so the user can inspect diagnostics and retry.
 
 ## Supported Platforms
 
@@ -187,7 +187,7 @@ The first release supports:
 | macOS 13+ | Intel, Apple Silicon | Yes | Yes through Docker Desktop |
 | WSL2 with glibc 2.35+ | x86_64, arm64 | Foreground fallback | Yes |
 
-Linux local archives are built on Ubuntu 22.04 and target the GNU libc ABI; Alpine/musl and distributions with glibc older than 2.35 are unsupported in local mode and should use Docker. CI smoke-tests Ubuntu 22.04 and Debian 12 as the compatibility baselines. The bootstrap normalizes `x86_64`/`amd64` to `x64` and `aarch64`/`arm64` to `arm64`. Unsupported operating systems, architectures, or detected libc ABIs fail before writing files.
+Linux local archives are built on Ubuntu 22.04 and target the GNU libc ABI; Alpine/musl and distributions with glibc older than 2.35 are unsupported in local mode and should use Docker. CI smoke-tests Ubuntu 22.04 and Debian 12 as the compatibility baselines. The bootstrap normalizes `x86_64`/`amd64` to `x64` and `aarch64`/`arm64` to `arm64`; the verified candidate performs mode-specific libc validation. Unsupported operating systems or architectures, and unsupported libc only when local mode is selected, fail before persistent writes.
 
 Windows users continue to use Winget or release installers until `install.ps1` is designed. The public `zosma` command contract should remain portable so a later PowerShell implementation can match it.
 
@@ -197,9 +197,9 @@ Default user-local paths follow XDG locations when configured and conventional f
 
 ```text
 CLI launcher           $HOME/.local/bin/zosma
-CLI versions           $XDG_DATA_HOME/zosma-cowork/cli/versions/<version>/zosma
+CLI generations        $XDG_DATA_HOME/zosma-cowork/cli/versions/<version>/generations/<generation>/zosma
 Current CLI             $XDG_DATA_HOME/zosma-cowork/cli/current
-Runtime versions       $XDG_DATA_HOME/zosma-cowork/runtime/versions/<version>/
+Runtime generations    $XDG_DATA_HOME/zosma-cowork/runtime/versions/<version>/generations/<generation>/
 Current runtime         $XDG_DATA_HOME/zosma-cowork/runtime/current
 Installer config       $XDG_CONFIG_HOME/zosma-cowork/config
 Generated secrets      $XDG_CONFIG_HOME/zosma-cowork/secrets
@@ -250,9 +250,9 @@ The root `install.sh` is intentionally small. It:
 4. Downloads the atomic stable-channel manifest or a pinned release manifest without requiring `jq`. The line-oriented manifest declares schema version, Cowork version, CLI URL/checksum, local artifact URLs/checksums, and the Docker image digest.
 5. Downloads `SHA256SUMS` and the versioned CLI to a temporary directory and verifies that they agree with the selected manifest.
 6. Verifies the CLI checksum.
-7. Installs the CLI in its versioned data directory, atomically updates the `cli/current` symlink, and creates `$HOME/.local/bin/zosma` as a stable launcher symlink.
-8. Invokes `zosma install` with all original arguments.
-9. Cleans temporary files on success, failure, or interruption.
+7. Invokes the verified temporary candidate exactly as `"$candidate" install "$@"`, prepending the lifecycle command while preserving every original argument.
+8. Leaves versioned CLI generation, `cli/current`, and `$HOME/.local/bin/zosma` activation to that candidate after mode-specific validation and transaction-journal creation.
+9. Forwards interruption signals to the candidate, waits for it, and cleans temporary files on success, failure, or interruption.
 
 All executable logic is wrapped in `main` and invoked only after the complete script has downloaded, preventing a truncated pipe from executing a partial installer.
 
@@ -309,7 +309,7 @@ The archive includes only production runtime dependencies. It does not include s
 
 ### Activation and rollback
 
-Installation stages the archive under a temporary sibling directory, verifies its checksum, extracts it, validates required entries, and renames it to `versions/<version>`. Mode config, generated secrets, and service definitions are also staged. Nothing becomes active until those validations pass. The `current` symlink and mode marker are replaced atomically, then the runtime is started unless `--no-start` was supplied. If a fresh install fails before or during health validation, the mode marker and all newly generated mode-owned files are removed; a previously absent `current` link remains absent.
+Installation stages the verified CLI and archive in unique immutable generation directories under their semantic version. Mode config, generated secrets, and service definitions are also staged. Nothing becomes active until mode/platform and static artifact validation pass. Before activating any current link, config, service, or container, the candidate writes a private transaction journal; the config file is the sole active-mode record. It then replaces the CLI/runtime current links through portable same-filesystem renames and starts the runtime unless `--no-start` was supplied. If a fresh install fails or is interrupted, journal recovery returns to no active mode and may retain only the verified CLI/current launcher for diagnostics and retry.
 
 Updates retain the previously active runtime and CLI. The current CLI verifies the target release manifest's `installer_schema=1`, downloads and checksum-verifies the candidate CLI, validates it with `sh -n` and `candidate version --machine`, and rejects incompatible schema versions with instructions to rerun the bootstrap. It stages both candidate versions, switches the runtime and CLI `current` symlinks as one transaction, and starts the new runtime. If health validation fails, both symlinks are restored and the prior service is restarted. The stable `$HOME/.local/bin/zosma` launcher continues to point at `cli/current/zosma`, so it does not change per release. The current and immediately previous runtime/CLI versions are retained; older versions are removed only after successful activation.
 
@@ -320,10 +320,10 @@ Updates retain the previously active runtime and CLI. The current CLI verifies t
 `zosma start` uses a user-level service where available:
 
 - Linux with systemd: a generated `systemd --user` unit.
-- macOS: a generated LaunchAgent.
-- WSL2 or Linux without an active user service manager: a clear message directing the user to `zosma serve`.
+- macOS with an available per-user GUI launchd domain: a generated LaunchAgent.
+- WSL2, Linux without an active user service manager, or macOS without an available GUI launchd domain: a clear foreground fallback directing the user to `zosma serve`.
 
-No root service or dedicated system account is created in the first release. Service definitions invoke the stable `current` path, so updates do not rewrite them.
+No root service or dedicated system account is created in the first release. Service definitions invoke the stable `current` path, so updates do not rewrite them. Local `serve` strictly parses protected config/secrets and maps `BIND_ADDRESS` to `PI_WEB_HOSTNAME`, `ALLOWED_HOST` to `PI_WEB_ALLOWED_HOSTS`, `WEB_PASSWORD` to `PI_WEB_PASSWORD`, and local `PI_DIR` to `PI_CODING_AGENT_DIR`, together with the fixed mandatory supervisor port/data/token variables; secrets are environment-only and never appear in service arguments or logs.
 
 ## Docker Mode
 
