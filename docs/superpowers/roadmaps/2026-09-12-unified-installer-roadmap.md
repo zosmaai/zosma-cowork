@@ -142,8 +142,8 @@
 - Generate Docker Compose from the production template with a verified image digest, validated absolute workspace, loopback default, optional authenticated LAN mode, and installer-owned Docker Pi state.
 - Generate protected daemon/web secrets and disclose a LAN password only through `/dev/tty` during interactive install or confirmed `zosma access --show-password`.
 - Capture the resolved local `PI_CODING_AGENT_DIR` in service configuration without inspecting, migrating, or claiming ownership of that external data.
-- Implement transactional fresh-install cleanup and schema-compatible runtime/CLI updates with paired rollback of versioned `current` links or the prior Docker digest.
-- Implement ordinary uninstall and confirmed purge with an explicit installer-owned path allowlist; never purge local external Pi data.
+- Implement transactional fresh-install cleanup and schema-compatible runtime/CLI updates with paired rollback of generation `current` links or the prior Docker digest; foreground-only local mutation refuses occupied ports and validates a stopped candidate through a bounded parent-death lease without leaving a background process.
+- Implement ordinary uninstall and confirmed purge with an explicit installer-owned path allowlist; require a completed managed stop or free foreground-only ports before deletion, and never purge local external Pi data.
 - Add shell tests under temporary HOME/XDG roots and fake command paths for every trust, lifecycle, rollback, ownership, TTY, and dry-run boundary.
 
 **Out of scope:**
@@ -157,8 +157,7 @@
 - `scripts/zosma`: mode installation and lifecycle command.
 - `scripts/zosma.test.sh` or the smallest existing-compatible shell harness: isolated shell behavior tests.
 - `deploy/compose.yml.template`: digest and environment substitution contract from Phase 2.
-- `deploy/zosma.service.template`: generated systemd-user service input.
-- `deploy/ai.zosma.cowork.plist.template`: generated LaunchAgent input.
+- `scripts/zosma`: directly renders generated systemd-user and LaunchAgent definitions; Phase 3 adds no companion service templates.
 - `scripts/installer-fixtures/`: local manifests/checksums only if tests cannot express fixtures inline without duplication.
 - `package.json`: installer lint/test entry points.
 - `.github/workflows/ci.yml`: `sh -n`, ShellCheck, and isolated lifecycle tests.

@@ -176,6 +176,7 @@ Lifecycle meanings are fixed:
 | `doctor` malformed/insecure installation | `2` |
 | `doctor` required runtime/prerequisite missing | `3` |
 | `start`/`stop`/`restart`/`status`/required uninstall with a recorded-but-unavailable manager | `5` |
+| `update`/reinstall/uninstall with an occupied foreground-only managed port | `5` |
 | `start`/`restart`/`open`/`update` health failure, unexpected `serve` exit, or failed rollback | `5` |
 | Idempotent stop of an already stopped managed mode | `0` |
 | Unsupported command/flag/mode combination | `2` |
@@ -204,6 +205,14 @@ Do not implement production detection through test-result overrides:
 - launchd user manager: installation-time selection and each lifecycle operation first check domain liveness with `launchctl print gui/$(id -u)`. Only after that succeeds may `launchctl print gui/$(id -u)/ai.zosma.cowork` determine loaded/running service state. A live domain with an absent or stopped service is valid-but-stopped. A later-unavailable domain for recorded `launchd` leaves config valid but makes manager-required lifecycle operations and `doctor` return `5`. A fresh macOS local install with no GUI domain records `none`, installs no plist, and directs the user to foreground `zosma serve`.
 
 Tests stub the commands and their real output shapes. Ubuntu/macOS CI also exercises native detection without stubbing the result.
+
+### Foreground-only mutation safety
+
+A local installation with `SERVICE_MANAGER=none` has no ownership-safe external stop operation. Before journal creation, self-copy, link/config mutation, or deletion, `update`, reinstall, and uninstall probe both the configured web port and fixed daemon port with the bundled Node probe. If either port is occupied—even when authenticated health fails—the command returns `5` with Ctrl-C guidance and changes nothing. Do not guess process ownership or kill by discovered PID. For stopped foreground update/reinstall, require POSIX `mkfifo`; if unavailable, return `3` before journal creation or mutation.
+
+When both ports are free, update/reinstall records `OLD_WAS_RUNNING=0`, switches the validated candidate transactionally, and health-validates it as a temporary transaction-owned child. This child is not a persistent background manager: create a private FIFO in `STAGE_ROOT` and open it read/write in the parent before forking. The wrapper first opens its own read-only descriptor while the inherited read/write descriptor still prevents an open race, then closes the inherited descriptor, starts `serve --service`, and blocks on its read-only descriptor. The parent closes the lease after health success/failure; EOF makes the wrapper send `TERM`, wait within a fixed deadline, and send `KILL` only to its own still-running child if needed. Every external command launched by the parent closes the lease descriptor. If the updater dies, its descriptor closes and the wrapper tears down the candidate. Remove the FIFO and wrapper state before `committed`; persist `candidate_started` after successful health, stop/wait the validation child, then persist `committed`, leaving the installation stopped. A death before `committed` releases the child and recovery restores the prior stopped generation/config. Tests kill the updater after each persisted phase and prove both ports become free without recovery killing an arbitrary PID.
+
+For recorded `systemd` or `launchd`, update and reinstall require the recorded manager to be live before journal creation or other mutation; unavailable managers return `5`. Uninstall likewise completes its required manager stop before self-copy or deletion. These checks are separate from static config validity.
 
 ### Portable link replacement
 
@@ -276,7 +285,7 @@ When and only when `ZOSMA_TESTING=1`, the scripts may honor `ZOSMA_TEST_MANIFEST
 Add Node built-in helpers that:
 
 - create isolated HOME, XDG data/config/state/cache, fixture, fake-bin, and command-log directories;
-- set `PATH` to one curated fake-bin only: symlink explicitly enumerated safe utilities from the host, install mandatory fail-closed/logging stubs for `curl`, `docker`, `systemctl`, `launchctl`, `open`, and `xdg-open`, and provide no fallback `/usr/bin:/bin` search;
+- set `PATH` to one curated fake-bin only: symlink explicitly enumerated safe utilities from the host, including POSIX `mkfifo` for foreground validation leases, install mandatory fail-closed/logging stubs for `curl`, `docker`, `systemctl`, `launchctl`, `open`, and `xdg-open`, and provide no fallback `/usr/bin:/bin` search;
 - wrap `rm` so it rejects every target outside the harness root before delegating to the captured absolute host binary; tests fail if any hazardous command resolves outside fake-bin;
 - write executable command stubs without embedding credentials;
 - invoke the shell through its captured absolute `/bin/sh` path with captured stdout/stderr and an optional fixture TTY file;
@@ -590,7 +599,7 @@ Add only small mode-dispatched functions. Use:
 - platform-native browser commands only after health succeeds;
 - static config validation independent of current manager liveness, plus operation-time manager checks and read-only doctor checks with Git optional for local mode.
 
-Do not implement a generic process manager or background the supervisor directly.
+Do not implement a generic process manager or persistently background the supervisor. The Task 7 FIFO-leased validation child is the sole bounded temporary exception and must be stopped and waited before command return.
 
 - [ ] **Step 4: Run local lifecycle and full installer tests**
 
@@ -691,6 +700,7 @@ git commit -m "feat: manage digest-pinned Docker installs"
 
 **Files:**
 - Create: `scripts/installer/local-update.test.mjs`
+- Modify: `scripts/installer/test-helpers.mjs`
 - Modify: `scripts/zosma`
 
 - [ ] **Step 1: Write failing local-update tests**
@@ -702,13 +712,18 @@ Cover:
 3. A valid update stages and validates both CLI and local archive before stopping the old service.
 4. Activation writes the exact journal schema and `prepared` phase before stopping anything, then atomically persists every defined phase while switching generation links/config and starting/health-checking the candidate.
 5. Successful activation persists `committed` before cleanup, removes the journal, retains current and immediately previous generation targets (even when versions match), and prunes only older marked installer generations.
-6. Candidate health failure restores both links/config, restarts and health-checks the previous runtime, and returns `5` while leaving the prior version usable.
-7. Failure of rollback health returns `5` with both candidate and previous log locations; it never deletes either retained version.
+6. Candidate health failure restores both links/config and returns `5` while leaving the prior generation usable. If the prior managed runtime was running it is restarted and health-checked; a prior `SERVICE_MANAGER=none` installation remains stopped.
+7. Failure of required managed rollback health returns `5` with both candidate and previous log locations; it never deletes either retained generation.
 8. Injected `INT`, `TERM`, failure, or process death after every persisted non-committed phase triggers or later performs conservative paired restoration; a blocked health curl is killed and rollback begins within the overall deadline.
 9. A journal found before command dispatch validates every target/backup path, restores the prior complete pair for non-committed phases, and finalizes the candidate for `committed`; malicious/out-of-root journal values are rejected without filesystem mutation.
 10. The stable launcher always points to `cli/current/zosma` and is never version-rewritten during update.
 11. Update output and fake command logs contain no secret material.
 12. Generation switching uses the portable same-name move recipe with the actual host `mv`; native Linux and macOS runs prove an existing directory-target symlink is replaced rather than receiving a nested link.
+13. A `SERVICE_MANAGER=none` update with either managed port occupied returns `5` before journal creation or mutation, preserves every file byte-for-byte, and prints Ctrl-C guidance; authenticated healthy and occupied-but-unhealthy fixtures are separate cases.
+14. With both ports free, a `SERVICE_MANAGER=none` update validates the candidate under the private FIFO lease, records health, terminates/waits the child before `committed`, and leaves the successful installation stopped with no FIFO, wrapper, or process residue.
+15. `INT`, `TERM`, ordinary failure, and forced updater death at every persisted phase—including immediately after wrapper fork—close the lease, terminate the validation child within the deadline, free both ports, and restore the prior stopped pair without killing an unrelated PID.
+16. An update with recorded `systemd`/`launchd` whose user manager/domain is unavailable returns `5` before journal creation, any persistent write, or stop call.
+17. A stopped `SERVICE_MANAGER=none` update without `mkfifo` returns `3` before journal creation or mutation.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -727,8 +742,9 @@ Add:
 - the exact journal schema/phases defined above, persisted as a regular mode-`0600` file through the atomic file-to-parent recipe (never as a symlink);
 - unique immutable generations and the defined portable temporary-directory/same-basename `mv` recipe for each link;
 - traps and startup recovery that validate journal ownership and restore both old targets/config when any phase before `committed` is incomplete; `committed` recovery finishes candidate cleanup;
-- stop/switch/start/health and paired rollback;
-- post-success retention of exactly current plus immediate previous versions.
+- pre-mutation manager/port checks: recorded unavailable managers fail with `5`, while `none` refuses any occupied managed port without journal creation;
+- managed stop/switch/start/health and paired rollback; for `none`, switch then health-check through the private FIFO-leased child, stop/wait it before `committed`, and leave both success and restored old state stopped;
+- post-success retention of exactly the current plus immediate previous generation targets.
 
 Two symlinks cannot be replaced by one filesystem operation. The journal and mandatory recovery make the pair one recoverable transaction; do not claim stronger atomicity.
 
@@ -746,7 +762,7 @@ Expected: all tests pass, including interruption recovery.
 - [ ] **Step 5: Commit local updates**
 
 ```bash
-git add scripts/zosma scripts/installer/local-update.test.mjs
+git add scripts/zosma scripts/installer/test-helpers.mjs scripts/installer/local-update.test.mjs
 git commit -m "feat: update local Cowork transactionally"
 ```
 
@@ -769,8 +785,9 @@ Cover:
 7. Docker uses the exact shared journal schema/phases; candidate health failure restores previous image/config/CLI, recreates and health-checks the previous container, and returns `5`.
 8. Process death at every persisted Docker phase recovers before lifecycle dispatch, including conservative rollback before `committed` and finalization after it.
 9. Successful update retains current/previous CLI generations, records only the exact digest, and never invokes or stores `latest` or an exact-version tag.
-10. Update rejects install-only options such as `--no-start`; every update starts and health-validates the candidate so rollback is decided in the same transaction.
-11. A reinstall failure restores the prior healthy same-mode installation rather than applying fresh-install cleanup.
+10. Update rejects install-only options such as `--no-start`. Managed local and Docker updates start and health-validate the candidate; `SERVICE_MANAGER=none` uses the bounded validation child and returns with the candidate stopped. Every branch decides rollback in the same transaction.
+11. A reinstall failure restores the prior same-mode installation and its prior managed-running or foreground-stopped state rather than applying fresh-install cleanup.
+12. Local same-version reinstall obeys the Task 7 manager preflight: an unavailable recorded manager or occupied foreground-only port fails before mutation, while stopped `SERVICE_MANAGER=none` uses the leased validation child and commits stopped without process residue.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -782,7 +799,7 @@ Expected: FAIL because Docker updates and existing-install branches are incomple
 
 - [ ] **Step 3: Implement existing-install and Docker update behavior**
 
-Reuse the Task 7 transaction/recovery primitives. Distinguish fresh install from reinstall before staging. For Docker:
+Reuse every Task 7 transaction/recovery primitive, including recorded-manager liveness, foreground port preflight, and FIFO-leased stopped-candidate validation for local reinstall. Distinguish fresh install from reinstall before staging. For Docker:
 
 - pull/inspect candidate digest first;
 - stop/recreate only after every static/asset check passes;
@@ -834,6 +851,8 @@ Cover:
 11. Failures stopping a service/container abort destructive cleanup and return `5`; missing already-stopped resources remain idempotent.
 12. Repeated ordinary uninstall succeeds without broadening deletion scope; the fail-closed `rm` wrapper proves every test target stays under the temporary installer roots.
 13. With no config but an expected launcher/current link to a marked CLI generation, direct uninstall removes only marked CLI generations/version directories, links, and empty common roots. It preserves service/Compose/runtime files and pre-existing Docker Pi state, and a repeated direct uninstall returns `0`; unmarked or unexpected artifacts are refused unchanged.
+14. Configured local uninstall with `SERVICE_MANAGER=none` probes both managed ports; if either is occupied, it returns `5` with Ctrl-C guidance before self-copy or deletion, even when authenticated health is unhealthy. With both free it follows the fixed allowlist normally.
+15. Configured uninstall with recorded `systemd`/`launchd` requires a live manager and a completed stop/unload before self-copy or deletion; manager unavailability returns `5` with all files unchanged.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
@@ -845,7 +864,7 @@ Expected: FAIL because uninstall is not implemented.
 
 - [ ] **Step 3: Implement allowlisted uninstall**
 
-Add explicit, mode-specific cleanup lists built only from physically resolved installer roots—not parsed workspace/Pi paths. Add the separate no-config recovery-only CLI allowlist defined above; it infers no mode and removes no mode-specific artifact. Require ownership markers and expected in-root link targets before removing launchers, current links, service files, Compose, or generations. Stop first, then checksum and re-exec a private copy for self-removal. Use narrow deletion helpers that reject empty, `/`, `$HOME`, non-installer-prefix, unmarked collisions, and unexpected symlink traversal targets. Preserve Docker Pi state unless separately confirmed purge is active; preserve local external Pi data unconditionally.
+Before self-copy or deletion, require a recorded manager to be live and complete its stop/unload; for `SERVICE_MANAGER=none`, require both managed ports to be free and otherwise return `5` with foreground Ctrl-C guidance. Add explicit, mode-specific cleanup lists built only from physically resolved installer roots—not parsed workspace/Pi paths. Add the separate no-config recovery-only CLI allowlist defined above; it infers no mode and removes no mode-specific artifact. Require ownership markers and expected in-root link targets before removing launchers, current links, service files, Compose, or generations. Stop first, then checksum and re-exec a private copy for self-removal. Use narrow deletion helpers that reject empty, `/`, `$HOME`, non-installer-prefix, unmarked collisions, and unexpected symlink traversal targets. Preserve Docker Pi state unless separately confirmed purge is active; preserve local external Pi data unconditionally.
 
 Do not add a generic recursive-delete interface that accepts user/config input.
 
@@ -970,4 +989,4 @@ git status --short --branch
 git log -10 --oneline
 ```
 
-Expected: ten Phase 3 commits are present and the worktree is clean. Stop here. Do not implement Phase 4 publication, stable-channel promotion, domain configuration, or documentation.
+Expected: ten implementation task commits are present in addition to the approved Phase 3 documentation commits, and the worktree is clean. Stop here. Do not implement Phase 4 publication, stable-channel promotion, domain configuration, or documentation.
