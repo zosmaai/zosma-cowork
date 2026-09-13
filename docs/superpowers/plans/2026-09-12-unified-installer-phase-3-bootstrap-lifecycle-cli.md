@@ -40,7 +40,7 @@ Implementation must consume these existing contracts rather than creating altern
   supervisor/healthcheck.mjs
   VERSION
   ```
-- The local supervisor requires `PORT`, `PI_WEB_HOSTNAME`, `PI_WEB_NO_OPEN=1`, `PI_CODING_AGENT_DIR`, `ZOSMA_DAEMON_DATA_DIR`, `ZOSMA_DAEMON_PORT`, and `ZOSMA_DAEMON_TOKEN`.
+- The local supervisor requires `PORT`, `PI_WEB_HOSTNAME`, `PI_WEB_NO_OPEN=1`, `PI_CODING_AGENT_DIR`, `ZOSMA_DAEMON_DATA_DIR`, `ZOSMA_DAEMON_PORT`, and `ZOSMA_DAEMON_TOKEN`. Phase 3 preserves that contract while moving signal-driven cleanup before the first spawn so startup interruption cannot orphan children.
 - Authenticated web health is `GET http://127.0.0.1:<port>/api/v1/health`; when LAN authentication is enabled, Basic username is `pi`.
 - The production Compose template accepts `ZOSMA_IMAGE`, `ZOSMA_UID`, `ZOSMA_GID`, `ZOSMA_BIND_ADDRESS`, `ZOSMA_PORT`, `ZOSMA_WORKSPACE`, `ZOSMA_PI_STATE`, `ZOSMA_DAEMON_TOKEN`, `PI_WEB_PASSWORD`, and `PI_WEB_ALLOWED_HOSTS`.
 - Generated Compose must continue to use the exact two mounts and contain no build section, mutable image tag, Docker socket, host network, privilege, added capability, device, or Tailscale process.
@@ -210,7 +210,7 @@ Tests stub the commands and their real output shapes. Ubuntu/macOS CI also exerc
 
 A local installation with `SERVICE_MANAGER=none` has no ownership-safe external stop operation. Before journal creation, self-copy, link/config mutation, or deletion, `update`, reinstall, and uninstall probe both the configured web port and fixed daemon port with the bundled Node probe. If either port is occupied—even when authenticated health fails—the command returns `5` with Ctrl-C guidance and changes nothing. Do not guess process ownership or kill by discovered PID. For stopped foreground update/reinstall, require POSIX `mkfifo`; if unavailable, return `3` before journal creation or mutation.
 
-When both ports are free, update/reinstall records `OLD_WAS_RUNNING=0`, switches the validated candidate transactionally, and health-validates it as a temporary transaction-owned child. This child is not a persistent background manager: create a private FIFO in `STAGE_ROOT` and open it read/write in the parent before forking. The wrapper first opens its own read-only descriptor while the inherited read/write descriptor still prevents an open race, then closes the inherited descriptor, starts `serve --service`, and blocks on its read-only descriptor. The parent closes the lease after health success/failure; EOF makes the wrapper send `TERM`, wait within a fixed deadline, and send `KILL` only to its own still-running child if needed. Every external command launched by the parent closes the lease descriptor. If the updater dies, its descriptor closes and the wrapper tears down the candidate. Remove the FIFO and wrapper state before `committed`; persist `candidate_started` after successful health, stop/wait the validation child, then persist `committed`, leaving the installation stopped. A death before `committed` releases the child and recovery restores the prior stopped generation/config. Tests kill the updater after each persisted phase and prove both ports become free without recovery killing an arbitrary PID.
+When both ports are free, update/reinstall records `OLD_WAS_RUNNING=0`, switches the validated candidate transactionally, and health-validates it as a temporary transaction-owned child. This child is not a persistent background manager: create a private FIFO in `STAGE_ROOT` and open it read/write in the parent before forking. The wrapper first opens its own read-only descriptor while the inherited read/write descriptor still prevents an open race, then closes the inherited descriptor, starts `serve --service`, and blocks on its read-only descriptor. The parent closes the lease after health success/failure; EOF makes the wrapper send `TERM`, wait 13 seconds—longer than `serve`'s 11-second bound—then send `KILL` only to its own still-running `serve` child and observe exit for at most 2 additional seconds. Every external command launched by the parent closes the lease descriptor. If the updater dies, its descriptor closes and the wrapper tears down the candidate. Remove the FIFO and wrapper state before `committed`; persist `candidate_started` after successful health, stop/wait the validation child, then persist `committed`, leaving the installation stopped. A death before `committed` releases the child and recovery restores the prior stopped generation/config. Tests kill the updater after each persisted phase and prove both ports become free without recovery killing an arbitrary PID.
 
 For recorded `systemd` or `launchd`, update and reinstall require the recorded manager to be live before journal creation or other mutation; unavailable managers return `5`. Uninstall likewise completes its required manager stop before self-copy or deletion. These checks are separate from static config validity.
 
@@ -482,9 +482,11 @@ git commit -m "feat: validate Cowork install requests"
 
 **Files:**
 - Create: `scripts/installer/local-install.test.mjs`
+- Modify: `scripts/run-server.mjs`
+- Modify: `scripts/run-server.test.mjs`
 - Modify: `scripts/zosma`
 
-- [ ] **Step 1: Write failing local-install tests**
+- [ ] **Step 1: Write failing local-install and supervisor shutdown tests**
 
 Use generated archives with the exact Phase 1 shape and fail-closed fake `curl`, `systemctl`, `launchctl`, and browser commands. Cover:
 
@@ -508,18 +510,28 @@ Use generated archives with the exact Phase 1 shape and fail-closed fake `curl`,
 18. Process death after every fresh-local persisted journal phase recovers on the next invocation to no active config/runtime/service; `KEEP_VERIFIED_CLI=1` may retain only the verified CLI generation/current/launcher.
 19. Minimal `serve` and `serve --service` exist before any generated manager can start them. They launch `runtime/current/runtime/bin/node runtime/current/supervisor/run-server.mjs` as the foreground child, forward `INT`/`TERM`, wait, return `0` for clean shutdown, and map every non-zero supervisor exit to `5`; service mode suppresses interactive/browser behavior.
 20. The spawned supervisor receives every mandatory fixed variable and the exact persisted-to-runtime mappings: `PORT` unchanged, `BIND_ADDRESS` to `PI_WEB_HOSTNAME`, `ALLOWED_HOST` to `PI_WEB_ALLOWED_HOSTS`, `WEB_PASSWORD` to `PI_WEB_PASSWORD`, local `PI_DIR` to `PI_CODING_AGENT_DIR`, plus `PI_WEB_NO_OPEN=1`, fixed validated `ZOSMA_DAEMON_DATA_DIR`, `ZOSMA_DAEMON_PORT`, and `ZOSMA_DAEMON_TOKEN`. Secrets appear in neither output nor supervisor argv.
+21. Separate behavior tests deliver `SIGINT` and `SIGTERM` through the direct-run signal seam while daemon readiness is blocked and while web readiness is blocked. The supervisor aborts the wait immediately, spawns no later child, signals every already-spawned child, waits for their exits, and completes requested shutdown with status `0`.
+22. The direct runner installs both signal handlers before calling the startup routine, removes them after completion, distinguishes requested shutdown (`0`) from startup failure (`1`), and remains testable through injected process/signal functions rather than source inspection.
+23. A child that ignores the first signal is escalated only after the supervisor grace period and is still waited after `SIGKILL`. Injected short deadlines prove the supervisor finishes within its inner bound, `serve` allows a larger bound before escalating its owned supervisor, and the Task 7 lease wrapper's bound is larger again.
 
 - [ ] **Step 2: Run and observe the expected failures**
 
 ```bash
-node --test scripts/installer/local-install.test.mjs
+node --test scripts/run-server.test.mjs scripts/installer/local-install.test.mjs
 ```
 
-Expected: FAIL because local archive installation and service rendering do not exist.
+Expected: FAIL because local archive/service installation does not exist and the supervisor does not yet clean up children when signaled during startup.
 
-- [ ] **Step 3: Implement local installation**
+- [ ] **Step 3: Harden startup shutdown, then implement local installation**
 
-Extend `scripts/zosma` to:
+First harden `scripts/run-server.mjs` without changing its public runtime/environment contract:
+
+- install direct-mode `SIGINT`/`SIGTERM` handling before awaiting startup or spawning the first child;
+- pass a shutdown signal into `startSupervisor`/readiness waits so requested shutdown aborts polling/sleep immediately, prevents later child spawn, invokes the same idempotent `stop`, waits every spawned child, and resolves as clean status `0` rather than startup failure;
+- remove direct-mode handlers after completion and retain status `1` for genuine startup errors;
+- stop children in parallel, allow at most 5 seconds after `SIGINT`/`SIGTERM`, send `SIGKILL` only to still-running owned children, then observe exit for at most 2 additional seconds before completing cleanup.
+
+Then extend `scripts/zosma` to:
 
 - resolve or consume the verified manifest, then download archive and checksum list;
 - verify exact basename and unambiguous three-way digest agreement before `tar -xzf`;
@@ -533,7 +545,7 @@ Extend `scripts/zosma` to:
 - activate config (the sole mode record), secrets, marked service definition, `cli/current`, stable launcher, and `runtime/current` only after all static checks pass, then report missing PATH without editing profiles;
 - start by default, use authenticated health, open only for an interactive successful install, and perform fresh-install cleanup on failure;
 - leave the verified CLI installed when mode installation fails;
-- implement minimal `serve`/`serve --service` before starting any generated service: strictly parse config/secrets, export `PORT`, `PI_WEB_HOSTNAME=$BIND_ADDRESS`, `PI_WEB_ALLOWED_HOSTS=$ALLOWED_HOST`, `PI_WEB_PASSWORD=$WEB_PASSWORD`, `PI_CODING_AGENT_DIR=$PI_DIR`, `PI_WEB_NO_OPEN=1`, and the validated daemon data/port/token variables, then remain the signal-forwarding parent of the bundled Node supervisor and map non-zero child exits to `5`.
+- implement minimal `serve`/`serve --service` before starting any generated service: strictly parse config/secrets, export `PORT`, `PI_WEB_HOSTNAME=$BIND_ADDRESS`, `PI_WEB_ALLOWED_HOSTS=$ALLOWED_HOST`, `PI_WEB_PASSWORD=$WEB_PASSWORD`, `PI_CODING_AGENT_DIR=$PI_DIR`, `PI_WEB_NO_OPEN=1`, and the validated daemon data/port/token variables, then remain the signal-forwarding parent of the bundled Node supervisor and map non-zero child exits to `5`. After forwarding shutdown, `serve` waits up to 9 seconds so the supervisor's 7-second child cleanup can finish, then sends `SIGKILL` only to its still-running owned supervisor and observes exit for at most 2 more seconds; its total bound is 11 seconds.
 
 The systemd unit and LaunchAgent must not contain daemon/web secrets. `serve --service` reads the protected fixed-key files and exports the required runtime environment before executing the bundled Node supervisor.
 
@@ -541,8 +553,10 @@ The systemd unit and LaunchAgent must not contain daemon/web secrets. `serve --s
 
 ```bash
 sh -n scripts/zosma
+node --test scripts/run-server.test.mjs
 node --test scripts/installer/local-install.test.mjs
 node --test scripts/installer/*.test.mjs
+pnpm test:server
 shellcheck -s sh scripts/zosma
 ```
 
@@ -551,7 +565,7 @@ On Linux, additionally create the executable fake launcher referenced by `ExecSt
 - [ ] **Step 5: Commit local installation**
 
 ```bash
-git add scripts/zosma scripts/installer/local-install.test.mjs
+git add scripts/run-server.mjs scripts/run-server.test.mjs scripts/zosma scripts/installer/local-install.test.mjs
 git commit -m "feat: install local Cowork runtimes"
 ```
 
@@ -721,7 +735,7 @@ Cover:
 12. Generation switching uses the portable same-name move recipe with the actual host `mv`; native Linux and macOS runs prove an existing directory-target symlink is replaced rather than receiving a nested link.
 13. A `SERVICE_MANAGER=none` update with either managed port occupied returns `5` before journal creation or mutation, preserves every file byte-for-byte, and prints Ctrl-C guidance; authenticated healthy and occupied-but-unhealthy fixtures are separate cases.
 14. With both ports free, a `SERVICE_MANAGER=none` update validates the candidate under the private FIFO lease, records health, terminates/waits the child before `committed`, and leaves the successful installation stopped with no FIFO, wrapper, or process residue.
-15. `INT`, `TERM`, ordinary failure, and forced updater death at every persisted phase—including immediately after wrapper fork—close the lease, terminate the validation child within the deadline, free both ports, and restore the prior stopped pair without killing an unrelated PID.
+15. `INT`, `TERM`, ordinary failure, and forced updater death at every persisted phase—including immediately after wrapper fork—close the lease, terminate the validation child within the deadline, free both ports, and restore the prior stopped pair without killing an unrelated PID. Production `run-server.mjs` is exercised with fixture daemon/web children while blocked separately in daemon readiness and web readiness; killing the updater in each window proves every spawned process exits.
 16. An update with recorded `systemd`/`launchd` whose user manager/domain is unavailable returns `5` before journal creation, any persistent write, or stop call.
 17. A stopped `SERVICE_MANAGER=none` update without `mkfifo` returns `3` before journal creation or mutation.
 

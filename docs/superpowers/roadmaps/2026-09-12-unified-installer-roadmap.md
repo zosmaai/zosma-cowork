@@ -155,6 +155,7 @@
 **Key files/areas likely affected:**
 - `install.sh`: minimal bootstrap and CLI delegation.
 - `scripts/zosma`: mode installation and lifecycle command.
+- `scripts/run-server.mjs` and `scripts/run-server.test.mjs`: early-startup signal cleanup required by foreground validation leases.
 - `scripts/zosma.test.sh` or the smallest existing-compatible shell harness: isolated shell behavior tests.
 - `deploy/compose.yml.template`: digest and environment substitution contract from Phase 2.
 - `scripts/zosma`: directly renders generated systemd-user and LaunchAgent definitions; Phase 3 adds no companion service templates.
@@ -165,12 +166,13 @@
 **Dependencies:**
 - Phase 1 server archives and supervisor health contract.
 - Phase 2 Compose template and immutable GHCR digest contract.
-- POSIX shell, curl, tar, mktemp, and one supported SHA-256 implementation on target hosts.
+- POSIX shell, curl, tar, mktemp, one supported SHA-256 implementation, and `mkfifo` for foreground-only update/reinstall validation on target hosts.
 
 **Verification:**
 - Interactive installation uses `/dev/tty`; non-interactive installation fails unless mode and every required mode-specific value are explicit.
 - Corrupted CLI, manifest mismatch, corrupted archive, unsupported platform/libc, missing Docker, invalid workspace, and occupied-port tests fail before activation.
 - Local `serve` and supported user services report authenticated health; Docker `serve` fails with the documented guidance.
+- `SIGINT`/`SIGTERM` during daemon or web startup stops and waits every spawned supervisor child before bounded outer lease escalation.
 - LAN tests prove host allowlisting and TTY-only password disclosure without secrets in stdout, logs, process arguments, or generated world-readable files.
 - Failed fresh installs leave no active mode; failed updates restore both prior CLI/runtime links or the prior Docker digest and return to healthy status.
 - Ordinary uninstall preserves all Pi data; purge removes only enumerated installer-owned paths after confirmation.
