@@ -2479,7 +2479,126 @@ cmd_update() {
   recover_transaction
   update_local
 }
-cmd_uninstall() { usage_error "uninstall is not implemented yet"; }
+parse_uninstall_options() {
+  uninstall_yes=0
+  uninstall_purge=0
+  uninstall_dry=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --yes) uninstall_yes=1 ;;
+      --purge-data) uninstall_purge=1 ;;
+      --dry-run) uninstall_dry=1 ;;
+      -h|--help) out "usage: zosma uninstall [--yes] [--purge-data] [--dry-run]"; return 0 ;;
+      *) usage_error "unknown uninstall option: $1" ;;
+    esac
+    shift
+  done
+}
+
+uninstall_cli_tree() {
+  cli_parent=${ZM_CLI_CURRENT%/*}
+  if [ -L "$ZM_CLI_CURRENT" ]; then
+    target=$(readlink "$ZM_CLI_CURRENT") || runtime_error "cannot inspect cli/current"
+    case "$target" in
+      /*) case "$target" in "$ZM_CLI_VERSIONS"/*/generations/generation-*) : ;; *) runtime_error "refusing unexpected cli/current target" ;; esac ;;
+      *) runtime_error "refusing relative cli/current target" ;;
+    esac
+    rm -f "$ZM_CLI_CURRENT"
+  elif [ -e "$ZM_CLI_CURRENT" ]; then
+    runtime_error "refusing unexpected cli/current artifact"
+  fi
+  if [ -L "$ZM_BIN_DIR/zosma" ]; then
+    launcher_target=$(readlink "$ZM_BIN_DIR/zosma") || runtime_error "cannot inspect launcher"
+    case "$launcher_target" in
+      "$ZM_CLI_CURRENT/zosma"|"$ZM_CLI_VERSIONS"/*/generations/generation-*/zosma) rm -f "$ZM_BIN_DIR/zosma" ;;
+      *) runtime_error "refusing unexpected launcher target" ;;
+    esac
+  elif [ -e "$ZM_BIN_DIR/zosma" ]; then
+    runtime_error "refusing to remove a regular launcher"
+  fi
+  for version_dir in "$ZM_CLI_VERSIONS"/*; do
+    [ -d "$version_dir" ] || continue
+    is_marked_dir "$version_dir" || runtime_error "refusing unmarked CLI version directory"
+    for generation_dir in "$version_dir"/generations/generation-*; do
+      [ -d "$generation_dir" ] || continue
+      is_marked_dir "$generation_dir" || runtime_error "refusing unmarked CLI generation"
+      rm_generation_dir "$generation_dir"
+    done
+    rmdir "$version_dir/generations" 2>/dev/null || :
+    rm -f "$version_dir/$MARKER_NAME"
+    rmdir "$version_dir" 2>/dev/null || :
+  done
+  rmdir "$ZM_CLI_VERSIONS" 2>/dev/null || :
+  rmdir "$cli_parent" 2>/dev/null || :
+}
+
+uninstall_runtime_tree() {
+  if [ -L "$ZM_RUNTIME_CURRENT" ]; then
+    runtime_target=$(readlink "$ZM_RUNTIME_CURRENT") || runtime_error "cannot inspect runtime/current"
+    case "$runtime_target" in
+      /*) case "$runtime_target" in "$ZM_RUNTIME_VERSIONS"/*/generations/generation-*) : ;; *) runtime_error "refusing unexpected runtime/current target" ;; esac ;;
+      *) runtime_error "refusing relative runtime/current target" ;;
+    esac
+    rm -f "$ZM_RUNTIME_CURRENT"
+  elif [ -e "$ZM_RUNTIME_CURRENT" ]; then
+    runtime_error "refusing unexpected runtime/current artifact"
+  fi
+  for version_dir in "$ZM_RUNTIME_VERSIONS"/*; do
+    [ -d "$version_dir" ] || continue
+    is_marked_dir "$version_dir" || runtime_error "refusing unmarked runtime version directory"
+    for generation_dir in "$version_dir"/generations/generation-*; do
+      [ -d "$generation_dir" ] || continue
+      is_marked_dir "$generation_dir" || runtime_error "refusing unmarked runtime generation"
+      rm_generation_dir "$generation_dir"
+    done
+    rmdir "$version_dir/generations" 2>/dev/null || :
+    rm -f "$version_dir/$MARKER_NAME"
+    rmdir "$version_dir" 2>/dev/null || :
+  done
+  rmdir "$ZM_RUNTIME_VERSIONS" 2>/dev/null || :
+  rmdir "${ZM_RUNTIME_CURRENT%/*}" 2>/dev/null || :
+}
+
+cmd_uninstall() {
+  parse_uninstall_options "$@"
+  resolve_roots
+  if [ "$uninstall_dry" -eq 1 ]; then
+    out "Uninstall allowlist (dry run):"
+    out "  $ZM_CONFIG_ROOT/config"
+    out "  $ZM_CONFIG_ROOT/secrets"
+    out "  $ZM_CLI_VERSIONS and $ZM_RUNTIME_VERSIONS marked generations"
+    out "  $ZM_BIN_DIR/zosma and expected service definitions"
+    [ "$uninstall_purge" -eq 1 ] && out "  $ZM_DOCKER_PI_STATE (requires TTY confirmation)"
+    return 0
+  fi
+  if [ "$uninstall_purge" -eq 1 ]; then
+    tty_available || cancel_error "--purge-data requires an explicit terminal confirmation"
+    tty_line "Purge the Docker Pi state at $ZM_DOCKER_PI_STATE? [y/N] "
+    tty_read || cancel_error "purge cancelled"
+    case "$TTY_LINE" in y|Y|yes|YES) : ;; *) cancel_error "purge cancelled" ;; esac
+  fi
+  if [ -f "$ZM_CONFIG_ROOT/config" ]; then
+    parse_config_files "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+    case "$CFG_MODE" in
+      local)
+        case "$CFG_SERVICE_MANAGER" in
+          systemd) require_manager; systemctl --user disable --now "$SYSTEMD_UNIT_BASENAME" 2>/dev/null || : ;;
+          launchd) require_manager; launchctl bootout "gui/$(id -u)/$LAUNCH_AGENT_LABEL" 2>/dev/null || : ;;
+          none) : ;;
+        esac
+        ;;
+      docker) docker_prerequisites; docker_compose down || runtime_error "failed to stop Docker Cowork" ;;
+    esac
+    rm -f "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets" "$ZM_SYSTEMD_UNIT" "$ZM_LAUNCH_AGENT"
+    rm -f "$ZM_DOCKER_ROOT/compose.yml"
+  fi
+  uninstall_cli_tree
+  uninstall_runtime_tree
+  if [ "$uninstall_purge" -eq 1 ] && [ -d "$ZM_DOCKER_PI_STATE" ] && is_marked_dir "$ZM_DOCKER_PI_STATE"; then
+    rm -rf "$ZM_DOCKER_PI_STATE"
+  fi
+  out "Zosma Cowork uninstalled."
+}
 
 # ---------------------------------------------------------------------------
 # Dispatch
