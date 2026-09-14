@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { copyText } from "@/lib/clipboard";
@@ -128,7 +129,6 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
-const USER_BUBBLE_MAX_HEIGHT = 300;
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -356,28 +356,12 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   };
 
   return (
-    <div className="user-message"
-      style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
+    <div className="user-message flex flex-col items-end mb-4"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="user-message-stack" style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
-        <div className="user-message-bubble"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            background: "var(--user-bg)",
-            border: "1px solid rgba(59,130,246,0.2)",
-            borderRadius: 12,
-            padding: "8px 12px",
-            fontSize: 13,
-            lineHeight: 1.55,
-            color: "var(--text)",
-            wordBreak: "break-word",
-            maxHeight: USER_BUBBLE_MAX_HEIGHT,
-            overflowY: "auto",
-          }}
-        >
+      <div className="user-message-stack flex items-end gap-1.5 max-w-[85%]">
+        <div className="user-message-bubble min-w-0 box-border rounded-2xl border border-[rgba(59,130,246,0.2)] bg-(--user-bg) px-3.5 py-1.5 text-[13px] leading-[1.55] text-(--text) break-words max-h-[300px] overflow-y-auto [&>div>p:first-child]:mt-0 [&>div>p:last-child]:mb-0">
           {commandText ? (
             <div className="flex flex-col gap-1.5 min-w-0">
               {imageBlocksNode}
@@ -407,7 +391,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   </svg>
                 </button>
                 {commandArgs && (
-                  <span className="text-(--text) text-sm leading-[1.6px] whitespace-pre-wrap break-words min-w-0 flex-1">
+                  <span className="text-(--text) text-sm leading-[1.6] whitespace-pre-wrap break-words min-w-0 flex-1">
                     {commandArgs}
                   </span>
                 )}
@@ -813,6 +797,31 @@ function AssistantMessageView({
   );
 }
 
+/** Smooth open/close for thinking + tool detail sections. Fade+silde (not a
+ *  height collapse) so streaming tool input can grow without clipping, and
+ *  streamed input stays out of the DOM while collapsed (AnimatePresence drops
+ *  it on exit). */
+export function Collapsible({ open, children }: { open: boolean; children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  const sequence = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.2, ease: [0.4, 0, 0.2, 1] } as const;
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={sequence}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function ToolCategoryIcon({ category, active }: { category: ToolCategory; active?: boolean }) {
   const size = 16;
   const glyph = () => {
@@ -917,7 +926,9 @@ function ThinkingBlock({ block, running, active, duration, sessionId, entryId, b
         <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{status}</span>
       </button>
-      {expanded && <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>}
+      <Collapsible open={expanded}>
+        <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>
+      </Collapsible>
     </div>
   );
 }
@@ -960,22 +971,24 @@ function ToolCallBlock({ block, result, running, active, duration, cwd, onOpenFi
         <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{stateText}</span>
       </button>
-      {expanded && toolFilePath && onOpenFile && (
-         <button
-           type="button"
-           className="tool-file-link"
-           title={toolFilePath}
-           onClick={() => onOpenFile?.(toolFilePath)}
-         >
-           {toolFilePath.split(/[\\/]/).pop() || toolFilePath}
-         </button>
-       )}
-       {expanded && (isStreamingInput || !isEditTool) && <div className="tool-detail-input"><span className="tool-detail-label">{t("chat.toolInput")}</span><pre className="tool-detail-input-text">{inputStr}</pre></div>}
-      {expanded && result && (
-        resultDiff
-          ? <PairedDiffResult diff={resultDiff} />
-          : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={state === "error"} />
-      )}
+      <Collapsible open={expanded}>
+        {toolFilePath && onOpenFile && (
+          <button
+            type="button"
+            className="tool-file-link"
+            title={toolFilePath}
+            onClick={() => onOpenFile?.(toolFilePath)}
+          >
+            {toolFilePath.split(/[\\/]/).pop() || toolFilePath}
+          </button>
+        )}
+        {(isStreamingInput || !isEditTool) && <div className="tool-detail-input"><span className="tool-detail-label">{t("chat.toolInput")}</span><pre className="tool-detail-input-text">{inputStr}</pre></div>}
+        {result && (
+          resultDiff
+            ? <PairedDiffResult diff={resultDiff} />
+            : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={state === "error"} />
+        )}
+      </Collapsible>
     </div>
   );
 }

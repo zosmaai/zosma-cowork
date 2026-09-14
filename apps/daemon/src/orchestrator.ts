@@ -20,6 +20,8 @@ export interface StartArgs {
   piRpc?: PiRpcHandler;
   /** Pi streaming transport for `/ipc/stream` (wired by the entrypoint). */
   piStream?: PiStreamHandler;
+  /** Approval/Ask-User broker dispatch (wired by the entrypoint, ZOS-94). */
+  approvalRpc?: Parameters<typeof createDaemonServer>[0]["approvalRpc"];
   /** Fixed port to bind (supervision). Default: ephemeral. */
   port?: number;
   signals?: NodeJS.Signals[];
@@ -52,6 +54,7 @@ export async function startDaemon(args: StartArgs): Promise<Daemon> {
     logger,
     piRpc: args.piRpc,
     piStream: args.piStream,
+    approvalRpc: args.approvalRpc,
     port: args.port,
   });
   const { port } = await server.start();

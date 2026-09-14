@@ -11,6 +11,8 @@ import { startDaemon } from "./orchestrator.ts";
 import type { Daemon } from "./orchestrator.ts";
 import { PiAdapter } from "./pi/adapter.ts";
 import { handlePiRpc, handlePiStream } from "./pi/rpc.ts";
+import { ApprovalBroker } from "./approval/broker.ts";
+import { handleApprovalRpc } from "./approval/rpc.ts";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,12 +52,18 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
   const dataDir = args.dataDir ?? DATA_DIR;
   const token = resolveToken(dataDir);
   const pi = new PiAdapter({ storeDir: dataDir });
+  // ZOS-94: durable approval/Ask-User broker. No adapter-native ask surface
+  // is wired today (Pi is headless and gates risky actions inside its own
+  // tool loop), so every decision comes from an explicit client reply or
+  // timeout/cancel — nothing is ever auto-approved.
+  const approvals = new ApprovalBroker();
   const handle = await startDaemon({
     token,
     dataDir,
     logger,
     piRpc: (request) => handlePiRpc(pi, request),
     piStream: (request, sink) => handlePiStream(pi, request, sink),
+    approvalRpc: (request: { type: string; [key: string]: unknown }) => handleApprovalRpc(approvals, request),
     port: args.port ?? resolvePort(),
     exit: args.exit ?? ((code) => void (process.exitCode = code)),
   });

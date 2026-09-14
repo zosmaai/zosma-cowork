@@ -89,7 +89,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
   }), [cwd, isStreaming, onOpenFile]);
 
   return (
-    <div className={["markdown-body", className].filter(Boolean).join(" ")}>
+    <div className={["typeset", "typeset-chat", className, isStreaming ? "is-streaming" : ""].filter(Boolean).join(" ")}>
       <ReactMarkdown
         remarkPlugins={markdownRemarkPlugins}
         rehypePlugins={markdownRehypePlugins}

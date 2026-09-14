@@ -9,12 +9,10 @@ import { ExtensionDialog, ExtensionCustomPanel } from "./ExtensionOverlays";
 import { ExtensionStatusBar, partitionExtensionWidgets } from "./ExtensionStatusBar";
 import { SessionMetricsLine } from "./SessionMetricsLine";
 import { ZosmaBrand } from "./ZosmaBrand";
-import { BookOpen, Bug, Code2, Map as MapIcon } from "lucide-react";
-import { MessageView } from "./MessageView";
+import { Collapsible, MessageView } from "./MessageView";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { forwardDroppedImages } from "@/lib/conversation-flow";
 import { getUserInputText } from "@/lib/chat-message-grouping";
 import type { SessionStatsInfo } from "@/lib/pi-types";
@@ -58,13 +56,6 @@ export function pickNewSessionTitle(): string {
   return NEW_SESSION_TITLES[Math.floor(Math.random() * NEW_SESSION_TITLES.length)] ?? NEW_SESSION_TITLES[0];
 }
 
-const PROMPT_SUGGESTIONS = [
-  { icon: MapIcon, label: "Draft a project roadmap for next quarter" },
-  { icon: Code2, label: "Refactor the auth module and add tests" },
-  { icon: Bug, label: "Write a test suite for the payment service" },
-  { icon: BookOpen, label: "Explain this codebase in a short brief" },
-] as const;
-
 interface Props {
   session: SessionInfo | null;
   sessionRunning?: boolean;
@@ -88,6 +79,8 @@ interface Props {
   onSessionStatsPanelOpen?: () => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: (filePath: string) => void;
+  /** Open a settings pane from the hero (Plugins / Skills CTAs). */
+  onOpenSettings?: (category: "models" | "plugins" | "skills") => void;
   /** Completion sound state + controls, owned by AppShell so tasks finishing in
    *  a non-active workspace can still ring. */
   soundEnabled?: boolean;
@@ -108,7 +101,7 @@ interface Props {
  *  - Autoscroll: stick to the tail while at the bottom (streaming follow);
  *    lazy-load history upward via a sentinel + IntersectionObserver.
  */
-export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onOpenSettings, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
 
   const newSessionTitleKey = session?.id ?? newSessionDraftKey ?? newSessionCwd ?? "new";
@@ -391,6 +384,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         scrollContainerRef={scrollContainerRef}
         messagesEndRef={messagesEndRef}
         chatInputRef={chatInputRef}
+        onOpenSettings={onOpenSettings}
       />
 
       <div className="relative">
@@ -434,6 +428,7 @@ interface SurfaceProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
+  onOpenSettings?: (category: "models" | "plugins" | "skills") => void;
 }
 
 function ConversationSurface({
@@ -441,8 +436,8 @@ function ConversationSurface({
   sessionBusy, agentRunning, agentPhase, bashRunning, pendingBash, isNew,
   forkingEntryId, onFork, onNavigate, onEditContent, modelNames, onOpenFile,
   messageCwd, sessionId, scrollContainerRef, messagesEndRef, chatInputRef,
+  onOpenSettings,
 }: SurfaceProps) {
-  const isMobile = useIsMobile();
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
@@ -523,8 +518,7 @@ function ConversationSurface({
         <HeroView
           title={newSessionTitle}
           cwd={newSessionCwd}
-          isMobile={isMobile}
-          onPrompt={(text) => { chatInputRef?.current?.insertIfEmpty(text); }}
+          onOpenSettings={onOpenSettings}
         />
       ) : (
         <MessageColumn
@@ -555,11 +549,14 @@ function ConversationSurface({
   );
 }
 
-function HeroView({ title, cwd, isMobile, onPrompt }: {
+/** Consumer-friendly one-liners under the Plugins / Skills hero CTAs. */
+const HERO_PLUGINS_SUB = "Plugins & integrations";
+const HERO_SKILLS_SUB = "Skills & workflows";
+
+function HeroView({ title, cwd, onOpenSettings }: {
   title: string;
   cwd: string | null;
-  isMobile: boolean;
-  onPrompt: (text: string) => void;
+  onOpenSettings?: (category: "models" | "plugins" | "skills") => void;
 }) {
   const { t } = useI18n();
   return (
@@ -584,26 +581,80 @@ function HeroView({ title, cwd, isMobile, onPrompt }: {
             </div>
           ) : null}
 
-          {/* Suggestion cards: icon + label, obviously tappable. */}
+          {/* Capability CTAs: open the Plugins / Skills settings panes. */}
           <div
             className="new-session-suggestions mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2"
             role="group"
-            aria-label={t("chat.promptSuggestions")}
+            aria-label={`${t("common.plugins")} ${t("common.skills")}`}
           >
-            {PROMPT_SUGGESTIONS.map(({ icon: Icon, label }) => (
-              <button
-                type="button"
-                key={label}
-                className="new-session-suggestion"
-                onClick={() => onPrompt(label)}
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">{label}</span>
-              </button>
-            ))}
+            <button
+              type="button"
+              className="new-session-suggestion"
+              onClick={() => onOpenSettings?.("plugins")}
+              aria-label={`${t("hero.addPower")} — ${HERO_PLUGINS_SUB}`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 7V2" /><path d="M15 7V2" />
+                <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
+                <path d="M12 19v3" />
+              </svg>
+              <span className="min-w-0">
+                <span className="block">{t("hero.addPower")}</span>
+                <span className="block text-[12px] text-(--text-dim)">{HERO_PLUGINS_SUB}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="new-session-suggestion"
+              onClick={() => onOpenSettings?.("skills")}
+              aria-label={`${t("hero.workflows")} — ${HERO_SKILLS_SUB}`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              <span className="min-w-0">
+                <span className="block">{t("hero.workflows")}</span>
+                <span className="block text-[12px] text-(--text-dim)">{HERO_SKILLS_SUB}</span>
+              </span>
+            </button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Parent fold for a single assistant turn's process (all thinking + tool
+ * steps together, like GPT's collapsed "reasoning" block). Holds the child
+ * thinking/tool folds; collapsed by default once the turn is committed so
+ * the final answer reads as the primary result.
+ */
+function TurnProcessFold({ summary, count, children }: {
+  summary: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="conversation-disclosure turn-process-fold" data-open={open || undefined}>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="conversation-disclosure-trigger">
+        <span className="conversation-disclosure-dot" aria-hidden="true" />
+        <span className="conversation-disclosure-title">
+          {summary}
+        </span>
+        <span className="conversation-disclosure-count">{count}</span>
+        <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
+        <span className="sr-only">{open ? t("chat.collapseProcess") : t("chat.expandProcess")}</span>
+      </button>
+      <Collapsible open={open}>
+        <div className="turn-process-children">
+          {children}
+        </div>
+      </Collapsible>
     </div>
   );
 }
@@ -706,18 +757,32 @@ function MessageColumn({
       ? withAssistantBlocks(finalAssistant, finalSplit.answerBlocks)
       : null;
 
+    const processBubbles: React.ReactNode[] = [];
     if (visibleProcessIndices.length > 0 || finalProcessMessage) {
       visibleProcessIndices.forEach((processIdx) => {
-        rendered.push(renderBubble(messages, processIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState, keyPrefix: "process" }));
+        processBubbles.push(renderBubble(messages, processIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState, keyPrefix: "process" }));
       });
       if (finalProcessMessage) {
-        rendered.push(renderBubble(messages, finalAssistantIdx, {
+        processBubbles.push(renderBubble(messages, finalAssistantIdx, {
           entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState,
           keyPrefix: "process-final",
           messageOverride: finalProcessMessage,
           showTimestamp: false,
         }));
       }
+    }
+
+    if (processBubbles.length > 0) {
+      const count = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
+      rendered.push(
+        <TurnProcessFold
+          key={`turn-process-${userIdx}`}
+          summary={t("chat.turnProcess")}
+          count={count}
+        >
+          {processBubbles}
+        </TurnProcessFold>,
+      );
     }
 
     if (finalAnswerMessage) {
