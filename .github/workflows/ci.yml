@@ -47,6 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
+          pnpm installer:check
           sh -n scripts/zosma
           shellcheck -s sh scripts/zosma
           pnpm test:installer

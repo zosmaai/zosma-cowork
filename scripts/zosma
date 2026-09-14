@@ -25,7 +25,6 @@ EXIT_RUNTIME=5
 EXIT_CANCEL=6
 
 set -eu
-
 # ---------------------------------------------------------------------------
 # Output and error helpers
 # ---------------------------------------------------------------------------
@@ -117,7 +116,6 @@ valid_null_or_absolute() {
   has_nonprintable "$1" && return 1
   return 0
 }
-
 # ---------------------------------------------------------------------------
 # Path resolution (pure: no filesystem side effect)
 # ---------------------------------------------------------------------------
@@ -362,7 +360,6 @@ parse_config_files() {
       ;;
   esac
 }
-
 # ---------------------------------------------------------------------------
 # Strict fixed-key release-manifest reader (values are data, never shell)
 # ---------------------------------------------------------------------------
@@ -576,7 +573,6 @@ gen_hex() {
   raw=$(dd if=/dev/urandom bs=64 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
   printf '%s\n' "$raw" | cut -c1-"$1"
 }
-
 # ---------------------------------------------------------------------------
 # Activation transaction journal
 # ---------------------------------------------------------------------------
@@ -810,7 +806,6 @@ jrnl_read() {
 jrnl_remove() {
   rm -f "$ZM_TRANSACTION_JOURNAL"
 }
-
 # ---------------------------------------------------------------------------
 # Local runtime archive verification and extraction
 # ---------------------------------------------------------------------------
@@ -1090,7 +1085,6 @@ cmd_version() {
     *) usage_error "unknown version option: $1" ;;
   esac
 }
-
 # ---------------------------------------------------------------------------
 # Terminal seam (production /dev/tty; guarded test TTY under ZOSMA_TESTING)
 # ---------------------------------------------------------------------------
@@ -1888,7 +1882,6 @@ install_fresh_local() {
     out "Start Cowork with 'zosma serve'."
   fi
 }
-
 recover_transaction() {
   resolve_roots
   [ -e "$ZM_TRANSACTION_JOURNAL" ] || return 0
@@ -2033,7 +2026,6 @@ docker_update_existing() {
   health_installed || runtime_error "updated Docker Cowork did not become healthy"
   out "Updated Docker image $CFG_IMAGE."
 }
-
 cmd_install() {
   parse_install_options "$@"
   validate_install_request
@@ -2596,7 +2588,6 @@ cmd_uninstall() {
   fi
   out "Zosma Cowork uninstalled."
 }
-
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------

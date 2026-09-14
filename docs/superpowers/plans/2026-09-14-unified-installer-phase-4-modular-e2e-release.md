@@ -38,8 +38,9 @@ scripts/zosma-src/
   30-manifest.sh              # release manifest and checksum parsing
   40-files-generations.sh     # markers, links, generation helpers
   50-transactions.sh          # journal persistence and recovery
-  60-platform-services.sh     # platform probes and service templates
-  70-install-local.sh         # local install and runtime activation
+  60-platform-services.sh     # archive verification and service templates
+  65-terminal-platform.sh      # terminal seam and platform probes
+  70-install-local.sh         # install request parsing and local runtime activation
   75-install-docker.sh        # Docker install/update helpers
   80-lifecycle.sh             # serve/start/stop/restart/status/logs/open/doctor/access
   90-update-uninstall.sh      # update, reinstall, uninstall, purge

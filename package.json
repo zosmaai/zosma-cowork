@@ -16,6 +16,8 @@
     "website:dev": "pnpm -C apps/website dev",
     "website:build": "pnpm -C apps/website build",
     "server:package": "node scripts/package-server-release.mjs",
+    "installer:build": "node scripts/build-zosma.mjs",
+    "installer:check": "node scripts/build-zosma.mjs --check",
     "server:smoke": "node scripts/smoke-server-release.mjs",
     "test:server": "node --test scripts/*.test.mjs",
     "test:installer": "node --test scripts/installer/*.test.mjs",
