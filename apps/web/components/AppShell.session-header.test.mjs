@@ -63,10 +63,10 @@ test("uses live session stats and persisted metadata for details", () => {
 test("keeps fork, in-session navigation, rename, delete, and export owners separate", async () => {
   const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
   const sessionItem = await readFile(new URL("./session-sidebar/session-item.tsx", import.meta.url), "utf8");
-  assert.match(chatWindow, /onFork=\{sessionBusy \|\| isNew[\s\S]*?handleFork\}/);
-  assert.match(chatWindow, /onNavigate=\{sessionBusy \? undefined : handleNavigate\}/);
+  assert.match(chatWindow, /onFork=\{sessionBusy \|\| isNew[\s\S]*?undefined : onFork\}/);
+  assert.match(chatWindow, /onNavigate=\{sessionBusy \? undefined : onNavigate\}/);
   assert.match(sessionItem, /method: "PATCH"/);
   assert.match(sessionItem, /method: "DELETE"/);
-  assert.match(sessionItem, /if \(e\.shiftKey\)/);
+  assert.match(sessionItem, /dispatchSessionRowContextMenu/);
   assert.match(source, /\/api\/sessions\/\$\{encodeURIComponent\(selectedSession\.id\)\}\/export\?inline=1/);
 });

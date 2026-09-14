@@ -59,6 +59,21 @@ function getIndexCache(): Map<string, CacheEntry> {
   return globalThis.__piFileIndexCache;
 }
 
+// Reap expired entries and enforce the size cap off the GET path; synchronous
+// cache.delete()/clear() inside a GET handler is a CSRF-prone side effect
+// (prefetch can trigger it), so sweep on a module timer instead.
+const CACHE_SWEEP_MS = 5_000;
+setInterval(() => {
+  const cache = globalThis.__piFileIndexCache;
+  if (!cache) return;
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+  if (cache.size >= CACHE_MAX_ENTRIES) cache.clear();
+},
+CACHE_SWEEP_MS).unref?.();
+
 async function listWithGit(cwd: string): Promise<FileListing | null> {
   try {
     const { stdout } = await execFileAsync(
@@ -145,10 +160,6 @@ export async function GET(req: NextRequest) {
     let cached = cache.get(cwd);
     if (!cached || cached.expiresAt <= now) {
       const listing = (await listWithGit(cwd)) ?? listWithWalk(cwd);
-      for (const [key, entry] of cache) {
-        if (entry.expiresAt <= now) cache.delete(key);
-      }
-      if (cache.size >= CACHE_MAX_ENTRIES) cache.clear();
       cached = { listing, expiresAt: now + CACHE_TTL_MS };
       cache.set(cwd, cached);
     }

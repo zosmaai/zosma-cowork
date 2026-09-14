@@ -370,6 +370,10 @@ export class PiSession {
         return this.fork(command);
       case "bash":
         return this.bash(command);
+      case "abort": {
+        await this.abort();
+        return null;
+      }
       case "abort_bash": {
         this.inner.abortBash();
         return null;

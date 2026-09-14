@@ -10,6 +10,6 @@ test("renders temporary notices once at the top center of the chat column", () =
   assert.equal(noticeShelfUsages.length, 1);
   assert.match(
     source,
-    /position: "absolute",\s*top: 12,\s*left: 0,\s*right: isMobile \? 0 : CHAT_MINIMAP_WIDTH,[\s\S]*?justifyContent: "center",[\s\S]*?<NoticeShelf notices=\{notices\} floating \/>/,
+    /position: "absolute",\s*top: 12,\s*left: 0,\s*right: 0,[\s\S]*?justifyContent: "center",[\s\S]*?<NoticeShelf notices=\{notices\} floating \/>/,
   );
 });

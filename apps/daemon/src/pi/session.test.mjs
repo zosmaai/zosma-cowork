@@ -245,6 +245,17 @@ test("session commands: extension UI select routes and resolves via response", a
   assert.equal(await promise, "b");
 });
 
+test("session commands: abort calls inner.abort", async () => {
+  const { inner } = fakeInner();
+  let aborted = false;
+  inner.abort = () => {
+    aborted = true;
+    return Promise.resolve();
+  };
+  await new PiSession(inner, "h1").command({ type: "abort" });
+  assert.ok(aborted, "inner.abort called");
+});
+
 test("session commands: unknown command throws", async () => {
   const { inner } = fakeInner();
   await assert.rejects(new PiSession(inner, "h1").command({ type: "nope" }), /Unsupported command: nope/);

@@ -41,7 +41,9 @@ import type {
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+import { cacheSessionPath } from "../read/sessions.ts";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { PiSession } from "./session.ts";
 import { startPiSession } from "./factory.ts";
 import type { PiFactoryOptions, PiSessionFactory } from "./factory.ts";
@@ -104,10 +106,55 @@ export class PiAdapter {
   private readonly cwd?: string;
   private closed = false;
 
+  /**
+   * Prewarmed sessions (one per cwd), created at daemon boot so the first
+   * chat fires the prompt immediately instead of paying the ~8s session-spawn
+   * inside the send path. Consumed by `start()` when the request matches the
+   * default first-chat options; otherwise ignored (first send spawns fresh).
+   * ponytail: one unconsumed warm session idles in memory per boot — pi only
+   * persists a session file after the first assistant write, so an unused
+   * warm session is invisible to the sidebar and costs one idle process.
+   */
+  private readonly prewarm = new Map<string, SessionHandle>();
+  private readonly warmInFlight = new Map<string, Promise<void>>();
+
   constructor(options: PiAdapterOptions = {}) {
     this.factory = options.sessionFactory ?? startPiSession;
     this.store = new SessionStore(options.storeDir ?? join(tmpdir(), "zosma-cowork", "daemon"));
     this.cwd = options.cwd;
+  }
+
+  // --- lifecycle -------------------------------------------------------------
+
+  /**
+   * Pre-create a session for `cwd` in the background (daemon boot). Idempotent
+   * per cwd; `start()` reuses it for a default-config first chat.
+   */
+  async warmSession(cwd: string): Promise<void> {
+    if (this.closed || !cwd || this.prewarm.has(cwd) || this.warmInFlight.has(cwd)) return;
+    if (!existsSync(cwd)) return;
+    const promise = (async () => {
+      try {
+        const handle = await this.spawn(`__warm__${randomUUID()}`, undefined, cwd, undefined);
+        this.prewarm.set(cwd, handle);
+      } catch (err) {
+        // Best-effort: the first real send spawns normally on failure.
+        this.warmInFlight.delete(cwd);
+        throw err;
+      }
+      this.warmInFlight.delete(cwd);
+    })();
+    this.warmInFlight.set(cwd, promise);
+    await promise.catch(() => {});
+  }
+
+  /** Default first-chat options: no model/thinking override, tools default-active
+   *  (non-empty toolNames ≡ SDK default; only an explicit [] disables all). */
+  private isDefaultFirstChatOptions(options?: PiFactoryOptions): boolean {
+    if (options?.model) return false;
+    if (options?.thinkingLevel) return false;
+    const t = options?.toolNames;
+    return t === undefined || t.length > 0;
   }
 
   // --- introspection --------------------------------------------------------
@@ -142,7 +189,20 @@ export class PiAdapter {
   // --- lifecycle -------------------------------------------------------------
 
   async start(sessionId?: string, cwd?: string, options?: PiFactoryOptions): Promise<SessionHandle> {
-    return this.spawn(sessionId ?? randomUUID(), undefined, cwd, options);
+    const targetCwd = cwd ?? this.cwd;
+    // Consume a prewarmed session for a default first chat; await an in-flight
+    // warm instead of double-spawning the same cwd.
+    if (targetCwd && this.isDefaultFirstChatOptions(options)) {
+      if (this.warmInFlight.has(targetCwd)) {
+        await this.warmInFlight.get(targetCwd);
+      }
+      const warmed = this.prewarm.get(targetCwd);
+      if (warmed) {
+        this.prewarm.delete(targetCwd);
+        return warmed;
+      }
+    }
+    return this.spawn(sessionId ?? randomUUID(), undefined, targetCwd, options);
   }
 
   /**
@@ -192,6 +252,17 @@ export class PiAdapter {
       pid: process.pid,
       createdAt: Date.now(),
     });
+    // A brand-new session has no file on disk until pi's first assistant
+    // write, and the path cache is only populated by full disk scans — so
+    // resolveSessionPath 404'd an entire first turn and the sidebar only
+    // learned the session existed via a multi-second force scan. Register the
+    // path and a transient list entry NOW from the in-memory session record:
+    // details reads serve instantly once the file exists, and the session
+    // list shows it without paying for a scan. The next authoritative scan
+    // replaces the transient entry (persisted list wins in the merge).
+    if (session.sessionFile) {
+      cacheSessionPath(realSessionId, session.sessionFile);
+    }
     return handle;
   }
 
@@ -206,7 +277,11 @@ export class PiAdapter {
       return { events: [], error: adapterError("pi", "prompt", turn.timedOut ? "prompt timed out" : "empty turn") };
     }
     try {
+      entry.state = "running";
       const events = await entry.session.run({ text: turn.text, cid: turn.cid, mode: turn.mode, images: turn.images });
+      // A finished/aborted turn releases the "running" claim: the session stays
+      // open for follow-ups but must not keep reporting as active to the UI.
+      if (entry.state === "running") entry.state = "idle";
       return { events };
     } catch (err) {
       entry.state = "errored";
@@ -280,8 +355,17 @@ export class PiAdapter {
     try {
       if (turn) return await this.prompt(sessionId, turn);
       await new Promise<void>((resolve) => {
+        let settled = false;
         const stop = entry.session.onEvent((event) => {
           if (event.kind === "end") {
+            if (entry.state === "running") entry.state = "idle";
+            if (event.payload?.stopReason !== "settled" && !settled) {
+              // Pi often ends a turn with plain agent_end and no agent_settled;
+              // the watch resolves here, so synthesize the settle the web tier
+              // expects (it drives the running-state clear + graceful close).
+              settled = true;
+              sink({ cid: event.cid, seq: event.seq, kind: "end", payload: { stopReason: "settled" } });
+            }
             stop();
             resolve();
           }

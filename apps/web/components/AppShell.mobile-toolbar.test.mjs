@@ -5,7 +5,7 @@ import test from "node:test";
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 test("uses a compact mobile toolbar with a floating six-action layer", () => {
-  assert.match(source, /data-mobile-toolbar="true"[\s\S]*?flex: 1,[\s\S]*?minWidth: 0/);
+  assert.match(source, /data-mobile-toolbar="true"[\s\S]*?(?:flex: 1,|flex-1)[\s\S]*?(?:minWidth: 0|min-w-0)/);
   assert.match(
     source,
     /data-mobile-toolbar-actions="true"[\s\S]*?position: "absolute"[\s\S]*?right: 0,[\s\S]*?left: TOP_BAR_ICON_BUTTON_SIZE/,

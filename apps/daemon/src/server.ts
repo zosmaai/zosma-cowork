@@ -291,15 +291,14 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     }
 
     return streamSSE(c, async (stream) => {
-      const pending: Promise<unknown>[] = [];
+      // Serialized write chain: frames go out as they arrive (true streaming),
+      // promise-chained so concurrent bursts keep order without batching.
+      let chain: Promise<unknown> = Promise.resolve();
       const send = (data: unknown): void => {
-        pending.push(stream.writeSSE({ data: JSON.stringify(data) }));
+        chain = chain.then(() => stream.writeSSE({ data: JSON.stringify(data) })).catch(() => undefined);
       };
       const flush = async (): Promise<void> => {
-        while (pending.length) {
-          const batch = pending.splice(0, pending.length);
-          await Promise.all(batch);
-        }
+        await chain.catch(() => undefined);
       };
       const heartbeat = setInterval(() => {
         void stream.write(":\n\n");

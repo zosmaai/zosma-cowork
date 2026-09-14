@@ -39,9 +39,27 @@ export function createDaemonAgentEventStream(
       let bufferStart = 0;
       let connectedSent = false;
       let messageOpen = false;
+      const startedBlocks = new Set<number>(); // content indexes already *_start'ed
       const toolIds: string[] = []; // name-suffixed ids of open tool calls
       let toolCounter = 0;
       let closed = false;
+
+      const resetBlockState = () => startedBlocks.clear();
+
+      // Emit a *_start for a content block if its delta has not arrived yet.
+      // The reducer's updateContentBlock only mutates an EXISTING block, so a
+      // delta at an uninitialized index is dropped (returns null). Framing
+      // *_start first guarantees the block exists before its first delta.
+      const emitBlockStart = (contentIndex: number, kind: unknown) => {
+        if (startedBlocks.has(contentIndex)) return;
+        const blockKind =
+          kind === "thinking" || kind === "toolcall" ? kind : "text";
+        startedBlocks.add(contentIndex);
+        enqueue({
+          type: "message_update",
+          assistantMessageEvent: { type: `${blockKind}_start`, contentIndex },
+        });
+      };
 
       const cleanup = () => {
         if (closed) return;
@@ -63,6 +81,13 @@ export function createDaemonAgentEventStream(
         }
       };
 
+      // Readiness must not wait for the first real frame: an idle session
+      // never emits one (only dropped heartbeats), leaving the client's
+      // ensureConnected() pending forever. Emit `connected` immediately so
+      // the send path proceeds and the response starts flushing.
+      connectedSent = true;
+      enqueue({ type: "connected", sessionId, isStreaming: false });
+
       // The wire contract the UI expects mirrors the old in-process stream:
       // a `connected` frame arrives first, then agent event frames.
       const ensureConnected = () => {
@@ -78,21 +103,34 @@ export function createDaemonAgentEventStream(
         switch (kind) {
           case "message": {
             const text = typeof payload.text === "string" ? payload.text : "";
-            const delta = typeof payload.delta === "string" ? payload.delta : undefined;
-            const thinking = typeof payload.thinking === "string" ? payload.thinking : undefined;
-            if (text !== "") {
-              // Terminal message frame.
+            if (text !== "" || (Array.isArray(payload.content) && payload.content.length > 0)) {
+              // Terminal message frame. pi emits message_end for BOTH the user
+              // prompt and the assistant reply. Prefer the full canonical
+              // message when present (it matches what loadSession reloads from
+              // the session file, so commit->reconcile is shape-identical and
+              // does not cause a partial->full layout shift); otherwise fall
+              // back to carrying the real role + content so the user frame is
+              // not mistaken for an assistant reply (a phantom echo bubble).
+              const fullMessage = isRecord(payload.message) ? payload.message : undefined;
+              const role = payload.role === "user" || payload.role === "toolResult"
+                ? payload.role
+                : "assistant";
+              const content = Array.isArray(payload.content) && payload.content.length > 0
+                ? payload.content
+                : [{ type: "text", text }];
               enqueue({
                 type: "message_end",
-                message: {
-                  role: "assistant",
-                  content: [{ type: "text", text }],
-                },
+                message: fullMessage ?? { role, content },
               });
               messageOpen = false;
+              resetBlockState();
               break;
             }
-            if (delta === undefined) break; // bare message_start placeholder
+            const deltaKind = payload.deltaKind as "text" | "thinking" | "toolcall" | undefined;
+            const delta = typeof payload.delta === "string" ? payload.delta : undefined;
+            const thinking = typeof payload.thinking === "string" ? payload.thinking : undefined;
+            const hasDelta = (delta !== undefined && delta !== "") || (thinking !== undefined && thinking !== "");
+            if (!hasDelta) break; // bare message_start placeholder
             if (!messageOpen) {
               messageOpen = true;
               enqueue({
@@ -100,14 +138,27 @@ export function createDaemonAgentEventStream(
                 message: { role: "assistant", content: [] },
               });
             }
-            enqueue({
-              type: "message_update",
-              assistantMessageEvent: { type: "text_delta", delta },
-            });
-            if (thinking && thinking !== "") {
+            // The reducer's updateContentBlock only mutates an EXISTING
+            // content block; a delta at an uninitialized index returns null
+            // and is dropped. Use the block's true pi content index (mapping
+            // passes it through) and its kind to schedule *_start so the block
+            // exists before its first delta appends.
+            const contentIndex =
+              typeof payload.contentIndex === "number" ? payload.contentIndex : 0;
+            if (thinking !== undefined && thinking !== "" && deltaKind !== "text") {
+              emitBlockStart(contentIndex, "thinking");
               enqueue({
                 type: "message_update",
-                assistantMessageEvent: { type: "thinking_delta", thinking },
+                assistantMessageEvent: { type: "thinking_delta", thinking, contentIndex },
+              });
+              break;
+            }
+            if (delta !== undefined && delta !== "") {
+              const kind = deltaKind === "thinking" || deltaKind === "toolcall" ? deltaKind : "text";
+              emitBlockStart(contentIndex, kind);
+              enqueue({
+                type: "message_update",
+                assistantMessageEvent: { type: `${kind}_delta`, delta, contentIndex },
               });
             }
             break;
@@ -116,9 +167,12 @@ export function createDaemonAgentEventStream(
             if (!messageOpen) break;
             const delta = typeof payload.delta === "string" ? payload.delta : "";
             if (delta === "") break;
+            const contentIndex =
+              typeof payload.contentIndex === "number" ? payload.contentIndex : 1;
+            emitBlockStart(contentIndex, "thinking");
             enqueue({
               type: "message_update",
-              assistantMessageEvent: { type: "thinking_delta", thinking: delta },
+              assistantMessageEvent: { type: "thinking_delta", thinking: delta, contentIndex },
             });
             break;
           }
@@ -141,6 +195,7 @@ export function createDaemonAgentEventStream(
             const stopReason = typeof payload.stopReason === "string" ? payload.stopReason : "";
             enqueue({ type: stopReason === "settled" ? "agent_settled" : "agent_end" });
             messageOpen = false;
+            resetBlockState();
             toolIds.length = 0;
             break;
           }

@@ -5,13 +5,14 @@ import test from "node:test";
 const readText = (path) => readFile(new URL(path, import.meta.url), "utf8");
 const readBinary = (path) => readFile(new URL(path, import.meta.url));
 
+const chatWindowSource = await readText("./ChatWindow.tsx");
+
 const [
   brandSource,
   layoutSource,
   manifestSource,
   appShellSource,
   sidebarSource,
-  chatWindowSource,
   offlineSource,
   enSource,
   zhSource,
@@ -21,7 +22,6 @@ const [
   readText("../app/manifest.ts"),
   readText("./AppShell.tsx"),
   readText("./session-sidebar/workspace-panel.tsx"),
-  readText("./ChatWindow.tsx"),
   readText("../public/offline.html"),
   readText("../lib/i18n/messages/en.ts"),
   readText("../lib/i18n/messages/zh-CN.ts"),
