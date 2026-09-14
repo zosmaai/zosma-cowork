@@ -376,6 +376,7 @@ parse_manifest_file() {
   ZM_MF_SUMS_URL=
   ZM_MF_CLI_URL=
   ZM_MF_CLI_SHA256=
+  ZM_MF_DOCKER_IMAGE=
   # archive_<target>_url / _sha256
   ZM_MF_ARCHIVE=
   seen=
@@ -1530,6 +1531,65 @@ install_cleanup_tmp() {
   fi
 }
 
+config_write_docker() {
+  cfg_root=$ZM_CONFIG_ROOT
+  ensure_marker "$ZM_CONFIG_ROOT" || internal_error "unowned config root"
+  ensure_marker "$ZM_DOCKER_ROOT" || internal_error "unowned Docker config root"
+  ensure_marker "$ZM_DOCKER_PI_STATE" || internal_error "unowned Docker Pi state"
+  mkdir -p "$ZM_DOCKER_ROOT"
+  chmod 700 "$ZM_DOCKER_ROOT"
+  {
+    printf 'CONFIG_SCHEMA=%s\n' "$CONFIG_SCHEMA"
+    printf 'MODE=docker\n'
+    printf 'VERSION=%s\n' "$ZM_MF_VERSION"
+    printf 'PORT=%s\n' "$INSTALL_PORT"
+    printf 'BIND_ADDRESS=%s\n' "$INSTALL_BIND"
+    printf 'ALLOWED_HOST=%s\n' "${opt_hostname:-127.0.0.1}"
+    printf 'PI_DIR=%s\n' "$ZM_DOCKER_PI_STATE"
+    printf 'WORKSPACE=%s\n' "$opt_workspace"
+    printf 'IMAGE=%s\n' "$ZM_MF_DOCKER_IMAGE"
+    printf 'SERVICE_MANAGER=none\n'
+  } > "$cfg_root/config"
+  chmod 600 "$cfg_root/config"
+  {
+    printf 'DAEMON_TOKEN=%s\n' "$SEC_DAEMON_TOKEN"
+    printf 'WEB_PASSWORD=%s\n' "$SEC_WEB_PASSWORD"
+  } > "$cfg_root/secrets"
+  chmod 600 "$cfg_root/secrets"
+  cat > "$ZM_DOCKER_ROOT/compose.yml" <<'COMPOSE'
+services:
+  cowork:
+    image: "${ZOSMA_IMAGE:?set ZOSMA_IMAGE to an immutable ghcr.io digest reference}"
+    user: "${ZOSMA_UID:-1000}:${ZOSMA_GID:-1000}"
+    restart: unless-stopped
+    environment:
+      HOME: /data/pi-agent
+      PORT: "30141"
+      PI_WEB_HOSTNAME: 0.0.0.0
+      PI_WEB_NO_OPEN: "1"
+      PI_WEB_PASSWORD: "${PI_WEB_PASSWORD:-}"
+      PI_WEB_ALLOWED_HOSTS: "${PI_WEB_ALLOWED_HOSTS:-}"
+      PI_CODING_AGENT_DIR: /data/pi-agent
+      ZOSMA_DAEMON_DATA_DIR: /data/pi-agent/daemon
+      ZOSMA_DAEMON_PORT: "64713"
+      ZOSMA_DAEMON_TOKEN: "${ZOSMA_DAEMON_TOKEN:?set ZOSMA_DAEMON_TOKEN}"
+    ports:
+      - name: web
+        target: 30141
+        published: "${ZOSMA_PORT:-30141}"
+        host_ip: "${ZOSMA_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: "${ZOSMA_WORKSPACE:?set ZOSMA_WORKSPACE to an absolute directory}"
+        target: /workspace
+      - type: bind
+        source: "${ZOSMA_PI_STATE:?set ZOSMA_PI_STATE to an absolute directory}"
+        target: /data/pi-agent
+COMPOSE
+  chmod 600 "$ZM_DOCKER_ROOT/compose.yml"
+}
+
 config_write_local() {
   # Writes final config + secrets + service definition (config_switched).
   cfg_root=$ZM_CONFIG_ROOT
@@ -1869,6 +1929,103 @@ recover_transaction() {
   err "error: the previous installation attempt was incomplete; it was rolled back"
 }
 
+docker_prerequisites() {
+  docker version >/dev/null 2>&1 || prereq_error "Docker Engine is unavailable"
+  docker compose version >/dev/null 2>&1 || prereq_error "Docker Compose v2 is unavailable"
+}
+
+docker_verify_image() {
+  valid_digest_ref "$ZM_MF_DOCKER_IMAGE" || verify_error "manifest does not contain an accepted Docker digest"
+  docker pull "$ZM_MF_DOCKER_IMAGE" >/dev/null 2>&1 || runtime_error "failed to pull the pinned Docker image"
+  inspected=$(docker image inspect "$ZM_MF_DOCKER_IMAGE" --format '{{.RepoDigests}}' 2>/dev/null) || verify_error "cannot inspect the pulled Docker image"
+  case " $inspected " in
+    *" $ZM_MF_DOCKER_IMAGE "*) : ;;
+    *) verify_error "Docker RepoDigests did not contain the pinned image" ;;
+  esac
+}
+
+docker_compose() {
+  compose_file=$ZM_DOCKER_ROOT/compose.yml
+  [ -f "$compose_file" ] || runtime_error "generated Docker Compose file is missing"
+  compose_uid=${DOCKER_UID:-$(id -u 2>/dev/null || printf '1000')}
+  compose_gid=${DOCKER_GID:-$(id -g 2>/dev/null || printf '1000')}
+  ZOSMA_IMAGE="$CFG_IMAGE" \
+  ZOSMA_UID="$compose_uid" \
+  ZOSMA_GID="$compose_gid" \
+  ZOSMA_PORT="$CFG_PORT" \
+  ZOSMA_BIND_ADDRESS="$CFG_BIND" \
+  ZOSMA_WORKSPACE="$CFG_WORKSPACE" \
+  ZOSMA_PI_STATE="$ZM_DOCKER_PI_STATE" \
+  PI_WEB_PASSWORD="$SEC_WEB_PASSWORD" \
+  PI_WEB_ALLOWED_HOSTS="$CFG_ALLOWED_HOST" \
+  ZOSMA_DAEMON_TOKEN="$SEC_DAEMON_TOKEN" \
+  docker compose -p "$COMPOSE_PROJECT" -f "$compose_file" "$@"
+}
+
+install_fresh_docker() {
+  resolve_roots
+  assert_existing_roots || exit "$EXIT_INTERNAL"
+  if [ -e "$ZM_DOCKER_PI_STATE" ] || [ -L "$ZM_DOCKER_PI_STATE" ]; then
+    if [ ! -d "$ZM_DOCKER_PI_STATE" ] || ! is_marked_dir "$ZM_DOCKER_PI_STATE"; then
+      internal_error "refusing unmarked Docker Pi state"
+    fi
+    JRNL_DOCKER_PREEXISTED=1
+  fi
+  install_resolve_manifest || return "$?"
+  docker_prerequisites
+  docker_verify_image
+  DOCKER_UID=$(id -u 2>/dev/null) || DOCKER_UID=1000
+  DOCKER_GID=$(id -g 2>/dev/null) || DOCKER_GID=1000
+  SEC_WEB_PASSWORD=
+  [ "$INSTALL_BIND" = "0.0.0.0" ] && SEC_WEB_PASSWORD=$(gen_hex 32)
+  SEC_DAEMON_TOKEN=$(gen_hex 64)
+  stage_root=$ZM_TRANSACTION_ROOT
+  mkdir -p "$stage_root"
+  cli_versions=$ZM_CLI_VERSIONS
+  mkdir -p "$cli_versions/$ZM_MF_VERSION/generations"
+  cli_gen=$(new_generation_dir "$cli_versions/$ZM_MF_VERSION/generations")
+  cli_gen_dir=$cli_versions/$ZM_MF_VERSION/generations/$cli_gen
+  mkdir -p "$cli_gen_dir"
+  cp "$0" "$cli_gen_dir/zosma"
+  chmod 755 "$cli_gen_dir/zosma"
+  jrnl_reset
+  JRNL_KIND=fresh
+  JRNL_MODE=docker
+  JRNL_KEEP_CLI=1
+  JRNL_STAGE=$stage_root
+  JRNL_NEW_CLI=$cli_gen_dir
+  jrnl_persist prepared
+  mark_root_tree "$cli_gen_dir" "$ZM_DATA_ROOT"
+  cli_parent=${ZM_CLI_CURRENT%/*}
+  mkdir -p "$cli_parent"
+  replace_link "$cli_gen_dir" "$cli_parent" current || internal_error "cannot link cli/current"
+  mkdir -p "$ZM_BIN_DIR"
+  replace_link "$ZM_CLI_CURRENT/zosma" "$ZM_BIN_DIR" zosma || internal_error "cannot link launcher"
+  jrnl_persist cli_switched
+  config_write_docker
+  CFG_IMAGE=$ZM_MF_DOCKER_IMAGE
+  CFG_MODE=docker
+  CFG_WORKSPACE=$opt_workspace
+  CFG_BIND=$INSTALL_BIND
+  CFG_PORT=$INSTALL_PORT
+  CFG_ALLOWED_HOST=${opt_hostname:-127.0.0.1}
+  CFG_SERVICE_MANAGER=none
+  jrnl_persist config_switched
+  if [ "$opt_no_start" -eq 1 ]; then
+    out "Installed Docker image $ZM_MF_DOCKER_IMAGE (stopped)."
+  else
+    docker_compose up -d || runtime_error "failed to start Docker Cowork"
+    health_installed || runtime_error "Docker Cowork did not become healthy"
+    jrnl_persist candidate_started
+    out "Installed Docker image $ZM_MF_DOCKER_IMAGE and healthy."
+  fi
+  chmod_install_roots
+  jrnl_persist committed
+  jrnl_remove
+  rm -rf "$stage_root"
+  install_cleanup_tmp
+}
+
 cmd_install() {
   parse_install_options "$@"
   validate_install_request
@@ -1879,7 +2036,7 @@ cmd_install() {
   fi
   case "$MODE" in
     local) install_fresh_local ;;
-    docker) verify_error "docker installation is implemented in Phase 3 task 6" ;;
+    docker) install_fresh_docker ;;
   esac
 }
 proc_done() {
@@ -2002,6 +2159,13 @@ lifecycle_no_args() {
 cmd_start() {
   lifecycle_no_args start "$@"
   load_lifecycle_config
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    docker_compose up -d || runtime_error "failed to start Docker Cowork"
+    health_installed || runtime_error "Docker Cowork is not healthy after start"
+    out "Cowork started."
+    return 0
+  fi
   case "$CFG_SERVICE_MANAGER" in
     none) usage_error "foreground mode is not managed; run 'zosma serve' and stop it with Ctrl-C" ;;
     systemd)
@@ -2021,6 +2185,12 @@ cmd_start() {
 cmd_stop() {
   lifecycle_no_args stop "$@"
   load_lifecycle_config
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    docker_compose down || runtime_error "failed to stop Docker Cowork"
+    out "Cowork stopped."
+    return 0
+  fi
   case "$CFG_SERVICE_MANAGER" in
     none) usage_error "foreground mode is not managed; press Ctrl-C in the 'zosma serve' terminal" ;;
     systemd) require_manager; systemctl --user stop "$SYSTEMD_UNIT_BASENAME" || runtime_error "failed to stop Cowork" ;;
@@ -2032,6 +2202,13 @@ cmd_stop() {
 cmd_restart() {
   lifecycle_no_args restart "$@"
   load_lifecycle_config
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    docker_compose up -d || runtime_error "failed to restart Docker Cowork"
+    health_installed || runtime_error "Docker Cowork is not healthy after restart"
+    out "Cowork restarted."
+    return 0
+  fi
   case "$CFG_SERVICE_MANAGER" in
     none) usage_error "foreground mode is not managed; press Ctrl-C in the 'zosma serve' terminal" ;;
     systemd)
@@ -2051,6 +2228,15 @@ cmd_restart() {
 cmd_status() {
   lifecycle_no_args status "$@"
   load_lifecycle_config
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    out "Service: Docker Compose"
+    out "zosma-cowork $CFG_VERSION (docker)"
+    out "Web: http://$CFG_BIND:$CFG_PORT"
+    health_installed || runtime_error "Docker Cowork is stopped or unhealthy"
+    out "Health: healthy"
+    return 0
+  fi
   case "$CFG_SERVICE_MANAGER" in
     none) out "Service: foreground (run 'zosma serve')" ;;
     *) require_manager; out "Service: $CFG_SERVICE_MANAGER" ;;
@@ -2064,6 +2250,11 @@ cmd_status() {
 cmd_logs() {
   case "$#" in 0) ;; 1) [ "${1:-}" = "--follow" ] || usage_error "unknown logs option: $1" ;; *) usage_error "logs accepts only --follow" ;; esac
   load_lifecycle_config
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    if [ "${1:-}" = "--follow" ]; then docker_compose logs --follow; else docker_compose logs; fi
+    return 0
+  fi
   if [ "$CFG_SERVICE_MANAGER" = "none" ]; then
     out "Foreground mode logs are in the terminal running 'zosma serve'."
     return 0
@@ -2101,6 +2292,13 @@ cmd_doctor() {
   out "Mode: $CFG_MODE"
   out "Version: $CFG_VERSION"
   out "Config: valid"
+  if [ "$CFG_MODE" = "docker" ]; then
+    docker_prerequisites
+    out "Service manager: Docker Compose"
+    health_installed || runtime_error "application health check failed"
+    out "Health: healthy"
+    return 0
+  fi
   if [ "$CFG_SERVICE_MANAGER" != "none" ]; then
     require_manager
     out "Service manager: available ($CFG_SERVICE_MANAGER)"
