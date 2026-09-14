@@ -1607,18 +1607,21 @@ install_start_runtime() {
 }
 
 health_web_ok() {
-  # $INSTALL_PORT, $SEC_WEB_PASSWORD, $INSTALL_ALLOWED_HOST
+  # Optional arguments are port, password, and allowed Host value.
+  health_port=${1:-${INSTALL_PORT:-$CFG_PORT}}
+  health_password=${2-}
+  [ "$#" -ge 2 ] || health_password=${SEC_WEB_PASSWORD-}
+  health_host=${3:-${INSTALL_ALLOWED_HOST:-$CFG_ALLOWED_HOST}}
   cfg=$(mktemp "${TMPDIR:-/tmp}/zosma-health.XXXXXX") || return 1
   chmod 600 "$cfg"
   {
     printf 'silent\nshow-error\nmax-time 30\nconnect-timeout 5\n'
-    printf 'user = "pi:%s"\n' "$SEC_WEB_PASSWORD"
-    printf 'header = "Host: %s"\n' "$INSTALL_ALLOWED_HOST"
+    printf 'user = "pi:%s"\n' "$health_password"
+    printf 'header = "Host: %s"\n' "$health_host"
   } > "$cfg"
-  curl -f -K "$cfg" "http://127.0.0.1:$INSTALL_PORT/api/v1/health" >/dev/null 2>&1 &
+  curl -f -K "$cfg" "http://127.0.0.1:$health_port/api/v1/health" >/dev/null 2>&1 &
   cpid=$!
   n=0
-  rc=1
   while kill -0 "$cpid" 2>/dev/null; do
     if [ "$n" -ge 30 ]; then
       kill -TERM "$cpid" 2>/dev/null || :
@@ -1966,29 +1969,175 @@ cmd_serve() {
   fi
   exit 0
 }
-cmd_start() { usage_error "start is not implemented yet"; }
-cmd_stop() { usage_error "stop is not implemented yet"; }
-cmd_restart() { usage_error "restart is not implemented yet"; }
-cmd_status() {
-  [ "$#" -eq 0 ] || usage_error "status does not accept options"
+load_lifecycle_config() {
   resolve_roots
-  if [ ! -f "$ZM_CONFIG_ROOT/config" ]; then
-    out "zosma-cowork: not installed (no mode configuration)"
-    return "$EXIT_RUNTIME"
-  fi
+  [ -f "$ZM_CONFIG_ROOT/config" ] || runtime_error "zosma is not installed"
+  [ -f "$ZM_CONFIG_ROOT/secrets" ] || runtime_error "installed secrets are missing"
   parse_config_files "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+}
+
+manager_available() {
+  case "$CFG_SERVICE_MANAGER" in
+    none) return 0 ;;
+    systemd) systemctl --user show-environment >/dev/null 2>&1 ;;
+    launchd) launchctl print "gui/$(id -u)" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_manager() {
+  manager_available || runtime_error "recorded service manager is unavailable"
+}
+
+health_installed() {
+  health_web_ok "$CFG_PORT" "$SEC_WEB_PASSWORD" "$CFG_ALLOWED_HOST"
+}
+
+lifecycle_no_args() {
+  lifecycle_command=$1
+  shift
+  [ "$#" -eq 0 ] || usage_error "$lifecycle_command does not accept options"
+}
+
+cmd_start() {
+  lifecycle_no_args start "$@"
+  load_lifecycle_config
+  case "$CFG_SERVICE_MANAGER" in
+    none) usage_error "foreground mode is not managed; run 'zosma serve' and stop it with Ctrl-C" ;;
+    systemd)
+      require_manager
+      systemctl --user start "$SYSTEMD_UNIT_BASENAME" || runtime_error "failed to start Cowork"
+      health_installed || runtime_error "Cowork is not healthy after start"
+      ;;
+    launchd)
+      require_manager
+      launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL" || runtime_error "failed to start Cowork"
+      health_installed || runtime_error "Cowork is not healthy after start"
+      ;;
+  esac
+  out "Cowork started."
+}
+
+cmd_stop() {
+  lifecycle_no_args stop "$@"
+  load_lifecycle_config
+  case "$CFG_SERVICE_MANAGER" in
+    none) usage_error "foreground mode is not managed; press Ctrl-C in the 'zosma serve' terminal" ;;
+    systemd) require_manager; systemctl --user stop "$SYSTEMD_UNIT_BASENAME" || runtime_error "failed to stop Cowork" ;;
+    launchd) require_manager; launchctl bootout "gui/$(id -u)/$LAUNCH_AGENT_LABEL" 2>/dev/null || : ;;
+  esac
+  out "Cowork stopped."
+}
+
+cmd_restart() {
+  lifecycle_no_args restart "$@"
+  load_lifecycle_config
+  case "$CFG_SERVICE_MANAGER" in
+    none) usage_error "foreground mode is not managed; press Ctrl-C in the 'zosma serve' terminal" ;;
+    systemd)
+      require_manager
+      systemctl --user restart "$SYSTEMD_UNIT_BASENAME" || runtime_error "failed to restart Cowork"
+      health_installed || runtime_error "Cowork is not healthy after restart"
+      ;;
+    launchd)
+      require_manager
+      launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL" || runtime_error "failed to restart Cowork"
+      health_installed || runtime_error "Cowork is not healthy after restart"
+      ;;
+  esac
+  out "Cowork restarted."
+}
+
+cmd_status() {
+  lifecycle_no_args status "$@"
+  load_lifecycle_config
+  case "$CFG_SERVICE_MANAGER" in
+    none) out "Service: foreground (run 'zosma serve')" ;;
+    *) require_manager; out "Service: $CFG_SERVICE_MANAGER" ;;
+  esac
   out "zosma-cowork $CFG_VERSION ($CFG_MODE)"
-  out "Web: http://127.0.0.1:$CFG_PORT"
+  out "Web: http://$CFG_BIND:$CFG_PORT"
+  health_installed || runtime_error "Cowork is stopped or unhealthy"
+  out "Health: healthy"
+}
+
+cmd_logs() {
+  case "$#" in 0) ;; 1) [ "${1:-}" = "--follow" ] || usage_error "unknown logs option: $1" ;; *) usage_error "logs accepts only --follow" ;; esac
+  load_lifecycle_config
   if [ "$CFG_SERVICE_MANAGER" = "none" ]; then
-    out "Service: foreground (run 'zosma serve')"
+    out "Foreground mode logs are in the terminal running 'zosma serve'."
+    return 0
+  fi
+  log_path="$ZM_STATE_ROOT/logs/cowork.log"
+  if [ "${1:-}" = "--follow" ]; then
+    if [ -f "$log_path" ]; then
+      tail -f "$log_path"
+    else
+      runtime_error "Cowork log is not available"
+    fi
   else
-    out "Service: $CFG_SERVICE_MANAGER"
+    if [ -f "$log_path" ]; then
+      cat "$log_path"
+    else
+      out "No Cowork log has been written yet."
+    fi
   fi
 }
-cmd_logs() { usage_error "logs is not implemented yet"; }
-cmd_open() { usage_error "open is not implemented yet"; }
-cmd_doctor() { usage_error "doctor is not implemented yet"; }
-cmd_access() { usage_error "access is not implemented yet"; }
+
+cmd_open() {
+  lifecycle_no_args open "$@"
+  load_lifecycle_config
+  health_installed || runtime_error "Cowork is stopped or unhealthy"
+  url="http://$CFG_BIND:$CFG_PORT"
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) open "$url" || runtime_error "cannot open browser" ;;
+    *) xdg-open "$url" >/dev/null 2>&1 || runtime_error "cannot open browser" ;;
+  esac
+}
+
+cmd_doctor() {
+  lifecycle_no_args doctor "$@"
+  load_lifecycle_config
+  out "Mode: $CFG_MODE"
+  out "Version: $CFG_VERSION"
+  out "Config: valid"
+  if [ "$CFG_SERVICE_MANAGER" != "none" ]; then
+    require_manager
+    out "Service manager: available ($CFG_SERVICE_MANAGER)"
+  else
+    out "Service manager: foreground (zosma serve)"
+  fi
+  health_installed || runtime_error "application health check failed"
+  out "Health: healthy"
+}
+
+cmd_access() {
+  show=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --show-password) show=1 ;;
+      -h|--help) out "usage: zosma access [--show-password]"; return 0 ;;
+      *) usage_error "unknown access option: $1" ;;
+    esac
+    shift
+  done
+  load_lifecycle_config
+  out "URL: http://$CFG_BIND:$CFG_PORT"
+  if [ "$CFG_BIND" = "0.0.0.0" ]; then
+    out "Username: pi"
+    if [ "$show" -eq 1 ]; then
+      tty_available || usage_error "--show-password requires a terminal"
+      tty_line "Show the Cowork password on this terminal? [y/N] "
+      tty_read || cancel_error "password display cancelled"
+      case "$TTY_LINE" in
+        y|Y|yes|YES) tty_line "Password: $SEC_WEB_PASSWORD" ;;
+        *) cancel_error "password display cancelled" ;;
+      esac
+    fi
+  elif [ "$show" -eq 1 ]; then
+    out "Loopback mode has no configured password."
+  fi
+}
 cmd_update() { usage_error "update is not implemented yet"; }
 cmd_uninstall() { usage_error "uninstall is not implemented yet"; }
 
