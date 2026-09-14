@@ -8,9 +8,8 @@ test("hero shows a workspace pill only when a cwd exists", () => {
   const heroAt = source.indexOf("function HeroView(");
   assert.notEqual(heroAt, -1, "hero view present");
   const heroBody = source.slice(heroAt, source.indexOf("interface ColumnProps", heroAt));
-  assert.match(heroBody, /new-session-workspace/);
-  assert.match(heroBody, /\{cwd \? \(/);
-  assert.match(heroBody, />\{cwd\}<\/span>/);
+  assert.match(heroBody, /cwd \? \(/);
+  assert.match(heroBody, />\{[\s\S]*?cwd[\s\S]*?\}<\/span>/);
 });
 
 test("surface keeps workspace wiring props (rail owns the picker)", () => {

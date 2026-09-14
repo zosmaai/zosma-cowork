@@ -25,7 +25,7 @@ test("new-session startup adopts server state only while explicit overrides are 
 
   assert.match(
     ensureSource,
-    /result\.model && core\.newSessionModelOverrideRef\.current === selectedModel/,
+    /result\.model &&\s*core\.newSessionModelOverrideRef\.current === selectedModel/,
   );
   assert.match(ensureSource, /setters\.setPendingModel\(result\.model\)/);
   assert.match(ensureSource, /setters\.setNewSessionDefaultModel\(result\.model\)/);

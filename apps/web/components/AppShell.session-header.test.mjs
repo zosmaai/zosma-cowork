@@ -67,6 +67,6 @@ test("keeps fork, in-session navigation, rename, delete, and export owners separ
   assert.match(chatWindow, /onNavigate=\{sessionBusy \? undefined : onNavigate\}/);
   assert.match(sessionItem, /method: "PATCH"/);
   assert.match(sessionItem, /method: "DELETE"/);
-  assert.match(sessionItem, /if \(e\.shiftKey\)/);
+  assert.match(sessionItem, /dispatchSessionRowContextMenu/);
   assert.match(source, /\/api\/sessions\/\$\{encodeURIComponent\(selectedSession\.id\)\}\/export\?inline=1/);
 });
