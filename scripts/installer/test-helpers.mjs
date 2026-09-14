@@ -41,7 +41,7 @@ const SAFE_UTILS = [
   "sh", "cat", "mv", "cp", "mkdir", "rmdir", "touch", "ln", "chmod", "tar",
   "mktemp", "sha256sum", "shasum", "sed", "grep", "head", "tail", "wc", "cut",
   "tr", "dd", "od", "printf", "echo", "sleep", "kill", "basename", "dirname",
-  "readlink", "sort", "find", "date", "env", "id", "mkfifo", "ls",
+  "readlink", "sort", "find", "date", "env", "id", "mkfifo", "ls", "ps",
 ];
 
 // Hazardous commands are mandatory stubs that never delegate to the host.
@@ -103,31 +103,43 @@ function stubSource(name, root, { realPath, body }) {
 
 function curlFixtureBody(root, fixtureDir) {
   return [
-    'url=""; out=""; prev=""',
-    'for a in "$@"; do',
-    '  if [ "$prev" = "-o" ]; then out="$a"; prev=""; continue; fi',
-    '  case "$a" in',
-    '    -o) prev="-o" ;;',
-    "    -*) : ;;",
-    '    *) url="$a" ;;',
-    "  esac",
-    "done",
-    'emit() { if [ -n "$out" ]; then cat > "$out"; else cat; fi; }',
-    'case "$url" in',
-    "  file://*)",
-    "    p=$(printf '%s\\n' \"$url\" | sed 's|^file://||')",
-    '    if [ -f "$p" ]; then cat "$p" | emit; exit 0; fi',
-    "    ;;",
-    "  https://github.com/zosmaai/zosma-cowork/releases/download/*)",
-    '    b=$(basename "$url")',
-    "    f=" + quote(fixtureDir) + '/$b',
-    '    if [ -f "$f" ]; then cat "$f" | emit; exit 0; fi',
-    "    printf 'curl: fixture not found: %s\\n' \"$b\" >&2",
-    "    ;;",
-    "esac",
-    "printf 'curl refused: %s\\n' \"$url\" >&2",
-    "exit 22",
-  ].join("\n") + "\n";
+    'url=""; out=""; prev=""'
+    ,'for a in "$@"; do'
+    ,'  if [ "$prev" = "-o" ]; then out="$a"; prev=""; continue; fi'
+    ,'  case "$a" in'
+    ,'    -o) prev="-o" ;;'
+    ,'    -*) : ;;'
+    ,'    *) url="$a" ;;'
+    ,'  esac'
+    ,'done'
+    ,'emit() { if [ -n "$out" ]; then cat > "$out"; else cat; fi; }'
+    ,'serve_basename() {'
+    ,'  b=$(basename "$url")'
+    ,'  f="$ZOSMA_FIXTURE_DIR/$b"'
+    ,'  if [ -f "$f" ]; then'
+    ,'    if [ -n "$out" ]; then cat "$f" > "$out"; else cat "$f"; fi'
+    ,'    return 0'
+    ,'  fi'
+    ,'  printf "curl: fixture not found: %s\\n" "$b" >&2'
+    ,'  return 1'
+    ,'}'
+    ,'case "$url" in'
+    ,'  file://*)'
+    ,"    p=$(printf '%s\\n' \"$url\" | sed 's|^file://||')"
+    ,'    if [ -f "$p" ]; then cat "$p" | emit; exit 0; fi'
+    ,'    ;;'
+    ,'  https://github.com/zosmaai/zosma-cowork/releases/download/*)'
+    ,'    serve_basename || exit 22'
+    ,'    exit 0'
+    ,'    ;;'
+    ,'  https://install.zosma.ai/*)'
+    ,'    serve_basename || exit 22'
+    ,'    exit 0'
+    ,'    ;;'
+    ,'esac'
+    ,"printf 'curl refused: %s\\n' \"$url\" >&2"
+    ,'exit 22'
+  ].join('\n') + '\n';
 }
 
 const RM_WRAPPER = (root) => `#!/bin/sh
@@ -160,12 +172,13 @@ export class Harness {
     this.fixtures = join(this.root, "fixtures");
     this.work = join(this.root, "work");
     this.ttyDir = join(this.root, "tty");
+    this.tmpdir = join(this.root, "tmpdir");
     for (const dir of [
       this.home, join(this.home, ".local"), join(this.home, ".local", "bin"),
       join(this.home, ".local", "share"), join(this.home, ".config"),
       join(this.home, ".local", "state"), this.data, this.config, this.state,
       this.cache, this.fakebin, this.stubs, this.logs, this.fixtures, this.work,
-      this.ttyDir,
+      this.ttyDir, this.tmpdir,
     ]) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
@@ -185,6 +198,7 @@ export class Harness {
       LANG: "C",
       LC_ALL: "C",
       TERM: "dumb",
+      TMPDIR: this.tmpdir,
     };
     this.buildFakebin();
   }
@@ -265,7 +279,7 @@ export class Harness {
       "#!/bin/sh",
       "set -eu",
       'if [ "$1" = "version" ] && [ "$2" = "--machine" ]; then',
-      "  printf 'installer_schema=1\\nversion=%s\\n' " + quote(effective).replaceAll("'", "\\\""),
+      `  printf 'installer_schema=1\\nversion=%s\\n' "${effective}"`,
       ...(machineExtra ? [`  printf '%s\\n' ${quote(machineExtra)}`] : []),
       `  exit ${machineExit}`,
       "fi",
