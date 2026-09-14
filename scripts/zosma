@@ -1593,10 +1593,7 @@ COMPOSE
 config_write_local() {
   # Writes final config + secrets + service definition (config_switched).
   cfg_root=$ZM_CONFIG_ROOT
-  if [ ! -d "$cfg_root" ]; then
-    mkdir -p "$cfg_root"
-    chmod 700 "$cfg_root"
-  fi
+  ensure_marker "$cfg_root" || internal_error "unowned config root"
   {
     printf 'CONFIG_SCHEMA=%s\n' "$CONFIG_SCHEMA"
     printf 'MODE=local\n'

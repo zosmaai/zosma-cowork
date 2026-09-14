@@ -43,6 +43,14 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Installer contract tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          sh -n scripts/zosma
+          shellcheck -s sh scripts/zosma
+          pnpm test:installer
+
       - name: Build daemon
         run: pnpm daemon:build
 
