@@ -123,18 +123,25 @@ valid_null_or_absolute() {
 # ---------------------------------------------------------------------------
 
 resolve_xdg_base() {
-  # $1 = var name to set, $2 = XDG env name, $3 = fallback under HOME
+  # $1 = destination tag (data|config|state|cache), $2 = XDG env name,
+  # $3 = fallback under HOME. Values are validated and assigned to fixed
+  # globals only; no user-controlled shell evaluation happens.
   eval "xdg_value=\${$2:-}"
   if [ -z "$xdg_value" ]; then
-    eval "$1=\$HOME/$3"
-    return 0
+    xdg_resolved=$HOME/$3
+  elif is_absolute "$xdg_value"; then
+    xdg_resolved=$xdg_value
+  else
+    warn "ignoring relative $2=$xdg_value; using the fallback under \$HOME"
+    xdg_resolved=$HOME/$3
   fi
-  if is_absolute "$xdg_value"; then
-    eval "$1=\$xdg_value"
-    return 0
-  fi
-  warn "ignoring relative $2=$xdg_value; using the fallback under \$HOME"
-  eval "$1=\$HOME/$3"
+  case "$1" in
+    data) ZM_XDG_DATA=$xdg_resolved ;;
+    config) ZM_XDG_CONFIG=$xdg_resolved ;;
+    state) ZM_XDG_STATE=$xdg_resolved ;;
+    cache) ZM_XDG_CACHE=$xdg_resolved ;;
+    *) internal_error "internal: bad XDG tag: $1" ;;
+  esac
 }
 
 resolve_roots() {
@@ -151,10 +158,10 @@ resolve_roots() {
     err "error: HOME contains non-printable characters"; exit "$EXIT_USAGE"
   fi
   ZM_HOME=$HOME
-  resolve_xdg_base ZM_XDG_DATA XDG_DATA_HOME .local/share
-  resolve_xdg_base ZM_XDG_CONFIG XDG_CONFIG_HOME .config
-  resolve_xdg_base ZM_XDG_STATE XDG_STATE_HOME .local/state
-  resolve_xdg_base ZM_XDG_CACHE XDG_CACHE_HOME .cache
+  resolve_xdg_base data XDG_DATA_HOME .local/share
+  resolve_xdg_base config XDG_CONFIG_HOME .config
+  resolve_xdg_base state XDG_STATE_HOME .local/state
+  resolve_xdg_base cache XDG_CACHE_HOME .cache
   ZM_BIN_DIR=$ZM_HOME/.local/bin
   ZM_DATA_ROOT=$ZM_XDG_DATA/zosma-cowork
   ZM_CONFIG_ROOT=$ZM_XDG_CONFIG/zosma-cowork
@@ -504,7 +511,421 @@ cmd_version() {
   esac
 }
 
-cmd_install() { usage_error "install is not implemented yet"; }
+# ---------------------------------------------------------------------------
+# Terminal seam (production /dev/tty; guarded test TTY under ZOSMA_TESTING)
+# ---------------------------------------------------------------------------
+
+tty_available() {
+  if [ "${ZOSMA_TESTING:-}" = "1" ] && [ -n "${ZOSMA_TEST_TTY:-}" ] && [ -d "$ZOSMA_TEST_TTY" ]; then
+    return 0
+  fi
+  # An actual open, not a permission check: `-r /dev/tty` is true even when
+  # there is no controlling terminal. The subshell keeps no fd behind.
+  ( exec 9<> /dev/tty ) 2>/dev/null
+}
+
+# Opens fd 9 for input and fd 8 for output on the terminal (or the guarded
+# test TTY pair). Returns 1 when no terminal is available.
+tty_init() {
+  if [ "${ZOSMA_TESTING:-}" = "1" ] && [ -n "${ZOSMA_TEST_TTY:-}" ] && [ -d "$ZOSMA_TEST_TTY" ]; then
+    exec 9< "$ZOSMA_TEST_TTY/in" || return 1
+    exec 8>> "$ZOSMA_TEST_TTY/out" || return 1
+    return 0
+  fi
+  exec 9< /dev/tty || return 1
+  exec 8> /dev/tty || return 1
+  return 0
+}
+
+TTY_READY=0
+
+# Ensures terminal fds are open exactly once (lazy + idempotent).
+tty_ensure() {
+  if [ "$TTY_READY" -eq 1 ]; then return 0; fi
+  tty_init || return 1
+  TTY_READY=1
+  return 0
+}
+
+# Reads one line from the terminal into the global TTY_LINE. Returns 1 on EOF.
+tty_read() {
+  tty_ensure || return 1
+  if IFS= read -r TTY_LINE <&9; then
+    return 0
+  fi
+  return 1
+}
+
+tty_write() { tty_ensure || return 0; printf '%s' "$*" >&8; }
+tty_line() { tty_ensure || return 0; printf '%s\n' "$*" >&8; }
+
+# ---------------------------------------------------------------------------
+# Platform probes (production commands, never test-result overrides)
+# ---------------------------------------------------------------------------
+
+probe_os_arch() {
+  PLATFORM_OS=
+  PLATFORM_ARCH=
+  sys=$(uname -s)
+  mach=$(uname -m)
+  case "$sys" in
+    Linux) PLATFORM_OS=linux ;;
+    Darwin) PLATFORM_OS=darwin ;;
+    *)
+      prereq_error "unsupported operating system: $sys (supported: Linux, macOS)"
+      ;;
+  esac
+  case "$mach" in
+    x86_64|amd64) PLATFORM_ARCH=x64 ;;
+    aarch64|arm64) PLATFORM_ARCH=arm64 ;;
+    *)
+      prereq_error "unsupported architecture: $mach (supported: x86_64, arm64)"
+      ;;
+  esac
+}
+
+probe_wsl() {
+  WSL=0
+  if [ "$PLATFORM_OS" = "linux" ]; then
+    if [ -r /proc/sys/kernel/osrelease ] && grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+      WSL=1
+    fi
+  fi
+}
+
+# Reports the GNU libc version as "major.minor" or empty when unavailable.
+detect_libc_version() {
+  glibc_version=
+  gv=$(getconf GNU_LIBC_VERSION 2>/dev/null) || gv=
+  if [ -n "$gv" ]; then
+    glibc_version=$(printf '%s\n' "$gv" | sed 's/^glibc[[:space:]]*//I')
+    case "$glibc_version" in
+      [0-9]*.[0-9]*) : ;;
+      *) glibc_version= ;;
+    esac
+  fi
+  if [ -z "$glibc_version" ] && command -v ldd >/dev/null 2>&1; then
+    first=$(ldd --version 2>&1 | head -n 1)
+    case "$first" in
+      *"musl"*) return 0 ;;
+      *"GNU libc"*|*glibc*)
+        v=$(printf '%s\n' "$first" | sed 's/.*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/')
+        case "$v" in
+          [0-9]*.[0-9]*) glibc_version=$v ;;
+        esac
+        ;;
+    esac
+  fi
+}
+
+version_at_least() {
+  # $1 = "maj.min"; $2 = "maj.min" minimum
+  a_maj=${1%%.*}
+  a_min=${1#*.}
+  a_min=${a_min%%[!.0-9]*}
+  b_maj=${2%%.*}
+  b_min=${2#*.}
+  if [ "$a_maj" -gt "$b_maj" ]; then return 0; fi
+  if [ "$a_maj" -lt "$b_maj" ]; then return 1; fi
+  [ "$a_min" -ge "$b_min" ]
+}
+
+probe_macos_version() {
+  if [ "$PLATFORM_OS" != "darwin" ]; then return 0; fi
+  command -v sw_vers >/dev/null 2>&1 || prereq_error "sw_vers is required on macOS"
+  ver=$(sw_vers -productVersion) || prereq_error "cannot read macOS version"
+  major=${ver%%.*}
+  case "$major" in
+    ''|*[!0-9]*) prereq_error "unrecognized macOS version: $ver" ;;
+  esac
+  [ "$major" -ge 13 ] || prereq_error "macOS 13 or newer is required (found $ver)"
+}
+
+# Local-mode libc gate: GNU libc >= 2.35 only; musl/unknown/older must use
+# Docker mode. Called only after local mode is selected, never by the
+# bootstrap and never in dry-run-less Docker selection.
+probe_local_libc() {
+  [ "$PLATFORM_OS" = "linux" ] || return 0
+  detect_libc_version
+  if [ -z "$glibc_version" ]; then
+    prereq_error "local mode requires GNU libc >= 2.35 on Linux, but the libc could not be determined; use --mode docker instead"
+  fi
+  if version_at_least "$glibc_version" "2.35"; then
+    return 0
+  fi
+  prereq_error "local mode requires GNU libc >= 2.35 (found $glibc_version); use --mode docker instead"
+}
+
+# ---------------------------------------------------------------------------
+# Install request parsing and validation
+# ---------------------------------------------------------------------------
+
+local_pi_dir() {
+  # Pure path resolution; never inspects or creates the external Pi path.
+  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
+    PI_DIR_RESOLVED=$PI_CODING_AGENT_DIR
+  else
+    PI_DIR_RESOLVED=${HOME%}/.pi/agent
+  fi
+  is_absolute "$PI_DIR_RESOLVED" || usage_error "PI_CODING_AGENT_DIR must be absolute"
+  if has_nonprintable "$PI_DIR_RESOLVED"; then
+    usage_error "PI_CODING_AGENT_DIR contains non-printable characters"
+  fi
+}
+
+valid_workspace() {
+  # $1 = the absolute existing workspace directory
+  is_absolute "$1" || usage_error "workspace must be an absolute path"
+  if has_nonprintable "$1"; then
+    usage_error "workspace contains non-printable characters"
+  fi
+  [ -d "$1" ] || usage_error "workspace must exist and be a directory: $1"
+}
+
+parse_install_options() {
+  opt_mode=
+  opt_version=
+  opt_workspace=
+  opt_port=
+  opt_lan=0
+  opt_hostname=
+  opt_yes=0
+  opt_no_start=0
+  opt_dry_run=0
+  positional_mode=
+  seen_mode=0
+  seen_version=0
+  seen_workspace=0
+  seen_port=0
+  seen_hostname=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --mode)
+        shift
+        [ $# -gt 0 ] || usage_error "--mode requires a value"
+        [ "$seen_mode" -eq 0 ] || usage_error "duplicate --mode option"
+        seen_mode=1
+        case "$1" in local|docker) opt_mode=$1 ;;
+          *) usage_error "invalid mode: $1 (expected local or docker)" ;;
+        esac
+        ;;
+      --version)
+        shift
+        [ $# -gt 0 ] || usage_error "--version requires a value"
+        [ "$seen_version" -eq 0 ] || usage_error "duplicate --version option"
+        seen_version=1
+        valid_version "$1" || usage_error "invalid version: $1"
+        opt_version=$1
+        ;;
+      --workspace)
+        shift
+        [ $# -gt 0 ] || usage_error "--workspace requires a value"
+        [ "$seen_workspace" -eq 0 ] || usage_error "duplicate --workspace option"
+        seen_workspace=1
+        opt_workspace=$1
+        ;;
+      --port)
+        shift
+        [ $# -gt 0 ] || usage_error "--port requires a value"
+        [ "$seen_port" -eq 0 ] || usage_error "duplicate --port option"
+        seen_port=1
+        valid_port "$1" || usage_error "invalid port: $1 (expected 1..65535)"
+        opt_port=$1
+        ;;
+      --hostname)
+        shift
+        [ $# -gt 0 ] || usage_error "--hostname requires a value"
+        [ "$seen_hostname" -eq 0 ] || usage_error "duplicate --hostname option"
+        seen_hostname=1
+        valid_hostname "$1" || usage_error "invalid hostname: $1"
+        opt_hostname=$1
+        ;;
+      --lan)
+        opt_lan=1
+        ;;
+      --yes)
+        opt_yes=1
+        ;;
+      --no-start)
+        opt_no_start=1
+        ;;
+      --dry-run)
+        opt_dry_run=1
+        ;;
+      -h|--help)
+        print_install_help
+        exit 0
+        ;;
+      local|docker)
+        [ -z "$positional_mode" ] || usage_error "duplicate positional mode"
+        positional_mode=$1
+        ;;
+      *)
+        usage_error "unknown install option: $1"
+        ;;
+    esac
+    shift
+  done
+  if [ -n "$positional_mode" ] && [ -n "$opt_mode" ] && [ "$positional_mode" != "$opt_mode" ]; then
+    usage_error "conflicting modes: $positional_mode vs $opt_mode"
+  fi
+  MODE=${opt_mode:-$positional_mode}
+  if [ -z "$opt_port" ]; then
+    INSTALL_PORT=$DEFAULT_WEB_PORT
+  else
+    INSTALL_PORT=$opt_port
+  fi
+  if [ "$opt_lan" -eq 1 ]; then
+    INSTALL_BIND=0.0.0.0
+  else
+    INSTALL_BIND=127.0.0.1
+  fi
+  if [ "$opt_yes" -eq 1 ]; then
+    INTERACTIVE=0
+  elif tty_available; then
+    INTERACTIVE=1
+  else
+    INTERACTIVE=0
+  fi
+}
+
+print_install_help() {
+  cat <<'HELP'
+usage: zosma install [local|docker] [options]
+
+options:
+  --mode local|docker  select the installation mode (also positional)
+  --version vX.Y.Z     install this exact release
+  --workspace PATH     Docker mode: existing absolute workspace directory
+  --port 1-65535       web port (default 30141)
+  --lan                bind to all interfaces; requires --hostname
+  --hostname HOST      allowed Host header for LAN mode
+  --yes                non-interactive; never prompts or opens a browser
+  --no-start           complete the installation stopped
+  --dry-run            validate the complete request without any download,
+                       write, start, browser call, or deletion
+  --help               show this help
+
+Without a terminal, --mode and every mode-required value are mandatory.
+HELP
+}
+
+install_mode_menu() {
+  [ "$INTERACTIVE" -eq 1 ] || usage_error "no installation mode given; use --mode local|docker (a terminal is required for the menu)"
+  tty_ensure || usage_error "cannot open the terminal for the mode menu"
+  tty_line ""
+  tty_line "Zosma Cowork Installer"
+  tty_line ""
+  tty_line "Choose an installation mode:"
+  tty_line ""
+  tty_line "  1  Local server    Run Cowork directly on this machine"
+  tty_line "  2  Docker          Run Cowork in an isolated container"
+  tty_line "  3  Exit"
+  tty_line ""
+  while :; do
+    tty_write "> "
+    tty_read || cancel_error "installation cancelled"
+    menu_choice=$TTY_LINE
+    case "$menu_choice" in
+      1) MODE=local; return 0 ;;
+      2) MODE=docker; return 0 ;;
+      3) cancel_error "installation cancelled" ;;
+      *) tty_line "Please enter 1, 2, or 3." ;;
+    esac
+  done
+}
+
+prompt_install_value() {
+  # $1 = prompt; result lands in the global TTY_LINE after tty_read.
+  tty_write "$1"
+  tty_read || cancel_error "installation cancelled"
+}
+
+validate_install_request() {
+  [ -n "$MODE" ] || install_mode_menu
+  case "$MODE" in
+    local|docker) : ;;
+    *) usage_error "invalid mode: $MODE" ;;
+  esac
+  if [ "$INTERACTIVE" -eq 0 ] && [ "$opt_yes" -eq 0 ]; then
+    usage_error "install without a terminal requires --yes"
+  fi
+  probe_os_arch
+  probe_wsl
+  probe_macos_version
+  if [ "$MODE" = "local" ]; then
+    probe_local_libc
+    [ -z "$opt_workspace" ] || usage_error "--workspace is only valid for docker mode"
+  else
+    if [ -z "$opt_workspace" ]; then
+      if [ "$INTERACTIVE" -eq 1 ]; then
+        prompt_install_value "Workspace directory (absolute path): "
+        opt_workspace=$TTY_LINE
+      else
+        usage_error "docker install requires --workspace"
+      fi
+    fi
+    valid_workspace "$opt_workspace"
+  fi
+  if [ "$INSTALL_BIND" = "0.0.0.0" ]; then
+    if [ -z "$opt_hostname" ]; then
+      if [ "$INTERACTIVE" -eq 1 ]; then
+        proposed=$(hostname 2>/dev/null) || proposed=
+        tty_line "LAN mode exposes Cowork on your network with password protection."
+        tty_line ""
+        if [ -n "$proposed" ] && valid_hostname "$proposed"; then
+          prompt_install_value "Allowed hostname [$proposed]: "
+          opt_hostname=$TTY_LINE
+          [ -n "$opt_hostname" ] || opt_hostname=$proposed
+        else
+          prompt_install_value "Allowed hostname: "
+          opt_hostname=$TTY_LINE
+        fi
+      else
+        usage_error "--lan requires --hostname"
+      fi
+    fi
+    valid_hostname "$opt_hostname" || usage_error "invalid hostname: $opt_hostname"
+    if [ "$opt_hostname" = "127.0.0.1" ]; then
+      usage_error "--lan requires a network hostname, not 127.0.0.1"
+    fi
+  else
+    if [ -n "$opt_hostname" ]; then
+      usage_error "--hostname requires --lan"
+    fi
+  fi
+  return 0
+}
+
+print_install_plan() {
+  out "Zosma Cowork install plan (dry run)"
+  out "Mode: $MODE"
+  out "Platform: $PLATFORM_OS-$PLATFORM_ARCH"
+  if [ "$MODE" = "local" ]; then
+    out "Web: http://127.0.0.1:$INSTALL_PORT"
+    local_pi_dir
+    out "Pi directory: $PI_DIR_RESOLVED (not created or modified)"
+  else
+    out "Web: http://${INSTALL_BIND:-127.0.0.1}:$INSTALL_PORT"
+    out "Workspace: $opt_workspace (bind-mounted read/write)"
+  fi
+  if [ "$INSTALL_BIND" = "0.0.0.0" ]; then
+    out "Bind: 0.0.0.0 with password-protected LAN access (host: $opt_hostname)"
+  else
+    out "Bind: loopback only, no web password"
+  fi
+  out "No artifacts were downloaded and nothing was written or started."
+}
+
+cmd_install() {
+  parse_install_options "$@"
+  validate_install_request
+  if [ "$opt_dry_run" -eq 1 ]; then
+    print_install_plan
+    return 0
+  fi
+  usage_error "install activation is not implemented yet (Phase 3 tasks 4/6)"
+}
 cmd_serve() { usage_error "serve is not implemented yet"; }
 cmd_start() { usage_error "start is not implemented yet"; }
 cmd_stop() { usage_error "stop is not implemented yet"; }
