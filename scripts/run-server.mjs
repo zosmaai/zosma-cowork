@@ -8,6 +8,8 @@ import { webHealthRequest } from "./healthcheck.mjs";
 const DEFAULT_DAEMON_PORT = 64713;
 const DEFAULT_WEB_PORT = 30141;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const STOP_GRACE_MS = 5_000;
+const STOP_OBSERVE_MS = 2_000;
 
 function port(value, fallback, name) {
   const text = value ?? String(fallback);
@@ -17,36 +19,50 @@ function port(value, fallback, name) {
   return Number(text);
 }
 
-async function waitFor(url, headers, { fetchFn, sleep, timeoutMs }) {
+function delay(ms) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+async function waitFor(url, headers, {
+  fetchFn,
+  sleep,
+  timeoutMs,
+  isShutdownRequested,
+}) {
   const deadline = Date.now() + timeoutMs;
   do {
+    if (isShutdownRequested()) return { ok: false, shutdownRequested: true };
     try {
       const remainingMs = Math.max(1, deadline - Date.now());
       const response = await fetchFn(url, {
         headers,
         signal: AbortSignal.timeout(Math.min(1_000, remainingMs)),
       });
-      if (response.ok) return true;
+      if (response.ok) return { ok: true, shutdownRequested: false };
     } catch {
       // Child has not bound yet.
     }
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline) return { ok: false, shutdownRequested: isShutdownRequested() };
     await sleep(250);
   } while (true);
 }
 
-function waitForExit(child, timeoutMs = 5_000) {
-  if (child.exitCode !== null) return Promise.resolve();
-  return new Promise((resolveExit) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolveExit();
-    }, timeoutMs);
-    child.once("exit", () => {
-      clearTimeout(timer);
-      resolveExit();
-    });
-  });
+function isRunning(child) {
+  // `exitCode` alone is not enough: children that died from a signal leave
+  // exitCode null and set signalCode instead. Nullish comparison also covers
+  // stub children in tests that never initialize signalCode.
+  return child.exitCode == null && child.signalCode == null;
+}
+
+// Waits for the child to exit, then escalates to SIGKILL after graceMs and
+// observes the exit for at most observeMs more.
+async function waitForExit(child, graceMs, observeMs) {
+  if (!isRunning(child)) return;
+  const exited = new Promise((resolveExit) => child.once("exit", () => resolveExit(true)));
+  const withinGrace = await Promise.race([exited, delay(graceMs).then(() => false)]);
+  if (withinGrace) return;
+  child.kill("SIGKILL");
+  await Promise.race([exited, delay(observeMs).then(() => false)]);
 }
 
 export async function startSupervisor({
@@ -58,6 +74,9 @@ export async function startSupervisor({
   log = (line) => process.stderr.write(`[server] ${line}\n`),
   pathExists = existsSync,
   healthTimeoutMs = DEFAULT_TIMEOUT_MS,
+  isShutdownRequested = () => false,
+  stopGraceMs = STOP_GRACE_MS,
+  stopObserveMs = STOP_OBSERVE_MS,
 } = {}) {
   const daemonPort = port(env.ZOSMA_DAEMON_PORT, DEFAULT_DAEMON_PORT, "ZOSMA_DAEMON_PORT");
   const webPort = port(env.PORT, DEFAULT_WEB_PORT, "PORT");
@@ -75,6 +94,7 @@ export async function startSupervisor({
 
   const children = [];
   let stopping = false;
+  let finishedShutdown = false;
   let settleDone;
   const done = new Promise((resolveDone) => { settleDone = resolveDone; });
 
@@ -82,10 +102,13 @@ export async function startSupervisor({
     if (stopping) return;
     stopping = true;
     for (const child of children) {
-      if (child.exitCode === null) child.kill(signal);
+      if (isRunning(child)) child.kill(signal);
     }
-    await Promise.all(children.map((child) => waitForExit(child)));
-    settleDone(code);
+    await Promise.all(children.map((child) => waitForExit(child, stopGraceMs, stopObserveMs)));
+    if (!finishedShutdown) {
+      finishedShutdown = true;
+      settleDone(code);
+    }
   };
 
   const watch = (name, child) => {
@@ -118,10 +141,11 @@ export async function startSupervisor({
   const daemonReady = await waitFor(
     `http://127.0.0.1:${daemonPort}/health`,
     { authorization: `Bearer ${token}` },
-    { fetchFn, sleep, timeoutMs: healthTimeoutMs },
+    { fetchFn, sleep, timeoutMs: healthTimeoutMs, isShutdownRequested },
   );
-  if (!daemonReady) {
+  if (!daemonReady.ok) {
     await stop();
+    if (daemonReady.shutdownRequested) return { done, stop, shutdownRequested: true };
     throw new Error("daemon did not become ready");
   }
 
@@ -153,28 +177,71 @@ export async function startSupervisor({
     fetchFn,
     sleep,
     timeoutMs: healthTimeoutMs,
+    isShutdownRequested,
   });
-  if (!webReady) {
+  if (!webReady.ok) {
     await stop();
+    if (webReady.shutdownRequested) return { done, stop, shutdownRequested: true };
     throw new Error("web did not become ready");
   }
 
   log(`ready at http://${hostname}:${webPort}`);
-  return { done, stop };
+  return { done, stop, shutdownRequested: false };
+}
+
+// Installs direct-mode SIGINT/SIGTERM handling before any startup work.
+export function installSignalHandlers({ onSignal, signalEmitter = process }) {
+  const handlers = {
+    SIGINT: () => onSignal("SIGINT"),
+    SIGTERM: () => onSignal("SIGTERM"),
+  };
+  signalEmitter.on("SIGINT", handlers.SIGINT);
+  signalEmitter.on("SIGTERM", handlers.SIGTERM);
+  return () => {
+    signalEmitter.removeListener("SIGINT", handlers.SIGINT);
+    signalEmitter.removeListener("SIGTERM", handlers.SIGTERM);
+  };
+}
+
+// Direct-mode runner: installs the signal handlers before the first child
+// spawn, keeps them through both readiness waits and steady state, treats a
+// requested shutdown as clean status 0, and distinguishes startup failures
+// (1). Testable through injected signal/process functions.
+export async function runDirect({
+  signalEmitter = process,
+  setExitCode = (code) => { process.exitCode = code; },
+  writeError = (text) => process.stderr.write(text),
+  start = startSupervisor,
+  ...startOptions
+} = {}) {
+  let supervisor = null;
+  let shutdownRequested = false;
+  const removeHandlers = installSignalHandlers({
+    signalEmitter,
+    onSignal: (signal) => {
+      shutdownRequested = true;
+      if (supervisor) void supervisor.stop(signal, 0);
+    },
+  });
+  try {
+    supervisor = await start({ ...startOptions, isShutdownRequested: () => shutdownRequested });
+    setExitCode(await supervisor.done);
+  } catch (error) {
+    if (shutdownRequested) {
+      setExitCode(0);
+    } else {
+      setExitCode(1);
+      writeError(`[server] ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  } finally {
+    removeHandlers();
+  }
+  return { shutdownRequested };
 }
 
 const invokedDirectly = process.argv[1]
   && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
 if (invokedDirectly) {
-  try {
-    const supervisor = await startSupervisor();
-    const stop = (signal) => void supervisor.stop(signal, 0);
-    process.once("SIGINT", () => stop("SIGINT"));
-    process.once("SIGTERM", () => stop("SIGTERM"));
-    process.exitCode = await supervisor.done;
-  } catch (error) {
-    process.stderr.write(`[server] ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  }
+  await runDirect();
 }

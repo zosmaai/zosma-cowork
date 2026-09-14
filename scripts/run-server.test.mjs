@@ -136,3 +136,127 @@ test("supervisor cleans up the daemon when web readiness times out", async () =>
   assert.deepEqual(h.children[0].kills, ["SIGTERM"]);
   assert.deepEqual(h.children[1].kills, ["SIGTERM"]);
 });
+
+// ---------------------------------------------------------------------------
+// Task 4: startup-safe signal cleanup through the direct-run seam
+// ---------------------------------------------------------------------------
+
+import { runDirect, installSignalHandlers } from "./run-server.mjs";
+
+class StubbornChild extends FakeChild {
+  kill(signal) {
+    this.kills.push(signal);
+    if (signal === "SIGKILL") {
+      this.exitCode = 0;
+      queueMicrotask(() => this.emit("exit", 0, signal));
+    }
+    return true;
+  }
+}
+
+function blockingFetch() {
+  return (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
+
+function blockingHarness(overrides = {}) {
+  return harness({
+    fetchFn: blockingFetch(),
+    sleep: () => new Promise((r) => setTimeout(r, 10)),
+    ...overrides,
+  });
+}
+
+test("direct runner installs signals before startup and exits 0 for SIGINT during daemon readiness", async () => {
+  const h = blockingHarness();
+  let exitCode = null;
+  const emitter = new EventEmitter();
+  const run = runDirect({
+    signalEmitter: emitter,
+    setExitCode: (c) => { exitCode = c; },
+    start: (opts) => startSupervisor({ ...h.options, ...opts }),
+  });
+  await new Promise((r) => setTimeout(r, 60));
+  emitter.emit("SIGINT");
+  const result = await run;
+  assert.equal(result.shutdownRequested, true);
+  assert.equal(exitCode, 0);
+  assert.equal(h.calls.length, 1, "web child must not be spawned after shutdown");
+  assert.deepEqual(h.children[0].kills, ["SIGTERM"]);
+});
+
+test("direct runner aborts web readiness on SIGTERM, stops both children, exit 0", async () => {
+  const h = harness({
+    fetchFn: (url, opts) => {
+      if (url.endsWith("/api/v1/health")) return blockingFetch()(url, opts);
+      return Promise.resolve({ ok: true, status: 200 });
+    },
+    sleep: () => new Promise((r) => setTimeout(r, 10)),
+  });
+  let exitCode = null;
+  const emitter = new EventEmitter();
+  const run = runDirect({
+    signalEmitter: emitter,
+    setExitCode: (c) => { exitCode = c; },
+    start: (opts) => startSupervisor({ ...h.options, ...opts }),
+  });
+  await new Promise((r) => setTimeout(r, 60));
+  emitter.emit("SIGTERM");
+  const result = await run;
+  assert.equal(result.shutdownRequested, true);
+  assert.equal(exitCode, 0);
+  assert.equal(h.calls.length, 2);
+  assert.deepEqual(h.children.map((c) => c.kills), [["SIGTERM"], ["SIGTERM"]]);
+});
+
+test("a child that ignores the first signal is escalated only after the grace period", async () => {
+  const calls = [];
+  const children = [];
+  const spawnChild = () => {
+    const child = new StubbornChild("daemon");
+    children.push(child);
+    calls.push(1);
+    return child;
+  };
+  const started = Date.now();
+  const supervisor = await startSupervisor({
+    ...harness().options,
+    spawnChild,
+    fetchFn: async () => ({ ok: true, status: 200 }),
+    sleep: async () => {},
+    stopGraceMs: 25,
+    stopObserveMs: 15,
+  });
+  await supervisor.stop("SIGTERM");
+  const elapsed = Date.now() - started;
+  assert.deepEqual(children[0].kills, ["SIGTERM", "SIGKILL"]);
+  assert.ok(elapsed < 1000, `escalation took ${elapsed}ms instead of the injected bound`);
+  assert.equal(await supervisor.done, 0);
+});
+
+test("signal handlers are removed after the direct run completes", async () => {
+  const emitter = new EventEmitter();
+  const h = harness();
+  const run = runDirect({
+    signalEmitter: emitter,
+    setExitCode: () => {},
+    start: (opts) => startSupervisor({ ...h.options, ...opts }),
+  });
+  await new Promise((r) => setTimeout(r, 40));
+  emitter.emit("SIGTERM");
+  await run;
+  assert.equal(emitter.listenerCount("SIGINT"), 0);
+  assert.equal(emitter.listenerCount("SIGTERM"), 0);
+});
+
+test("installSignalHandlers is usable before startup and forwards both signals", () => {
+  const received = [];
+  const emitter = new EventEmitter();
+  const remove = installSignalHandlers({ signalEmitter: emitter, onSignal: (s) => received.push(s) });
+  emitter.emit("SIGINT");
+  emitter.emit("SIGTERM");
+  assert.deepEqual(received, ["SIGINT", "SIGTERM"]);
+  remove();
+  assert.equal(emitter.listenerCount("SIGINT"), 0);
+});

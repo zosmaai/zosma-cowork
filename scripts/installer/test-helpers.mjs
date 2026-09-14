@@ -41,7 +41,7 @@ const SAFE_UTILS = [
   "sh", "cat", "mv", "cp", "mkdir", "rmdir", "touch", "ln", "chmod", "tar",
   "mktemp", "sha256sum", "shasum", "sed", "grep", "head", "tail", "wc", "cut",
   "tr", "dd", "od", "printf", "echo", "sleep", "kill", "basename", "dirname",
-  "readlink", "sort", "find", "date", "env", "id", "mkfifo", "ls", "ps",
+  "readlink", "sort", "find", "date", "env", "id", "mkfifo", "ls", "ps", "gzip", "gunzip",
 ];
 
 // Hazardous commands are mandatory stubs that never delegate to the host.

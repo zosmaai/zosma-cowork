@@ -430,11 +430,22 @@ parse_manifest_file() {
               https://*) : ;;
               *) err "error: manifest URL must use https: $key"; return "$EXIT_VERIFY" ;;
             esac
-            ZM_MF_ARCHIVE=$key:$value
+            case "$key" in
+              archive_linux_x64_url) ZM_MF_ARCH_LINUX_X64_URL=$value ;;
+              archive_linux_arm64_url) ZM_MF_ARCH_LINUX_ARM64_URL=$value ;;
+              archive_darwin_x64_url) ZM_MF_ARCH_DARWIN_X64_URL=$value ;;
+              archive_darwin_arm64_url) ZM_MF_ARCH_DARWIN_ARM64_URL=$value ;;
+            esac
             ;;
           archive_*_sha256)
             valid_hex "$value" || { err "error: invalid archive checksum: $key"; return "$EXIT_VERIFY"; }
             [ "${#value}" -eq 64 ] || { err "error: invalid archive checksum length: $key"; return "$EXIT_VERIFY"; }
+            case "$key" in
+              archive_linux_x64_sha256) ZM_MF_ARCH_LINUX_X64_SHA256=$value ;;
+              archive_linux_arm64_sha256) ZM_MF_ARCH_LINUX_ARM64_SHA256=$value ;;
+              archive_darwin_x64_sha256) ZM_MF_ARCH_DARWIN_X64_SHA256=$value ;;
+              archive_darwin_arm64_sha256) ZM_MF_ARCH_DARWIN_ARM64_SHA256=$value ;;
+            esac
             ;;
           docker_image)
             valid_digest_ref "$value" || {
@@ -469,6 +480,574 @@ parse_manifest_file() {
     return "$EXIT_VERIFY"
   }
   return 0
+}
+
+
+# ---------------------------------------------------------------------------
+# Generation management, markers, and portable activation recipes
+# ---------------------------------------------------------------------------
+
+ensure_marker() {
+  # Marks an installer-owned directory without overwriting a foreign marker.
+  if [ -e "$1/$MARKER_NAME" ] || [ -L "$1/$MARKER_NAME" ]; then
+    is_marked_dir "$1" || return 1
+  fi
+  if [ ! -d "$1" ]; then
+    mkdir -p "$1"
+    chmod 700 "$1"
+  fi
+  printf '%s\n' "$MARKER_LINE" > "$1/$MARKER_NAME"
+  chmod 600 "$1/$MARKER_NAME"
+}
+
+is_marked_dir() {
+  [ -f "$1/$MARKER_NAME" ] && [ "$(cat "$1/$MARKER_NAME" 2>/dev/null)" = "$MARKER_LINE" ]
+}
+
+mark_root_tree() {
+  # Marks each given directory and its parents down to $2 (inclusive),
+  # skipping the intermediate `generations` container (not installer-owned).
+  d=$1
+  while :; do
+    ensure_marker "$d"
+    [ "$d" = "$2" ] && break
+    [ "$d" = "/" ] && break
+    parent=${d%/*}
+    if [ "$(basename "$d")" = "generations" ]; then
+      d=$parent
+      continue
+    fi
+    d=$parent
+  done
+}
+
+gen_children() {
+  # Prints existing generation directory names under $1, sorted ascending.
+  [ -d "$1" ] || return 0
+  for d in "$1"/*; do
+    [ -d "$d" ] || continue
+    printf '%s\n' "${d##*/}"
+  done | sort
+}
+
+new_generation_dir() {
+  # Prints a fresh unique generation directory name under $1.
+  n=1
+  while :; do
+    cand=$(printf 'generation-%04d' "$n")
+    [ ! -e "$1/$cand" ] && { printf '%s\n' "$cand"; return 0; }
+    n=$((n + 1))
+  done
+}
+
+replace_link() {
+  # Portable same-basename link replacement: creates a temporary sibling
+  # directory, a symlink with the final basename, moves it over the target
+  # parent, then removes the temporary directory. Never passes the existing
+  # link as a directory operand (no GNU-only `mv -T`).
+  target=$1
+  parent=$2
+  basename=$3
+  tmpdir=$(mktemp -d "$parent/.link.XXXXXX") || return 1
+  ln -s "$target" "$tmpdir/$basename" 2>/dev/null || { rm -rf "$tmpdir"; return 1; }
+  mv -f "$tmpdir/$basename" "$parent/" 2>/dev/null || { rm -rf "$tmpdir"; return 1; }
+  rmdir "$tmpdir" 2>/dev/null || :
+  return 0
+}
+
+file_replace() {
+  # Atomic regular-file replacement: $1 = source file, $2 = destination dir,
+  # $3 = final basename. The result is a regular file with mode 0600.
+  tmpdir=$(mktemp -d "$2/.atomic.XXXXXX") || return 1
+  cp "$1" "$tmpdir/$3" 2>/dev/null || { rm -rf "$tmpdir"; return 1; }
+  chmod 600 "$tmpdir/$3"
+  mv -f "$tmpdir/$3" "$2/" 2>/dev/null || { rm -rf "$tmpdir"; return 1; }
+  rmdir "$tmpdir" 2>/dev/null || :
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Secrets generation (reads /dev/urandom through curated utilities)
+# ---------------------------------------------------------------------------
+
+gen_hex() {
+  # $1 = number of hex chars
+  raw=$(dd if=/dev/urandom bs=64 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
+  printf '%s\n' "$raw" | cut -c1-"$1"
+}
+
+# ---------------------------------------------------------------------------
+# Activation transaction journal
+# ---------------------------------------------------------------------------
+
+JRNL_KIND=
+JRNL_MODE=
+JRNL_PHASE=
+JRNL_KEEP_CLI=0
+JRNL_OLD_RUNNING=0
+JRNL_OLD_CLI=
+JRNL_NEW_CLI=
+JRNL_OLD_RUNTIME=
+JRNL_NEW_RUNTIME=
+JRNL_OLD_CONFIG_BACKUP=
+JRNL_STAGE=
+JRNL_DOCKER_PREEXISTED=0
+JRNL_OLD_IMAGE=
+JRNL_NEW_IMAGE=
+
+chmod_install_roots() {
+  for d in "$ZM_DATA_ROOT" "$ZM_CONFIG_ROOT" "$ZM_STATE_ROOT" "$ZM_CACHE_ROOT" "$ZM_TRANSACTION_ROOT"; do
+    if [ -d "$d" ]; then chmod 700 "$d"; fi
+  done
+}
+
+jrnl_reset() {
+  JRNL_KIND=
+  JRNL_MODE=
+  JRNL_PHASE=
+  JRNL_KEEP_CLI=0
+  JRNL_OLD_RUNNING=0
+  JRNL_OLD_CLI=
+  JRNL_NEW_CLI=
+  JRNL_OLD_RUNTIME=
+  JRNL_NEW_RUNTIME=
+  JRNL_OLD_CONFIG_BACKUP=
+  JRNL_STAGE=
+  JRNL_DOCKER_PREEXISTED=0
+  JRNL_OLD_IMAGE=
+  JRNL_NEW_IMAGE=
+}
+
+jrnl_persist() {
+  # $1 = phase; writes the journal atomically at TRANSACTION_JOURNAL.
+  if [ ! -d "$ZM_TRANSACTION_ROOT" ]; then
+    mkdir -p "$ZM_TRANSACTION_ROOT"
+    chmod 700 "$ZM_TRANSACTION_ROOT"
+  fi
+  jtmp=$(mktemp -d "$ZM_TRANSACTION_ROOT/.journal.XXXXXX") || runtime_error "cannot create journal staging"
+  {
+    printf 'TRANSACTION_SCHEMA=%s\n' "$TRANSACTION_SCHEMA"
+    printf 'INSTALL_KIND=%s\n' "$JRNL_KIND"
+    printf 'MODE=%s\n' "$JRNL_MODE"
+    printf 'PHASE=%s\n' "$1"
+    printf 'KEEP_VERIFIED_CLI=%s\n' "$JRNL_KEEP_CLI"
+    printf 'OLD_WAS_RUNNING=%s\n' "$JRNL_OLD_RUNNING"
+    printf 'OLD_CLI_TARGET=%s\n' "$JRNL_OLD_CLI"
+    printf 'NEW_CLI_TARGET=%s\n' "$JRNL_NEW_CLI"
+    printf 'OLD_RUNTIME_TARGET=%s\n' "$JRNL_OLD_RUNTIME"
+    printf 'NEW_RUNTIME_TARGET=%s\n' "$JRNL_NEW_RUNTIME"
+    printf 'OLD_CONFIG_BACKUP=%s\n' "$JRNL_OLD_CONFIG_BACKUP"
+    printf 'STAGE_ROOT=%s\n' "$JRNL_STAGE"
+    printf 'DOCKER_STATE_PREEXISTED=%s\n' "$JRNL_DOCKER_PREEXISTED"
+    printf 'OLD_IMAGE=%s\n' "$JRNL_OLD_IMAGE"
+    printf 'NEW_IMAGE=%s\n' "$JRNL_NEW_IMAGE"
+  } > "$jtmp/journal"
+  chmod 600 "$jtmp/journal"
+  mv -f "$jtmp/journal" "$ZM_TRANSACTION_ROOT/" 2>/dev/null || { rm -rf "$jtmp"; runtime_error "cannot persist journal"; }
+  rmdir "$jtmp" 2>/dev/null || :
+  # Test-only pause allows crash-recovery tests to kill at each persisted phase.
+  if [ "${ZOSMA_TESTING:-0}" = "1" ] && [ -n "${ZOSMA_TEST_PHASE_DELAY:-}" ]; then
+    sleep "$ZOSMA_TEST_PHASE_DELAY"
+  fi
+}
+
+path_under() {
+  # True when $1 is under $2 (prefix match on a path component).
+  case "$1" in
+    "$2"|"$2"/*) return 0 ;;
+  esac
+  return 1
+}
+
+is_generation_target() {
+  # $1 = absolute path, $2 = cli|runtime; the path must be exactly
+  # <root>/versions/<version>/generations/generation-<digits>.
+  roots=$ZM_CLI_VERSIONS
+  [ "$2" = "runtime" ] && roots=$ZM_RUNTIME_VERSIONS
+  case "$1" in
+    "$roots"/*/generations/generation-[0-9][0-9][0-9][0-9]*)
+      rest=${1#"$roots/"}
+      version=${rest%%/*}
+      case "$version" in
+        v[0-9]*.[0-9]*.[0-9]*) : ;;
+        *) return 1 ;;
+      esac
+      gen=${rest#*/generations/}
+      case "$gen" in
+        generation-[0-9][0-9][0-9][0-9]*[!0-9]*) return 1 ;;
+        generation-[0-9][0-9][0-9][0-9]*) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+rm_generation_dir() {
+  # Refuses every path that is not an exact installer generation directory.
+  if is_generation_target "$1" cli; then
+    rm -rf "$1"
+    return 0
+  fi
+  if is_generation_target "$1" runtime; then
+    rm -rf "$1"
+    return 0
+  fi
+  err "error: refusing to remove unexpected path: $1"
+  return 1
+}
+
+prune_runtime_empty() {
+  # Removes only empty installer-owned runtime version containers and the
+  # runtime/current link after a generation removal.
+  if [ -n "$JRNL_NEW_RUNTIME" ]; then
+    parent=${JRNL_NEW_RUNTIME%/*}
+    version_dir=${JRNL_NEW_RUNTIME%/*/*}
+    if is_generation_target "$JRNL_NEW_RUNTIME" runtime; then
+      rmdir "$parent" 2>/dev/null || :
+      rmdir "$version_dir" 2>/dev/null || :
+      rmdir "$ZM_RUNTIME_VERSIONS" 2>/dev/null || :
+      rmdir "${ZM_RUNTIME_VERSIONS%/*}" 2>/dev/null || :
+    fi
+  fi
+  rm -f "$ZM_RUNTIME_CURRENT"
+}
+
+within_root() {
+  # Lexically normalized containment: $1 (an absolute path, possibly with
+  # '.'/'..' segments) must stay under $2. Returns 1 on any escape.
+  case "$1" in
+    "$2"|"$2"/*) : ;;
+    *) return 1 ;;
+  esac
+  rel=${1#"$2"}
+  case "$rel" in
+    '') return 0 ;;
+    /*) rel=${rel#/} ;;
+    *) return 1 ;;
+  esac
+  depth=0
+  while [ -n "$rel" ]; do
+    seg=${rel%%/*}
+    case "$seg" in
+      ''|.) : ;;
+      ..)
+        depth=$((depth - 1))
+        if [ "$depth" -lt 0 ]; then return 1; fi
+        ;;
+      *) depth=$((depth + 1)) ;;
+    esac
+    case "$rel" in
+      */*) rel=${rel#*/} ;;
+      *) rel= ;;
+    esac
+  done
+  return 0
+}
+
+jrnl_validate_line() {
+  # Validates one journal field at a time; exits 2 on tampering.
+  key=$1
+  value=$2
+  case "$key" in
+    TRANSACTION_SCHEMA) [ "$value" = "$TRANSACTION_SCHEMA" ] || return 1 ;;
+    INSTALL_KIND) case "$value" in fresh|update|reinstall) : ;; *) return 1 ;; esac ;;
+    MODE) case "$value" in local|docker) : ;; *) return 1 ;; esac ;;
+    PHASE)
+      case "$value" in
+        prepared|old_stopped|runtime_switched|cli_switched|config_switched|candidate_started|committed) : ;;
+        *) return 1 ;;
+      esac ;;
+    KEEP_VERIFIED_CLI|OLD_WAS_RUNNING|DOCKER_STATE_PREEXISTED)
+      case "$value" in 0|1) : ;; *) return 1 ;; esac ;;
+    OLD_CLI_TARGET|NEW_CLI_TARGET)
+      [ -z "$value" ] || is_generation_target "$value" cli || return 1 ;;
+    OLD_RUNTIME_TARGET|NEW_RUNTIME_TARGET)
+      [ -z "$value" ] || is_generation_target "$value" runtime || return 1 ;;
+    OLD_CONFIG_BACKUP|STAGE_ROOT)
+      [ -z "$value" ] || within_root "$value" "$ZM_TRANSACTION_ROOT" || return 1 ;;
+    OLD_IMAGE|NEW_IMAGE)
+      [ -z "$value" ] || valid_digest_ref "$value" || return 1 ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+jrnl_read() {
+  # Parses and validates the journal into JRNL_* globals; exits 2 when a
+  # field fails validation. Values are data, never shell.
+  [ -f "$ZM_TRANSACTION_JOURNAL" ] || return 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=${line%%=*}
+    value=${line#*=}
+    jrnl_validate_line "$key" "$value" || {
+      err "error: invalid transaction journal field: $key"
+      exit "$EXIT_USAGE"
+    }
+    case "$key" in
+      INSTALL_KIND) JRNL_KIND=$value ;;
+      MODE) JRNL_MODE=$value ;;
+      PHASE) JRNL_PHASE=$value ;;
+      KEEP_VERIFIED_CLI) JRNL_KEEP_CLI=$value ;;
+      OLD_WAS_RUNNING) JRNL_OLD_RUNNING=$value ;;
+      OLD_CLI_TARGET) JRNL_OLD_CLI=$value ;;
+      NEW_CLI_TARGET) JRNL_NEW_CLI=$value ;;
+      OLD_RUNTIME_TARGET) JRNL_OLD_RUNTIME=$value ;;
+      NEW_RUNTIME_TARGET) JRNL_NEW_RUNTIME=$value ;;
+      OLD_CONFIG_BACKUP) JRNL_OLD_CONFIG_BACKUP=$value ;;
+      STAGE_ROOT) JRNL_STAGE=$value ;;
+      DOCKER_STATE_PREEXISTED) JRNL_DOCKER_PREEXISTED=$value ;;
+      OLD_IMAGE) JRNL_OLD_IMAGE=$value ;;
+      NEW_IMAGE) JRNL_NEW_IMAGE=$value ;;
+      *) : ;;
+    esac
+  done < "$ZM_TRANSACTION_JOURNAL"
+  return 0
+}
+
+jrnl_remove() {
+  rm -f "$ZM_TRANSACTION_JOURNAL"
+}
+
+# ---------------------------------------------------------------------------
+# Local runtime archive verification and extraction
+# ---------------------------------------------------------------------------
+
+cli_curl_download() {
+  # Same secure contract as the bootstrap: https-only, TLS 1.2, bounded.
+  curl -f -sS -L --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 10 --max-time 300 -o "$2" "$1"
+}
+
+sha_tool_detect() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    SHA_TOOL=sha256sum
+  elif command -v shasum >/dev/null 2>&1; then
+    SHA_TOOL=shasum
+  else
+    prereq_error "no supported SHA-256 tool found (need sha256sum or shasum)"
+  fi
+}
+
+sha256_of() {
+  if [ "$SHA_TOOL" = "shasum" ]; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    sha256sum "$1" | cut -d' ' -f1
+  fi
+}
+
+archive_basename() {
+  printf 'zosma-cowork-server-%s-%s-%s.tar.gz\n' "$ZM_MF_VERSION" "$PLATFORM_OS" "$PLATFORM_ARCH"
+}
+
+verify_archive() {
+  # $1 = archive path; verifies basename target, checksum list, and bytes.
+  expect_name=$(archive_basename)
+  case "$(basename "$1")" in
+    "$expect_name") : ;;
+    *) verify_error "archive basename mismatch: $(basename "$1")" ;;
+  esac
+  target_key=$(printf 'archive_%s_%s' "$PLATFORM_OS" "$PLATFORM_ARCH" | tr '-' '_')
+  sums_file=$ZFIX_ARCHIVE_SUMS
+  listed=$(parse_checksum_entry "$sums_file" "$expect_name")
+  digest=""
+  case "$target_key" in
+    archive_linux_x64) digest=$ZM_MF_ARCH_LINUX_X64_SHA256 ;;
+    archive_linux_arm64) digest=$ZM_MF_ARCH_LINUX_ARM64_SHA256 ;;
+    archive_darwin_x64) digest=$ZM_MF_ARCH_DARWIN_X64_SHA256 ;;
+    archive_darwin_arm64) digest=$ZM_MF_ARCH_DARWIN_ARM64_SHA256 ;;
+    *) verify_error "unsupported platform tuple: $PLATFORM_OS-$PLATFORM_ARCH" ;;
+  esac
+  [ "$listed" = "$digest" ] || verify_error "checksum list disagrees with manifest"
+  actual=$(sha256_of "$1")
+  [ "$actual" = "$digest" ] || verify_error "archive checksum mismatch"
+}
+
+parse_checksum_entry() {
+  # $1 = sums file, $2 = wanted basename; prints the digest; exits 4 on any
+  # grammar violation, duplicate, or conflict for the selected entry.
+  want=$2
+  found_digest=
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    d=${line%%[!0-9a-fA-F]*}
+    [ "${#d}" -eq 64 ] || verify_error "malformed checksum entry"
+    rest=$(printf '%s' "${line#"$d"}" | sed 's/^ *//; s/^\*//')
+    case "$rest" in
+      ''|*' '*) verify_error "malformed checksum entry" ;;
+    esac
+    if [ "$rest" = "$want" ]; then
+      [ -z "$found_digest" ] || verify_error "duplicate checksum entry for: $want"
+      case "$d" in
+        [a-f0-9]*) found_digest=$d ;;
+        *) verify_error "conflicting checksum entry for: $want" ;;
+      esac
+    fi
+  done < "$1"
+  [ -n "$found_digest" ] || verify_error "missing checksum entry for: $want"
+  printf '%s\n' "$found_digest"
+}
+
+validate_archive_members() {
+  # Rejects absolute or parent-traversing members before extraction.
+  list_file=$(mktemp "${TMPDIR:-/tmp}/zosma-members.XXXXXX") || verify_error "cannot create member list"
+  tar -tzf "$1" > "$list_file" 2>/dev/null || verify_error "cannot list archive members"
+  violation=
+  while IFS= read -r member; do
+    case "$member" in
+      /*) violation=$member; break ;; # absolute member
+    esac
+    # A leading '.' member is legitimate (tar -t ./...); reject '..' as any
+    # complete segment (first, middle, or terminal).
+    case "/$member" in
+      */../*|*/..) violation=$member; break ;;
+    esac
+  done < "$list_file"
+  rm -f "$list_file"
+  if [ -n "$violation" ]; then
+    verify_error "archive member escapes the stage: $violation"
+  fi
+}
+
+validate_runtime_tree() {
+  # $1 = generation root; enforces the exact Phase 1 entry contract.
+  required="runtime/bin/node runtime/lib/node_modules/npm/bin/npm-cli.js runtime/lib/node_modules/npm/bin/npx-cli.js web/dist-server/server.js web/dist-server/bin/pi-web.js daemon/src/index.ts daemon/bin/zosma-daemon.js supervisor/run-server.mjs supervisor/healthcheck.mjs VERSION"
+  for entry in $required; do
+    [ -f "$1/$entry" ] || verify_error "required runtime file missing: $entry"
+  done
+  if [ -f "$1/runtime/bin/node" ] && [ ! -L "$1/runtime/bin/node" ]; then
+    :
+  else
+    verify_error "runtime/bin/node must be a regular file"
+  fi
+  if [ -x "$1/runtime/bin/node" ]; then
+    :
+  else
+    verify_error "runtime/bin/node must be executable"
+  fi
+  node=$1/runtime/bin/node
+  version_text=$("$node" --version 2>/dev/null) || verify_error "bundled node does not run"
+  case "$version_text" in v*) : ;; *) verify_error "invalid bundled node version" ;; esac
+  vfile=$(cat "$1/VERSION" 2>/dev/null)
+  [ "$vfile" = "$ZM_MF_VERSION" ] || verify_error "VERSION does not match the manifest"
+  # Every extracted symlink must stay within the generation root.
+  link_list=$(mktemp "${TMPDIR:-/tmp}/zosma-links.XXXXXX") || verify_error "cannot create link list"
+  find "$1" -type l > "$link_list" 2>/dev/null || :
+  violation2=
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    target=$(readlink "$file")
+    case "$target" in
+      /*) violation2="absolute symlink in archive: $file"; break ;;
+    esac
+    resolved=$file
+    n=0
+    while [ -L "$resolved" ]; do
+      n=$((n + 1))
+      if [ "$n" -ge 32 ]; then violation2="symlink loop in archive: $file"; break 2; fi
+      dir=${resolved%/*}
+      resolved=$dir/$(readlink "$resolved")
+    done
+    if ! within_root "$resolved" "$1"; then
+      violation2="symlink escapes the generation: $file"
+      break
+    fi
+  done < "$link_list"
+  rm -f "$link_list"
+  if [ -n "$violation2" ]; then
+    verify_error "$violation2"
+  fi
+}
+
+port_probe() {
+  # $1 = bundled node, $2 = port, $3 = port; reads /dev/urandom-free probe.
+  "$1" -e 'const net=require("net");const ports=[Number(process.argv[1]),Number(process.argv[2])];let pending=ports.length;const res={};function done(){if(--pending)return;process.stdout.write(ports.map(p=>p+":"+(res[p]?"occupied":"free")).join("\n")+"\n");}ports.forEach(p=>{const s=net.connect(p,"127.0.0.1");s.once("connect",()=>{res[p]=1;s.destroy();done();});s.once("error",()=>{res[p]=0;done();});});' "$2" "$3"
+}
+
+# ---------------------------------------------------------------------------
+# Service manager detection and rendering
+# ---------------------------------------------------------------------------
+
+detect_service_manager() {
+  if [ "$PLATFORM_OS" = "linux" ]; then
+    if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+      printf 'systemd\n'
+      return 0
+    fi
+  elif [ "$PLATFORM_OS" = "darwin" ]; then
+    if command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+      printf 'launchd\n'
+      return 0
+    fi
+  fi
+  printf 'none\n'
+}
+
+unit_escape() {
+  # systemd unit value escaping: percent signs must be doubled.
+  printf '%s' "$1" | sed 's/%/%%/g'
+}
+
+libc_check_marker() { :; }
+
+render_systemd_unit() {
+  # Renders a marked private user unit to stdout (no secrets).
+  exec_path=$(unit_escape "$ZM_BIN_DIR/zosma")
+  { printf '%s\n' \
+    "# ZOSMA_COWORK_INSTALLER_SCHEMA=1"
+    printf '%s\n' \
+    "[Unit]" \
+    "Description=Zosma Cowork"
+    printf '%s\n' \
+    "[Service]" \
+    "Type=simple" \
+    "ExecStart=$exec_path serve --service" \
+    "Restart=on-failure" \
+    "TimeoutStopSec=15" \
+    "Environment=HOME=$ZM_HOME" \
+    "Environment=XDG_DATA_HOME=$ZM_XDG_DATA" \
+    "Environment=XDG_CONFIG_HOME=$ZM_XDG_CONFIG" \
+    "Environment=XDG_STATE_HOME=$ZM_XDG_STATE" \
+    "Environment=PI_CODING_AGENT_DIR=$CFG_PI_DIR"
+    printf '%s\n' "[Install]" "WantedBy=default.target"
+  }
+}
+
+xml_escape() {
+  printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'
+}
+
+render_launchd_plist() {
+  # Renders a marked LaunchAgent plist to stdout (no secrets).
+  label=$LAUNCH_AGENT_LABEL
+  bin=$(xml_escape "$ZM_BIN_DIR/zosma")
+  { printf '%s\n' \
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" \
+    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">" \
+    "<plist version=\"1.0\">" \
+    "<dict>" \
+    "  <key>Label</key>" \
+    "  <string>$label</string>" \
+    "  <key>ZOSMA_COWORK_INSTALLER_SCHEMA</key><string>1</string>"
+    printf '  <key>ProgramArguments</key>\n  <array>\n    <string>%s</string>\n    <string>serve</string>\n    <string>--service</string>\n  </array>\n' "$bin"
+    printf '%s\n' \
+    "  <key>RunAtLoad</key><true/>" \
+    "  <key>KeepAlive</key><true/>" \
+    "  <key>StandardOutPath</key><string>$(xml_escape "$ZM_STATE_ROOT/logs/serve.out.log")</string>" \
+    "  <key>StandardErrorPath</key><string>$(xml_escape "$ZM_STATE_ROOT/logs/serve.err.log")</string>" \
+    "  <key>EnvironmentVariables</key>" \
+    "  <dict>" \
+    "    <key>HOME</key><string>$(xml_escape "$ZM_HOME")</string>" \
+    "    <key>XDG_DATA_HOME</key><string>$(xml_escape "$ZM_XDG_DATA")</string>" \
+    "    <key>XDG_CONFIG_HOME</key><string>$(xml_escape "$ZM_XDG_CONFIG")</string>" \
+    "    <key>XDG_STATE_HOME</key><string>$(xml_escape "$ZM_XDG_STATE")</string>" \
+    "    <key>PI_CODING_AGENT_DIR</key><string>$(xml_escape "$CFG_PI_DIR")</string>" \
+    "  </dict>" \
+    "</dict>" \
+    "</plist>"
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -806,7 +1385,7 @@ options:
                        write, start, browser call, or deletion
   --help               show this help
 
-Without a terminal, --mode and every mode-required value are mandatory.
+Without a terminal, --yes, --mode, and every mode-required value are mandatory.
 HELP
 }
 
@@ -917,20 +1496,495 @@ print_install_plan() {
   out "No artifacts were downloaded and nothing was written or started."
 }
 
+cli_manifest_url() {
+  if [ -n "${opt_version:-}" ]; then
+    printf 'https://github.com/zosmaai/zosma-cowork/releases/download/%s/install-manifest.txt\n' "$opt_version"
+    return 0
+  fi
+  if [ "${ZOSMA_TESTING:-}" = "1" ] && [ -n "${ZOSMA_TEST_MANIFEST_URL:-}" ]; then
+    printf '%s\n' "$ZOSMA_TEST_MANIFEST_URL"
+    return 0
+  fi
+  printf '%s\n' "https://install.zosma.ai/releases/stable"
+}
+
+install_resolve_manifest() {
+  ZM_INSTALL_TMPDIR=
+  if [ -n "${ZOSMA_INSTALL_MANIFEST:-}" ] && [ -f "$ZOSMA_INSTALL_MANIFEST" ]; then
+    parse_manifest_file "$ZOSMA_INSTALL_MANIFEST" || return "$?"
+    return 0
+  fi
+  ZM_INSTALL_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/zosma-cli.XXXXXX") || prereq_error "cannot create temporary directory"
+  url=$(cli_manifest_url)
+  cli_curl_download "$url" "$ZM_INSTALL_TMPDIR/install-manifest" || {
+    rm -rf "$ZM_INSTALL_TMPDIR"
+    verify_error "failed to fetch release manifest"
+  }
+  parse_manifest_file "$ZM_INSTALL_TMPDIR/install-manifest" || return "$?"
+}
+
+install_cleanup_tmp() {
+  if [ -n "${ZM_INSTALL_TMPDIR:-}" ]; then
+    rm -rf "$ZM_INSTALL_TMPDIR"
+    ZM_INSTALL_TMPDIR=
+  fi
+}
+
+config_write_local() {
+  # Writes final config + secrets + service definition (config_switched).
+  cfg_root=$ZM_CONFIG_ROOT
+  if [ ! -d "$cfg_root" ]; then
+    mkdir -p "$cfg_root"
+    chmod 700 "$cfg_root"
+  fi
+  {
+    printf 'CONFIG_SCHEMA=%s\n' "$CONFIG_SCHEMA"
+    printf 'MODE=local\n'
+    printf 'VERSION=%s\n' "$ZM_MF_VERSION"
+    printf 'PORT=%s\n' "$INSTALL_PORT"
+    printf 'BIND_ADDRESS=%s\n' "$INSTALL_BIND"
+    printf 'ALLOWED_HOST=%s\n' "$INSTALL_ALLOWED_HOST"
+    printf 'PI_DIR=%s\n' "$CFG_PI_DIR"
+    printf 'WORKSPACE=\n'
+    printf 'IMAGE=\n'
+    printf 'SERVICE_MANAGER=%s\n' "$CFG_SERVICE_MANAGER"
+  } > "$cfg_root/config"
+  chmod 600 "$cfg_root/config"
+  {
+    printf 'DAEMON_TOKEN=%s\n' "$SEC_DAEMON_TOKEN"
+    printf 'WEB_PASSWORD=%s\n' "$SEC_WEB_PASSWORD"
+  } > "$cfg_root/secrets"
+  chmod 600 "$cfg_root/secrets"
+}
+
+install_activate_service() {
+  # Installs the rendered service definition for a configured local install.
+  case "$CFG_SERVICE_MANAGER" in
+    systemd)
+      mkdir -p "$ZM_XDG_CONFIG/systemd/user"
+      render_systemd_unit > "$ZM_SYSTEMD_UNIT"
+      chmod 600 "$ZM_SYSTEMD_UNIT"
+      # A unit outside the running manager's search path is made visible
+      # with `link` before reload/enable.
+      if [ "$ZM_XDG_CONFIG" != "$ZM_HOME/.config" ]; then
+        systemctl --user link "$ZM_SYSTEMD_UNIT" || runtime_error "systemd link failed"
+      fi
+      systemctl --user daemon-reload || runtime_error "systemd daemon-reload failed"
+      systemctl --user enable "$SYSTEMD_UNIT_BASENAME" || runtime_error "systemd enable failed"
+      ;;
+    launchd)
+      mkdir -p "$ZM_LAUNCH_AGENT"
+      render_launchd_plist > "$ZM_LAUNCH_AGENT"
+      chmod 600 "$ZM_LAUNCH_AGENT"
+      launchctl bootstrap "gui/$(id -u)" "$ZM_LAUNCH_AGENT" 2>/dev/null || :
+      ;;
+    none) : ;;
+  esac
+}
+
+install_start_runtime() {
+  # Returns 0 when started + healthy; 1 otherwise. Manager mode only.
+  case "$CFG_SERVICE_MANAGER" in
+    none)
+      out "SERVICE_MANAGER=none: launch Cowork with 'zosma serve'."
+      return 0
+      ;;
+    systemd)
+      if [ "$opt_no_start" -eq 0 ]; then
+        systemctl --user start "$SYSTEMD_UNIT_BASENAME" || runtime_error "systemd start failed"
+        health_web_ok || runtime_error "Cowork did not become healthy after starting"
+      fi
+      ;;
+    launchd)
+      launchctl bootstrap "gui/$(id -u)" "$ZM_LAUNCH_AGENT" 2>/dev/null || :
+      if [ "$opt_no_start" -eq 0 ]; then
+        launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL" 2>/dev/null || :
+        health_web_ok || runtime_error "Cowork did not become healthy after starting"
+      fi
+      ;;
+  esac
+  return 0
+}
+
+health_web_ok() {
+  # $INSTALL_PORT, $SEC_WEB_PASSWORD, $INSTALL_ALLOWED_HOST
+  cfg=$(mktemp "${TMPDIR:-/tmp}/zosma-health.XXXXXX") || return 1
+  chmod 600 "$cfg"
+  {
+    printf 'silent\nshow-error\nmax-time 30\nconnect-timeout 5\n'
+    printf 'user = "pi:%s"\n' "$SEC_WEB_PASSWORD"
+    printf 'header = "Host: %s"\n' "$INSTALL_ALLOWED_HOST"
+  } > "$cfg"
+  curl -f -K "$cfg" "http://127.0.0.1:$INSTALL_PORT/api/v1/health" >/dev/null 2>&1 &
+  cpid=$!
+  n=0
+  rc=1
+  while kill -0 "$cpid" 2>/dev/null; do
+    if [ "$n" -ge 30 ]; then
+      kill -TERM "$cpid" 2>/dev/null || :
+      sleep 1
+      kill -KILL "$cpid" 2>/dev/null || :
+      wait "$cpid" 2>/dev/null || :
+      rm -f "$cfg"
+      return 1
+    fi
+    sleep 1
+    n=$((n + 1))
+  done
+  wait "$cpid"
+  rc=$?
+  rm -f "$cfg"
+  [ "$rc" -eq 0 ]
+}
+
+assert_existing_roots() {
+  # A fresh installation refuses any existing unmarked or symlinked path in
+  # its managed roots; nothing is overwritten on a collision.
+  for d in "$ZM_DATA_ROOT" "$ZM_CONFIG_ROOT" "$ZM_STATE_ROOT" "$ZM_CACHE_ROOT" \
+    "$ZM_DATA_ROOT/cli" "$ZM_DATA_ROOT/cli/versions" \
+    "$ZM_DATA_ROOT/runtime" "$ZM_DATA_ROOT/runtime/versions" \
+    "$ZM_CLI_CURRENT" "$ZM_RUNTIME_CURRENT" "$ZM_SYSTEMD_UNIT" "$ZM_LAUNCH_AGENT"; do
+    if [ -e "$d" ] || [ -L "$d" ]; then
+      if [ -L "$d" ]; then
+        err "error: refusing to install over the symlinked path: $d"
+        return 1
+      fi
+      if [ -d "$d" ] && is_marked_dir "$d"; then
+        continue
+      fi
+      err "error: refusing to install over the unmarked path: $d"
+      return 1
+    fi
+  done
+  if [ -e "$ZM_BIN_DIR/zosma" ] || [ -L "$ZM_BIN_DIR/zosma" ]; then
+    err "error: refusing to overwrite the existing launcher: $ZM_BIN_DIR/zosma"
+    return 1
+  fi
+  return 0
+}
+
+assert_existing_version_paths() {
+  # Version directories are managed paths too, but their names come from the
+  # verified manifest and therefore must be checked after it is resolved.
+  for d in \
+    "$ZM_CLI_VERSIONS/$ZM_MF_VERSION" \
+    "$ZM_RUNTIME_VERSIONS/$ZM_MF_VERSION"; do
+    if [ -e "$d" ] || [ -L "$d" ]; then
+      if [ -L "$d" ] || [ ! -d "$d" ] || ! is_marked_dir "$d"; then
+        err "error: refusing to install over the unmarked path: $d"
+        return 1
+      fi
+    fi
+  done
+  return 0
+}
+
+install_fresh_local() {
+  resolve_roots
+  if ! assert_existing_roots; then
+    exit "$EXIT_INTERNAL"
+  fi
+  sha_tool_detect
+  install_resolve_manifest || return "$?"
+  if ! assert_existing_version_paths; then
+    exit "$EXIT_INTERNAL"
+  fi
+  trap 'install_cleanup_tmp' EXIT
+
+  local_pi_dir
+  CFG_PI_DIR=$PI_DIR_RESOLVED
+  CFG_SERVICE_MANAGER=$(detect_service_manager)
+  # LAN vs loopback: loopback keeps an empty web password; LAN generates one.
+  if [ "$INSTALL_BIND" = "0.0.0.0" ]; then
+    INSTALL_ALLOWED_HOST=$opt_hostname
+    SEC_WEB_PASSWORD=$(gen_hex 32)
+  else
+    INSTALL_ALLOWED_HOST=127.0.0.1
+    SEC_WEB_PASSWORD=
+  fi
+  SEC_DAEMON_TOKEN=$(gen_hex 64)
+  case "$SEC_DAEMON_TOKEN" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) : ;; *) internal_error "failed to generate a daemon token" ;; esac
+
+  # Download the archive and checksum list, then verify three ways.
+  expect_name=$(archive_basename)
+  stage_root=$ZM_STATE_ROOT/transaction
+  mkdir -p "$stage_root"
+  arch_sha=
+  case "$PLATFORM_OS-$PLATFORM_ARCH" in
+    linux-x64) arch_url=$ZM_MF_ARCH_LINUX_X64_URL ;;
+    linux-arm64) arch_url=$ZM_MF_ARCH_LINUX_ARM64_URL ;;
+    darwin-x64) arch_url=$ZM_MF_ARCH_DARWIN_X64_URL ;;
+    darwin-arm64) arch_url=$ZM_MF_ARCH_DARWIN_ARM64_URL ;;
+    *) internal_error "unreachable platform tuple" ;;
+  esac
+  archive_tmp=$stage_root/$expect_name
+  sums_tmp=$stage_root/SHA256SUMS
+  cli_curl_download "$ZM_MF_SUMS_URL" "$sums_tmp" || verify_error "failed to download checksum list"
+  cli_curl_download "$arch_url" "$archive_tmp" || verify_error "failed to download server archive"
+  ZFIX_ARCHIVE_SUMS=$sums_tmp
+  verify_archive "$archive_tmp"
+
+  validate_archive_members "$archive_tmp"
+
+  # Stage the runtime tree and validate it before activation.
+  stage_extract=$stage_root/.extract.XXXXXX
+  extract_dir=$(mktemp -d "${stage_extract%.XXXXXX}.XXXXXX") || internal_error "cannot create stage"
+  tar -xzf "$archive_tmp" -C "$extract_dir" || verify_error "failed to extract archive"
+  validate_runtime_tree "$extract_dir"
+
+  # Create the CLI generation (protected, not yet active).
+  cli_versions=$ZM_CLI_VERSIONS
+  mkdir -p "$cli_versions/$ZM_MF_VERSION/generations"
+  cli_gen=$(new_generation_dir "$cli_versions/$ZM_MF_VERSION/generations")
+  cli_gen_dir=$cli_versions/$ZM_MF_VERSION/generations/$cli_gen
+  mkdir -p "$cli_gen_dir"
+  # Replicate this CLI as the generation executable.
+  cp "$0" "$cli_gen_dir/zosma"
+  chmod 755 "$cli_gen_dir/zosma"
+
+  # Probe both managed ports with the staged bundled node before activation.
+  probe_result=$("$extract_dir/runtime/bin/node" "$0" 2>/dev/null && true) || :
+  probe_result=$(port_probe "$extract_dir/runtime/bin/node" "$INSTALL_PORT" "$FIXED_DAEMON_PORT") || probe_result=
+  probe_web_line=$(printf '%s\n' "$probe_result" | sed -n '1p')
+  probe_daemon_line=$(printf '%s\n' "$probe_result" | sed -n '2p')
+  if [ -n "$probe_result" ] && printf '%s\n' "$probe_result" | grep -q ":occupied"; then
+    if printf '%s\n' "$probe_web_line" | grep -q ":occupied"; then
+      err "error: the configured port $INSTALL_PORT is already in use; pass --port to select another"
+    else
+      err "error: the fixed daemon port $FIXED_DAEMON_PORT is in use; stop the conflicting listener first"
+    fi
+    rm_generation_dir "$cli_gen_dir" 2>/dev/null || :
+    rm -rf "$stage_root" "$extract_dir" 2>/dev/null || :
+    runtime_error "cannot start while a managed port is occupied"
+  fi
+
+  # ---- transaction journal (fresh) ----
+  jrnl_reset
+  JRNL_KIND=fresh
+  JRNL_MODE=local
+  JRNL_KEEP_CLI=1
+  JRNL_STAGE=$stage_root
+  JRNL_NEW_CLI=$cli_gen_dir
+  JRNL_NEW_RUNTIME=
+  jrnl_persist prepared
+
+  # Fresh installs have no prior service to stop, but retain the explicit
+  # lifecycle phase so recovery observes the same ordered transaction.
+  jrnl_persist old_stopped
+
+  # runtime_switched: move the runtime generation into place under its version
+  runtime_versions=$ZM_RUNTIME_VERSIONS
+  mkdir -p "$runtime_versions/$ZM_MF_VERSION/generations"
+  rt_gen=$(new_generation_dir "$runtime_versions/$ZM_MF_VERSION/generations")
+  rt_dir=$runtime_versions/$ZM_MF_VERSION/generations/$rt_gen
+  mv "$extract_dir" "$rt_dir"
+  rt_parent=${ZM_RUNTIME_CURRENT%/*}
+  mkdir -p "$rt_parent"
+  replace_link "$rt_dir" "$rt_parent" current || internal_error "cannot link runtime/current"
+  # stage markers on the runtime root tree
+  mark_root_tree "$rt_dir" "$ZM_DATA_ROOT"
+  JRNL_NEW_RUNTIME=$rt_dir
+  jrnl_persist runtime_switched
+
+  # cli_switched: mark + point cli/current and the launcher
+  mark_root_tree "$cli_gen_dir" "$ZM_DATA_ROOT"
+  cli_parent=${ZM_CLI_CURRENT%/*}
+  mkdir -p "$cli_parent"
+  replace_link "$cli_gen_dir" "$cli_parent" current || internal_error "cannot link cli/current"
+  mkdir -p "$ZM_BIN_DIR"
+  replace_link "$ZM_CLI_CURRENT/zosma" "$ZM_BIN_DIR" zosma || internal_error "cannot link launcher"
+  jrnl_persist cli_switched
+
+  # config_switched: write final config/secrets/service
+  config_write_local
+  install_activate_service
+  jrnl_persist config_switched
+
+  # candidate_started: start + health unless --no-start
+  if [ "$opt_no_start" -eq 1 ]; then
+    out "Installed $ZM_MF_VERSION (stopped)."
+  else
+    if install_start_runtime; then
+      jrnl_persist candidate_started
+      out "Installed $ZM_MF_VERSION and healthy."
+    else
+      runtime_error "installation did not become healthy"
+    fi
+  fi
+
+  # committed
+  chmod_install_roots
+  jrnl_persist committed
+  jrnl_remove
+  rm -rf "$stage_root"
+  install_cleanup_tmp
+
+  # PATH advice without editing profiles.
+  case ":$PATH:" in
+    *":$ZM_BIN_DIR:"*) : ;;
+    *) out "Add $ZM_BIN_DIR to your PATH, or run 'export PATH=\$PATH:$ZM_BIN_DIR'." ;;
+  esac
+  if [ "$opt_no_start" -eq 1 ] && [ "$CFG_SERVICE_MANAGER" = "none" ]; then
+    out "Start Cowork with 'zosma serve'."
+  fi
+}
+
+recover_transaction() {
+  resolve_roots
+  [ -e "$ZM_TRANSACTION_JOURNAL" ] || return 0
+  [ -f "$ZM_TRANSACTION_JOURNAL" ] || {
+    err "error: transaction state is not a regular file; refusing to continue"
+    exit "$EXIT_USAGE"
+  }
+  jrnl_read || return $?
+  if [ "$JRNL_PHASE" = "committed" ]; then
+    jrnl_remove
+    if [ -n "$JRNL_STAGE" ]; then rm -rf "$JRNL_STAGE"; fi
+    return 0
+  fi
+  # Non-committed rollback: restore the prior complete state. For a fresh
+  # transaction this removes runtime/config/secrets/service activation and
+  # may retain only the verified CLI generation/current launcher.
+  if [ -n "$JRNL_NEW_RUNTIME" ]; then
+    rm_generation_dir "$JRNL_NEW_RUNTIME" || exit "$EXIT_USAGE"
+    prune_runtime_empty
+  fi
+  rm -f "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+  rm -f "$ZM_SYSTEMD_UNIT" "$ZM_LAUNCH_AGENT"
+  if [ "$JRNL_KEEP_CLI" != "1" ] && [ -n "$JRNL_NEW_CLI" ]; then
+    rm_generation_dir "$JRNL_NEW_CLI" || exit "$EXIT_USAGE"
+  fi
+  if [ -n "$JRNL_STAGE" ]; then
+    if within_root "$JRNL_STAGE" "$ZM_TRANSACTION_ROOT"; then
+      rm -rf "$JRNL_STAGE"
+    else
+      err "error: refusing to remove unexpected stage root: $JRNL_STAGE"
+      exit "$EXIT_USAGE"
+    fi
+  fi
+  jrnl_remove
+  err "error: the previous installation attempt was incomplete; it was rolled back"
+}
+
 cmd_install() {
   parse_install_options "$@"
   validate_install_request
+  recover_transaction
   if [ "$opt_dry_run" -eq 1 ]; then
     print_install_plan
     return 0
   fi
-  usage_error "install activation is not implemented yet (Phase 3 tasks 4/6)"
+  case "$MODE" in
+    local) install_fresh_local ;;
+    docker) verify_error "docker installation is implemented in Phase 3 task 6" ;;
+  esac
 }
-cmd_serve() { usage_error "serve is not implemented yet"; }
+proc_done() {
+  # 0 when $1 has exited (reaped or zombie).
+  st=$(ps -p "$1" -o stat= 2>/dev/null) || return 0
+  if [ -z "$st" ]; then return 0; fi
+  case "$st" in
+    Z*|X*) return 0 ;;
+  esac
+  return 1
+}
+
+serve_help() {
+  cat <<'HELP'
+usage: zosma serve [--service]
+
+Runs the local Cowork server in the foreground under the bundled runtime.
+--service suppresses interactive/browser behavior (used by generated units).
+HELP
+}
+
+cmd_serve() {
+  service_mode=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --service) service_mode=1 ;;
+      -h|--help) serve_help; return 0 ;;
+      *) usage_error "unknown serve option: $1" ;;
+    esac
+    shift
+  done
+  resolve_roots
+  parse_config_files "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+  if [ "$CFG_MODE" != "local" ]; then
+    usage_error "serve is local-mode only; docker installations use 'zosma start'"
+  fi
+  runtime_dir=$ZM_RUNTIME_CURRENT
+  node_bin=$runtime_dir/runtime/bin/node
+  supervisor=$runtime_dir/supervisor/run-server.mjs
+  if [ ! -f "$node_bin" ] || [ ! -f "$supervisor" ]; then
+    runtime_error "local runtime is not installed"
+  fi
+  # Exact documented runtime environment; secrets environment-only.
+  export PORT="$CFG_PORT"
+  export PI_WEB_HOSTNAME="$CFG_BIND"
+  export PI_WEB_ALLOWED_HOSTS="$CFG_ALLOWED_HOST"
+  export PI_WEB_PASSWORD="$SEC_WEB_PASSWORD"
+  export PI_CODING_AGENT_DIR="$CFG_PI_DIR"
+  export PI_WEB_NO_OPEN=1
+  export ZOSMA_DAEMON_DATA_DIR="$ZM_STATE_ROOT/daemon"
+  export ZOSMA_DAEMON_PORT="$FIXED_DAEMON_PORT"
+  export ZOSMA_DAEMON_TOKEN="$SEC_DAEMON_TOKEN"
+  [ "$service_mode" -eq 1 ] && export PI_WEB_NO_OPEN=1
+
+  "$node_bin" "$supervisor" &
+  sup_pid=$!
+  death=
+  trap 'death=TERM' INT TERM
+  status=0
+  while :; do
+    if [ -n "$death" ]; then
+      # Forward a catchable TERM, wait (default 9s) for the supervisor's own
+      # 7s child cleanup, then SIGKILL and observe for 2 more seconds.
+      kill -s TERM "$sup_pid" 2>/dev/null || :
+      grace=${ZOSMA_SERVE_ESCALATE:-9}
+      n=0
+      while ! proc_done "$sup_pid"; do
+        n=$((n + 1))
+        if [ "$n" -ge "$grace" ]; then
+          kill -s KILL "$sup_pid" 2>/dev/null || :
+          break
+        fi
+        sleep 1
+      done
+      wait "$sup_pid" 2>/dev/null || :
+      exit 0
+    fi
+    if proc_done "$sup_pid"; then
+      wait "$sup_pid" 2>/dev/null || status=$?
+      break
+    fi
+    sleep 1
+  done
+  death=
+  if [ "$status" -ne 0 ]; then
+    exit "$EXIT_RUNTIME"
+  fi
+  exit 0
+}
 cmd_start() { usage_error "start is not implemented yet"; }
 cmd_stop() { usage_error "stop is not implemented yet"; }
 cmd_restart() { usage_error "restart is not implemented yet"; }
-cmd_status() { usage_error "status is not implemented yet"; }
+cmd_status() {
+  [ "$#" -eq 0 ] || usage_error "status does not accept options"
+  resolve_roots
+  if [ ! -f "$ZM_CONFIG_ROOT/config" ]; then
+    out "zosma-cowork: not installed (no mode configuration)"
+    return "$EXIT_RUNTIME"
+  fi
+  parse_config_files "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+  out "zosma-cowork $CFG_VERSION ($CFG_MODE)"
+  out "Web: http://127.0.0.1:$CFG_PORT"
+  if [ "$CFG_SERVICE_MANAGER" = "none" ]; then
+    out "Service: foreground (run 'zosma serve')"
+  else
+    out "Service: $CFG_SERVICE_MANAGER"
+  fi
+}
 cmd_logs() { usage_error "logs is not implemented yet"; }
 cmd_open() { usage_error "open is not implemented yet"; }
 cmd_doctor() { usage_error "doctor is not implemented yet"; }
@@ -948,19 +2002,19 @@ main() {
   shift
   case "$cmd" in
     version) cmd_version "$@" ;;
-    install) cmd_install "$@" ;;
-    serve) cmd_serve "$@" ;;
-    start) cmd_start "$@" ;;
-    stop) cmd_stop "$@" ;;
-    restart) cmd_restart "$@" ;;
-    status) cmd_status "$@" ;;
-    logs) cmd_logs "$@" ;;
-    open) cmd_open "$@" ;;
-    doctor) cmd_doctor "$@" ;;
-    access) cmd_access "$@" ;;
-    update) cmd_update "$@" ;;
-    uninstall) cmd_uninstall "$@" ;;
     help|-h|--help) print_help ;;
+    install) recover_transaction; cmd_install "$@" ;;
+    serve) recover_transaction; cmd_serve "$@" ;;
+    start) recover_transaction; cmd_start "$@" ;;
+    stop) recover_transaction; cmd_stop "$@" ;;
+    restart) recover_transaction; cmd_restart "$@" ;;
+    status) recover_transaction; cmd_status "$@" ;;
+    logs) recover_transaction; cmd_logs "$@" ;;
+    open) recover_transaction; cmd_open "$@" ;;
+    doctor) recover_transaction; cmd_doctor "$@" ;;
+    access) recover_transaction; cmd_access "$@" ;;
+    update) recover_transaction; cmd_update "$@" ;;
+    uninstall) recover_transaction; cmd_uninstall "$@" ;;
     *) usage_error "unknown command: $cmd" ;;
   esac
 }
