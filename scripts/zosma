@@ -2026,10 +2026,35 @@ install_fresh_docker() {
   install_cleanup_tmp
 }
 
+docker_update_existing() {
+  install_resolve_manifest || return "$?"
+  docker_prerequisites
+  docker_verify_image
+  CFG_IMAGE=$ZM_MF_DOCKER_IMAGE
+  docker_compose down || runtime_error "failed to stop the previous Docker Cowork"
+  docker_compose up -d || runtime_error "failed to start the updated Docker Cowork"
+  health_installed || runtime_error "updated Docker Cowork did not become healthy"
+  out "Updated Docker image $CFG_IMAGE."
+}
+
 cmd_install() {
   parse_install_options "$@"
   validate_install_request
   recover_transaction
+  resolve_roots
+  if [ -f "$ZM_CONFIG_ROOT/config" ]; then
+    parse_config_files "$ZM_CONFIG_ROOT/config" "$ZM_CONFIG_ROOT/secrets"
+    if [ "$CFG_MODE" != "$MODE" ]; then
+      usage_error "an installation already exists in $CFG_MODE mode; uninstall it without --purge-data before switching modes"
+    fi
+    [ "$opt_dry_run" -eq 1 ] && { print_install_plan; return 0; }
+    [ "$opt_no_start" -eq 0 ] || usage_error "same-mode reinstall uses update semantics and cannot use --no-start"
+    opt_yes=1
+    case "$MODE" in
+      local) update_local; return 0 ;;
+      docker) docker_update_existing; return 0 ;;
+    esac
+  fi
   if [ "$opt_dry_run" -eq 1 ]; then
     print_install_plan
     return 0
