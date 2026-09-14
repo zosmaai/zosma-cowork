@@ -17,7 +17,8 @@ export type StreamAction =
   | { type: "start" }
   | { type: "snapshot"; message: AgentMessage }
   | { type: "delta"; event: ClientAssistantMessageEvent }
-  | { type: "end" };
+  | { type: "end" }
+  | { type: "frozen" };
 
 export const INITIAL_STREAMING_STATE: StreamingState = {
   isStreaming: false,
@@ -138,6 +139,13 @@ export function streamReducer(
       return applyDelta(state, action.event);
     case "end":
       return INITIAL_STREAMING_STATE;
+    case "frozen":
+      // Abort: stop streaming but keep the optimistic/partial tail rendered
+      // (frozen) instead of discarding it — the thread keeps its pre-abort
+      // look and the next turn's `start` replaces the tail.
+      return state.isStreaming && state.streamingMessage
+        ? { isStreaming: false, streamingMessage: state.streamingMessage }
+        : state;
     default:
       return state;
   }

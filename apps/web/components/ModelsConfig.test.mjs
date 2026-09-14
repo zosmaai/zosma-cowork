@@ -155,10 +155,10 @@ test("per-model settings use one primary divider before advanced settings", () =
   );
 
   assert.equal(
-    (modelDetail.match(/borderTop: "1px solid var\(--border\)"/g) ?? []).length,
+    (modelDetail.match(/border-t border-\(--border\)/g) ?? []).length,
     1,
   );
-  assert.doesNotMatch(modelDetail, /borderBottom: "1px solid var\(--border\)"/);
+  assert.doesNotMatch(modelDetail, /border-b border-\(--border\)/);
 });
 
 test("thinking level overrides keep explicit default, disabled, and custom controls", () => {

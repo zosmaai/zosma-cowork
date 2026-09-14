@@ -9,7 +9,7 @@ const webRoot = fileURLToPath(new URL("../", import.meta.url));
 const BROWSER_FILES = [
   "components/AppShell.tsx",
   "components/session-sidebar/use-session-sidebar-model.ts",
-  "components/ChatWindow.tsx",
+  "hooks/useSessionLoader.ts",
   "components/MessageView.tsx",
   "hooks/useAgentSession.ts",
 ];
@@ -39,7 +39,11 @@ test("migrated browser reads never revert to legacy URLs", async () => {
 test("migrated browser reads are served by the v1 client", async () => {
   for (const file of BROWSER_FILES) {
     const source = await readFile(join(webRoot, file), "utf8");
-    assert.match(source, /from ["'`]@\/lib\/api-v1-client["'`]/, file);
+    assert.match(
+      source,
+      /from ["'`](@\/lib\/api-v1-client|@\/services\/[a-z-]+\.service)["'`]/,
+      file,
+    );
   }
   const clientSource = await readFile(join(webRoot, "lib", "api-v1-client.ts"), "utf8");
   assert.doesNotMatch(clientSource, /\/api\/(?!\/v1)\//); // no legacy path inside the v1 client

@@ -11,6 +11,6 @@ test("uses the server-resolved current worktree identity", () => {
     modelSource,
     /const currentWorktree =[\s\S]*?worktreeState\.currentWorktreePath[\s\S]*?worktree\.path === worktreeState\.currentWorktreePath/,
   );
-  assert.match(modelSource, /if \(currentWorktreePath === path\) setSelectedCwd\(worktreeState\.projectRoot\)/);
+  assert.match(modelSource, /if \(currentWorktreePath === path\)\s*setSelectedCwd\(worktreeState\.projectRoot\)/);
   assert.doesNotMatch(modelSource, /const isCurrent = wt\.path === selectedCwd/);
 });

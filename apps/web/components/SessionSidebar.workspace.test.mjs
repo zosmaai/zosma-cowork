@@ -24,7 +24,7 @@ test("sidebar no longer owns folder validation", () => {
 });
 
 test("projectFor prefers the shell-provided validated identity before session and worktree fallbacks", () => {
-  const body = callbackBody("projectFor", "}, [validatedProject, worktreeState, allSessions, projectSelection]);");
+  const body = callbackBody("projectFor", "[validatedProject, worktreeState, allSessions, projectSelection],");
   const validatedAt = body.indexOf("validatedProject?.cwd === cwd");
   const worktreeAt = body.indexOf("worktreeState && worktreeState.forCwd === cwd");
   const sessionsAt = body.indexOf("allSessions.find(");
@@ -91,7 +91,7 @@ test("the transient workspace row keeps the exact validated cwd", () => {
 });
 
 test("re-selecting the active workspace only ensures expansion and never rewrites cwd", () => {
-  const body = callbackBody("handleWorkspaceSelect", "\n  },");
+  const body = callbackBody("handleWorkspaceSelect", "[selectedCwd, explorerProject],");
   const guardAt = body.indexOf("row.key === explorerProject?.key");
   assert.ok(guardAt >= 0, "already-selected guard present");
   const between = body.slice(guardAt, body.indexOf("setSelectedCwd("));
@@ -111,7 +111,8 @@ test("worktree switcher renders inside the workspace list and collapse closes it
 
 test("session action guards remain intact", () => {
   assert.match(sessionItem, /if \(session\.transient\) return;/);
-  assert.match(sessionItem, /if \(e\.shiftKey\) \{/);
   assert.match(sessionItem, /dispatchSessionRowContextMenu\(\{/);
-  assert.match(sessionItem, /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/);
+  assert.match(sessionItem, /onContextMenu=\{handleContextMenu\}/);
+  assert.doesNotMatch(sessionItem, /onContextMenu=\{confirmDelete \|\| renaming \? undefined : handleContextMenu\}/, "no stale nested-guard context menu");
+  assert.doesNotMatch(sessionItem, /if \(e\.shiftKey\) \{/, "shift-click fork guard removed by revamp");
 });

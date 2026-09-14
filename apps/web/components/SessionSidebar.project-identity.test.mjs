@@ -8,7 +8,7 @@ const composerSource = await readFile(new URL("./SessionSidebar.tsx", import.met
 
 test("projectFor prefers the shell-provided validated identity before session and worktree fallbacks", () => {
   const start = modelSource.indexOf("const projectFor = useCallback");
-  const end = modelSource.indexOf("}, [validatedProject, worktreeState, allSessions, projectSelection]);", start);
+  const end = modelSource.indexOf("[validatedProject, worktreeState, allSessions, projectSelection],", start);
   assert.notEqual(start, -1, "projectFor callback not found");
   assert.notEqual(end, -1, "projectFor callback end not found");
   const body = modelSource.slice(start, end);

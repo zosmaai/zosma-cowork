@@ -4,6 +4,7 @@ import test from "node:test";
 
 const messageSource = await readFile(new URL("./MessageView.tsx", import.meta.url), "utf8");
 const chatSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+const windowSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const flowSource = await readFile(new URL("../lib/conversation-flow.ts", import.meta.url), "utf8");
 const branchSource = await readFile(new URL("./BranchNavigator.tsx", import.meta.url), "utf8");
 const appSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
@@ -37,9 +38,10 @@ test("conversation source exposes flow anchors", async () => {
   assert.doesNotMatch(chatSource, /<ProcessDetailsGroup/);
   assert.match(chatSource, /visibleProcessIndices\.forEach/);
   assert.match(chatSource, /from "@\/lib\/conversation-flow"/);
-  assert.match(chatSource, /attachRef: attachFinalProcessRef/);
-  assert.match(chatSource, /forwardDroppedImages\(chatInputRef\?\.current, files\)/);
-  for (const handler of ["onDragEnter={handleDragEnter}", "onDragOver={handleDragOver}", "onDragLeave={handleDragLeave}", "onDrop={handleDrop}"]) assert.match(chatSource, new RegExp(handler));
+  assert.match(chatSource, /finalProcessMessage/);
+  assert.match(chatSource, /withAssistantBlocks\(finalAssistant, finalSplit\.processBlocks/);
+  assert.match(windowSource, /forwardDroppedImages\(chatInputRef\?\.current, files\)/);
+  for (const handler of ["onDragEnter={handleDragEnter}", "onDragOver={handleDragOver}", "onDragLeave={handleDragLeave}", "onDrop={handleDrop}"]) assert.match(windowSource, new RegExp(handler));
   assert.match(flowSource, /shouldAttachFinalProcessRef/);
   assert.match(branchSource, /className="branch-flow-trigger"/);
   assert.match(appSource, /toggleTopPanel\("branches", true\)[\s\S]*?aria-pressed[\s\S]*?data-mobile-toolbar-action="branches"/);

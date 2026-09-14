@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { PluginPackageInfo, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
+import { pluginsService } from "@/services/plugins.service";
+import { TAGS } from "@/services/tags";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -62,7 +65,7 @@ function statusColor(status: PluginPackageInfo["status"]): string {
   if (status === "loaded") return "var(--accent)";
   if (status === "installed") return "#f59e0b";
   if (status === "disabled") return "var(--text-dim)";
-  return "#ef4444";
+  return "var(--state-error)";
 }
 
 function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
@@ -82,7 +85,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 
   if (groups.length === 0) {
     return (
-      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+      <div className="text-xs text-(--text-dim)">
         {pkg.disabled ? t("i18n.packageDisabled") : t("i18n.noResolvedResources")}
       </div>
     );
@@ -90,57 +93,29 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
+      className="flex flex-col gap-3"
     >
       {groups.map((group, groupIndex) => (
         <div
           key={group.kind}
-          style={{
-            borderTop: groupIndex === 0 ? "none" : "1px solid var(--border)",
-            paddingTop: groupIndex === 0 ? 0 : 12,
-          }}
+          className={`${groupIndex === 0 ? "border-t-0" : "border-t border-(--border)"} ${groupIndex === 0 ? "pt-0" : "pt-3"}`}
         >
           <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "var(--text-dim)",
-              textTransform: "uppercase",
-              marginBottom: 6,
-            }}
+            className="text-[11px] font-bold text-(--text-dim) uppercase tracking-[0.04em] mb-1.5"
           >
             {group.label}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="flex flex-col gap-6">
             {group.resources.map((resource) => (
-              <div key={`${resource.kind}:${resource.path}`} style={{ minWidth: 0 }}>
+              <div key={`${resource.kind}:${resource.path}`} className="min-w-0">
                 <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text)",
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
+                  className="text-xs text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap"
                   title={resource.path}
                 >
                   {resource.name}
                 </div>
                 <div
-                  style={{
-                    fontSize: 10,
-                    color: "var(--text-dim)",
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    marginTop: 1,
-                  }}
+                  className="text-[11px] text-(--text-dim) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap mt-0.5"
                   title={resource.path}
                 >
                   {resource.relativePath}
@@ -157,14 +132,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 function ScopeTag({ scope }: { scope: PluginScope }) {
   return (
     <span
-      style={{
-        fontSize: 10,
-        padding: "1px 5px",
-        borderRadius: 3,
-        flexShrink: 0,
-        background: scope === "project" ? "rgba(99,102,241,0.12)" : "rgba(120,120,120,0.12)",
-        color: scope === "project" ? "rgba(99,102,241,0.85)" : "var(--text-dim)",
-      }}
+      className={`text-[11px] py-[1px] px-1.5 rounded-[3px] shrink-0 ${scope === "project" ? "bg-indigo-500/15" : "bg-black/10"} ${scope === "project" ? "text-indigo-500/85" : "text-(--text-dim)"}`}
     >
       {scope}
     </span>
@@ -177,7 +145,7 @@ function buttonStyle(disabled?: boolean, danger?: boolean): React.CSSProperties 
     background: danger ? "rgba(239,68,68,0.08)" : "none",
     border: "1px solid var(--border)",
     borderRadius: 6,
-    color: danger ? "#ef4444" : "var(--text-muted)",
+    color: danger ? "var(--state-error)" : "var(--text-muted)",
     cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 12,
     opacity: disabled ? 0.5 : 1,
@@ -203,33 +171,10 @@ function Toggle({
       title={label}
       aria-label={label}
       aria-pressed={enabled}
-      style={{
-        flexShrink: 0,
-        width: 40,
-        height: 22,
-        borderRadius: 11,
-        border: "none",
-        padding: 0,
-        cursor: loading ? "wait" : "pointer",
-        background: enabled ? "var(--accent)" : "var(--border)",
-        position: "relative",
-        transition: "background 0.18s",
-        outline: "none",
-        opacity: loading ? 0.65 : 1,
-      }}
+      className={`shrink-0 w-[40px] h-[22px] rounded-[11px] border-none p-0 relative transition-colors duration-150 outline-none ${loading ? "cursor-wait" : "cursor-pointer"} ${enabled ? "bg-(--accent)" : "bg-(--border)"} ${loading ? "opacity-[0.65]" : ""}`}
     >
       <span
-        style={{
-          position: "absolute",
-          top: 3,
-          left: enabled ? 21 : 3,
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: "var(--bg)",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.22)",
-          transition: "left 0.18s cubic-bezier(.4,0,.2,1)",
-        }}
+        className={`absolute top-[3px] w-[16px] h-[16px] rounded-full bg-(--bg) shadow-[0_1px_4px_rgba(0,0,0,0.22)] transition-[left] duration-[0.18s] ease-[cubic-bezier(.4,0,.2,1)] ${enabled ? "left-[21px]" : "left-[3px]"}`}
       />
     </button>
   );
@@ -247,13 +192,7 @@ function SegmentedScope({
   const { t } = useI18n();
   return (
     <div
-      style={{
-        display: "inline-flex",
-        border: "1px solid var(--border)",
-        borderRadius: 7,
-        overflow: "hidden",
-        height: 30,
-      }}
+      className="inline-flex border border-(--border) rounded-[7px] overflow-hidden h-[30px]"
     >
       {(["global", "project"] as PluginScope[]).map((scope) => {
         const active = value === scope;
@@ -266,16 +205,7 @@ function SegmentedScope({
             }}
             disabled={disabled}
             title={disabled ? t("trust.projectScopeUnavailable") : undefined}
-            style={{
-              width: 76,
-              border: "none",
-              borderRight: scope === "global" ? "1px solid var(--border)" : "none",
-              background: active ? "var(--bg-selected)" : "none",
-              color: active ? "var(--text)" : "var(--text-muted)",
-              cursor: disabled ? "not-allowed" : "pointer",
-              opacity: disabled ? 0.45 : 1,
-              fontSize: 12,
-            }}
+            className={`w-[76px] border-none text-xs ${scope === "global" ? "border-r border-(--border)" : "border-r-0"} ${active ? "bg-(--bg-selected)" : "bg-none"} ${active ? "text-(--text)" : "text-(--text-muted)"} ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${disabled ? "opacity-[0.45]" : ""}`}
           >
             {scope}
           </button>
@@ -315,27 +245,19 @@ function AddPluginPanel({
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 660, minHeight: "100%" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+    <div className="flex flex-col gap-[18px] max-w-[660px] min-h-full">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm font-bold text-(--text)">
             {t("i18n.addPlugin")}
           </div>
           <a
             href="https://pi.dev/packages"
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              color: "var(--accent)",
-              fontSize: 12,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
+            className="inline-flex items-center gap-[5px] text-(--accent) text-xs no-underline whitespace-nowrap"
           >
-            <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false" style={{ flexShrink: 0 }}>
+            <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false" className="shrink-0">
               <path
                 fill="#000"
                 fillRule="evenodd"
@@ -346,13 +268,13 @@ function AddPluginPanel({
             pi.dev/packages
           </a>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+        <div className="text-xs text-(--text-dim) font-(--font-mono)">
           {installLocation(scope, cwd)}
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <label htmlFor="plugin-source" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+      <div className="flex flex-col gap-7">
+        <label htmlFor="plugin-source" className="text-xs font-semibold text-(--text-muted)">
           Source
         </label>
         <input
@@ -369,25 +291,14 @@ function AddPluginPanel({
           }}
           onBlur={(e) => onSourceChange(normalizePluginSourceInput(e.currentTarget.value))}
           placeholder="npm:@scope/package"
-          style={{
-            width: "100%",
-            height: 36,
-            padding: "0 11px",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            background: "var(--bg-panel)",
-            color: "var(--text)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            outline: "none",
-          }}
+          className="w-full h-[36px] py-0 px-[11px] border border-(--border) rounded-md bg-(--bg-panel) text-(--text) font-(--font-mono) text-[13px] outline-none"
           onKeyDown={(e) => {
             if (e.key === "Enter" && source.trim() && !busy) onInstall();
           }}
         />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div className="flex items-center gap-2.5 flex-wrap">
         <SegmentedScope
           value={scope}
           projectResourcesLoaded={projectResourcesLoaded}
@@ -408,29 +319,17 @@ function AddPluginPanel({
         </button>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+      <div className="flex flex-col gap-7">
+        <div className="text-xs font-semibold text-(--text-muted)">
           Examples
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="flex flex-col gap-6">
           {examples.map((example) => (
             <button
               key={example}
               type="button"
               onClick={() => onSourceChange(example)}
-              style={{
-                width: "100%",
-                minHeight: 30,
-                textAlign: "left",
-                padding: "6px 9px",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                background: "var(--bg-panel)",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-              }}
+              className="w-full min-h-[30px] text-left py-1.5 px-[9px] border border-(--border) rounded-md bg-(--bg-panel) text-(--text-dim) cursor-pointer font-(--font-mono) text-[11px]"
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = "var(--text-muted)";
@@ -447,7 +346,7 @@ function AddPluginPanel({
       </div>
 
       {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
+        <div className="text-xs text-(--state-error) whitespace-pre-wrap leading-[1.5]">
           {actionError}
         </div>
       )}
@@ -481,9 +380,9 @@ function PackageDetail({
   const enabled = !pkg.disabled;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 680 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180, flex: 1 }}>
+    <div className="flex flex-col gap-20 max-w-[680px]">
+      <div className="flex items-start justify-between gap-3 min-w-0 flex-wrap">
+        <div className="flex items-center gap-2 min-w-[180px] flex-1">
           <Toggle
             enabled={enabled}
             loading={busy || reloadBusy}
@@ -493,44 +392,25 @@ function PackageDetail({
           <ScopeTag scope={pkg.scope} />
           {pkg.disabled ? (
             <span
-              style={{
-                fontSize: 10,
-                padding: "1px 5px",
-                borderRadius: 3,
-                background: "rgba(120,120,120,0.12)",
-                color: "var(--text-dim)",
-              }}
+              className="text-[11px] py-[1px] px-[5px] rounded-[3px] bg-black/10 text-(--text-dim)"
             >
               {t("i18n.disabled")}
             </span>
           ) : pkg.filtered && (
             <span
-              style={{
-                fontSize: 10,
-                padding: "1px 5px",
-                borderRadius: 3,
-                background: "rgba(245,158,11,0.12)",
-                color: "#d97706",
-              }}
+              className="text-[11px] py-[1px] px-[5px] rounded-[3px] bg-amber-500/15 text-(--state-warning)"
             >
               {t("i18n.filtered")}
             </span>
           )}
           <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--text)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+            className="font-(--font-mono) text-xs text-(--text) overflow-hidden text-ellipsis whitespace-nowrap"
           >
             {pkg.source}
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => onAction("update", pkg)}
             disabled={busy || reloadBusy}
@@ -557,54 +437,44 @@ function PackageDetail({
       </div>
 
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(96px, 130px) minmax(0, 1fr)",
-          gap: "9px 14px",
-          fontSize: 12,
-          lineHeight: 1.45,
-        }}
+        className="grid grid-cols-[minmax(96px,_130px)_minmax(0,_1fr)px] gap-y-[9px] gap-x-3.5 text-xs leading-[1.45px]"
       >
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.status")}</div>
+        <div className="text-(--text-dim)">{t("i18n.status")}</div>
         <div style={{ color: statusColor(pkg.status), textTransform: "capitalize" }}>{pkg.status}</div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.version")}</div>
-         <div style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{versionSummary(pkg, t)}</div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.package")}</div>
-        <div style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
+        <div className="text-(--text-dim)">{t("i18n.version")}</div>
+         <div className="text-(--text-muted) font-(--font-mono)">{versionSummary(pkg, t)}</div>
+        <div className="text-(--text-dim)">{t("i18n.package")}</div>
+        <div className="text-(--text-muted) font-(--font-mono) [overflow-wrap:anywhere]">
           {pkg.packageName ?? t("i18n.unknown")}
         </div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.resources")}</div>
-         <div style={{ color: "var(--text-muted)" }}>{resourceSummary(pkg, t)}</div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.installedPath")}</div>
+        <div className="text-(--text-dim)">{t("i18n.resources")}</div>
+         <div className="text-(--text-muted)">{resourceSummary(pkg, t)}</div>
+        <div className="text-(--text-dim)">{t("i18n.installedPath")}</div>
         <div
-          style={{
-            color: pkg.installedPath ? "var(--text-muted)" : "#ef4444",
-            fontFamily: "var(--font-mono)",
-            overflowWrap: "anywhere",
-          }}
+          className={`font-(--font-mono) [overflow-wrap:anywhere] ${pkg.installedPath ? "text-(--text-muted)" : "text-(--state-error)"}`}
         >
           {pkg.installedPath ? shortenPath(pkg.installedPath) : t("i18n.notFound")}
         </div>
-        <div style={{ color: "var(--text-dim)" }}>{t("i18n.cwd")}</div>
-        <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
+        <div className="text-(--text-dim)">{t("i18n.cwd")}</div>
+        <div className="text-(--text-dim) font-(--font-mono) [overflow-wrap:anywhere]">
           {shortenPath(cwd)}
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>
+      <div className="flex flex-col gap-8">
+        <div className="text-xs font-bold text-(--text)">
           {t("i18n.resolvedResources")}
         </div>
         <ResourceList pkg={pkg} />
       </div>
 
       {actionMessage && (
-        <div style={{ fontSize: 12, color: "#16a34a" }}>
+        <div className="text-xs text-(--state-success)">
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
+        <div className="text-xs text-(--state-error) whitespace-pre-wrap leading-[1.5]">
           {actionError}
         </div>
       )}
@@ -625,9 +495,19 @@ export function PluginsConfig({
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
-  const [data, setData] = useState<PluginsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useQuery(pluginsService.byCwdQueryOptions(cwd));
+  const loading = isFetching;
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : String(queryError)
+    : null;
   const [selected, setSelected] = useState<string | null>(null);
   const [addMode, setAddMode] = useState(false);
   const [installSource, setInstallSource] = useState("");
@@ -646,29 +526,27 @@ export function PluginsConfig({
       .filter((group) => group.packages.length > 0);
   }, [packages]);
 
-  const loadPlugins = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/plugins?cwd=${encodeURIComponent(cwd)}`);
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
-      setAddMode((current) => next.packages.length === 0 || current);
-      setSelected((current) => {
-        if (current && next.packages.some((pkg) => packageKey(pkg) === current)) return current;
-        return next.packages[0] ? packageKey(next.packages[0]) : null;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [cwd]);
+  const loadPlugins = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
+  // Selection / add-mode defaults once the (cached) list arrives. Fetch
+  // itself lives in the TanStack Query cache — remounts are instant.
   useEffect(() => {
-    void loadPlugins();
-  }, [loadPlugins]);
+    if (!data) return;
+    setAddMode((current) => data.packages.length === 0 || current);
+    setSelected((current) => {
+      if (current && data.packages.some((pkg) => packageKey(pkg) === current)) return current;
+      return data.packages[0] ? packageKey(data.packages[0]) : null;
+    });
+  }, [data]);
+
+  const writePlugins = useCallback(
+    (next: PluginsResponse) => {
+      queryClient.setQueryData(TAGS.plugins.byCwd(cwd), next);
+    },
+    [queryClient, cwd],
+  );
 
   const runAction = useCallback(async (action: PluginAction, pkg: PluginPackageInfo) => {
     const key = packageKey(pkg);
@@ -683,7 +561,7 @@ export function PluginsConfig({
       });
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
+      writePlugins(next);
       if (action === "remove") {
         setSelected(next.packages[0] ? packageKey(next.packages[0]) : null);
         if (next.packages.length === 0) setAddMode(true);
@@ -702,7 +580,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd]);
+  }, [cwd, writePlugins]);
 
   const installPlugin = useCallback(async () => {
     const source = normalizePluginSourceInput(installSource).trim();
@@ -720,7 +598,7 @@ export function PluginsConfig({
       });
       const next = (await res.json()) as PluginsResponse & { error?: string };
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
-      setData(next);
+      writePlugins(next);
       const installed = findInstalledPackage(next.packages, source, installScope);
       setSelected(installed ? packageKey(installed) : key);
       setAddMode(false);
@@ -731,7 +609,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd, installScope, installSource]);
+  }, [cwd, installScope, installSource, writePlugins]);
 
   const reloadSession = useCallback(async () => {
     if (!sessionId) return;
@@ -754,15 +632,7 @@ export function PluginsConfig({
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+      className="fixed inset-0 z-[1000] bg-black/35 flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -783,43 +653,21 @@ export function PluginsConfig({
         }}
       >
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 18px",
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
+          className="flex items-center justify-between py-3 px-[18px] border-b border-(--border) shrink-0"
         >
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+          <div className="flex items-baseline gap-10 min-w-0">
+            <span className="text-[15px] font-bold text-(--text)">
               {t("common.plugins")}
             </span>
             <code
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                fontFamily: "var(--font-mono)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              className="text-[11px] text-(--text-muted) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap"
             >
               {shortenPath(cwd)}
             </code>
           </div>
           <button
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 20,
-              lineHeight: 1,
-              padding: "2px 6px",
-            }}
+            className="bg-none border-none text-(--text-muted) cursor-pointer text-xl leading-none py-0.5 px-1.5"
           >
             ×
           </button>
@@ -828,19 +676,13 @@ export function PluginsConfig({
         {!projectResourcesLoaded && (
           <div
             role="status"
-            style={{
-              padding: "8px 18px",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              fontSize: 12,
-            }}
+            className="py-2 px-[18px] border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-xs"
           >
             {t("trust.pluginsNotLoaded")}
           </div>
         )}
 
-        <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
+        <div className={`flex-1 flex overflow-hidden ${isMobile ? "flex-col" : "flex-row"}`}>
           <div
             style={{
               width: isMobile ? "100%" : 245,
@@ -853,30 +695,24 @@ export function PluginsConfig({
               background: "var(--bg-panel)",
             }}
           >
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
+            <div className="flex-1 overflow-y-auto py-2 px-1.5">
               {loading ? (
-                <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--text-muted)" }}>
+                <div className="py-2.5 px-2 text-xs text-(--text-muted)">
                   Loading...
                 </div>
               ) : error ? (
-                <div style={{ padding: "10px 8px", fontSize: 11, color: "#ef4444" }}>
+                <div className="py-2.5 px-2 text-[11px] text-(--state-error)">
                   {error}
                 </div>
               ) : packages.length === 0 ? (
-                <div style={{ padding: "10px 8px", fontSize: 11, color: "var(--text-dim)" }}>
+                <div className="py-2.5 px-2 text-[11px] text-(--text-dim)">
                   No plugins configured
                 </div>
               ) : (
                 groupedPackages.map((group) => (
-                  <div key={group.scope} style={{ marginBottom: 6 }}>
+                  <div key={group.scope} className="mb-6">
                     <div
-                      style={{
-                        padding: "4px 8px 3px",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: "var(--text-dim)",
-                        textTransform: "uppercase",
-                      }}
+                      className="pt-1 px-2 pb-[3px] text-[11px] font-semibold text-(--text-dim) uppercase"
                     >
                       {group.scope}
                     </div>
@@ -892,15 +728,7 @@ export function PluginsConfig({
                             setActionError(null);
                             setActionMessage(null);
                           }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 7,
-                            padding: "8px 8px",
-                            borderRadius: 5,
-                            cursor: "pointer",
-                            background: isSelected ? "var(--bg-selected)" : "none",
-                          }}
+                          className={`flex items-center gap-[7px] py-2 px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "bg-none"}`}
                           onMouseEnter={(e) => {
                             if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)";
                           }}
@@ -917,42 +745,20 @@ export function PluginsConfig({
                               background: statusColor(pkg.status),
                             }}
                           />
-                          <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="min-w-0 flex-1">
                             <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: isSelected ? 600 : 400,
-                                color: "var(--text)",
-                                fontFamily: "var(--font-mono)",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
+                              className={`text-xs text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap ${isSelected ? "font-semibold" : ""}`}
                             >
                               {pkg.source}
                             </div>
                             <div
-                              style={{
-                                fontSize: 10,
-                                color: "var(--text-dim)",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                marginTop: 2,
-                              }}
+                              className="text-[11px] text-(--text-dim) overflow-hidden text-ellipsis whitespace-nowrap mt-0.5"
                             >
                               {resourceSummary(pkg, t)}
                             </div>
                             {(pkg.version || pkg.configuredVersion) && (
                               <div
-                                style={{
-                                  fontSize: 10,
-                                  color: "var(--text-dim)",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  marginTop: 2,
-                                }}
+                                className="text-[11px] text-(--text-dim) overflow-hidden text-ellipsis whitespace-nowrap mt-0.5"
                               >
                                  {versionSummary(pkg, t)}
                               </div>
@@ -965,7 +771,7 @@ export function PluginsConfig({
                 ))
               )}
             </div>
-            <div style={{ padding: "8px 6px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+            <div className="py-2 px-1.5 border-t border-(--border) shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -973,19 +779,7 @@ export function PluginsConfig({
                   setActionError(null);
                   setActionMessage(null);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "7px 8px",
-                  borderRadius: 5,
-                  border: "none",
-                  width: "100%",
-                  cursor: "pointer",
-                  background: addMode ? "var(--bg-selected)" : "none",
-                  color: addMode ? "var(--accent)" : "var(--text-dim)",
-                  fontSize: 12,
-                }}
+                className={`flex items-center gap-1.5 py-[7px] px-2 rounded-[5px] border-none w-full cursor-pointer text-xs ${addMode ? "bg-(--bg-selected)" : "bg-none"} ${addMode ? "text-(--accent)" : "text-(--text-dim)"}`}
                 onMouseEnter={(e) => {
                   if (!addMode) e.currentTarget.style.background = "var(--bg-hover)";
                 }}
@@ -1011,7 +805,7 @@ export function PluginsConfig({
             </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <div className="flex-1 overflow-y-auto p-5">
             {addMode ? (
               <AddPluginPanel
                 cwd={cwd}
@@ -1038,14 +832,7 @@ export function PluginsConfig({
               />
             ) : (
               <div
-                style={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--text-dim)",
-                  fontSize: 13,
-                }}
+                className="h-full flex items-center justify-center text-(--text-dim) text-[13px]"
               >
                 {t("i18n.selectPackage")}
               </div>
@@ -1054,21 +841,13 @@ export function PluginsConfig({
         </div>
 
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "10px 18px",
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
+          className="flex items-center justify-between gap-3 py-2.5 px-[18px] border-t border-(--border) shrink-0"
         >
-          <div style={{ minWidth: 0, flex: 1, fontSize: 11, color: "var(--text-dim)", overflow: "hidden" }}>
+          <div className="min-w-0 flex-1 text-[11px] text-(--text-dim) overflow-hidden">
             {data?.diagnostics.length ? (
               <span
                 title={data.diagnostics.map((d) => `${d.type}: ${d.source ? `${d.source}: ` : ""}${d.message}`).join("\n")}
-                style={{ color: data.diagnostics.some((d) => d.type === "error") ? "#ef4444" : "#d97706" }}
+                className={`${data.diagnostics.some((d) => d.type === "error") ? "text-(--state-error)" : "text-(--state-warning)"}`}
               >
                 {data.diagnostics.length} diagnostic{data.diagnostics.length === 1 ? "" : "s"}
               </span>

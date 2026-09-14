@@ -30,7 +30,7 @@ test("keeps explorer state and file tabs as existing entry points", () => {
 });
 
 test("explorer follows the canonical current cwd on fresh sessions", () => {
-  assert.match(model, /const explorerCwd = selectedCwd \?\? selectedCwdProp \?\? validatedProject\?\.cwd \?\? null/);
+  assert.match(model, /const explorerCwd =\s*selectedCwd \?\? selectedCwdProp \?\? validatedProject\?\.cwd \?\? null/);
   assert.match(explorerPanel, /\{model\.explorerOpen && \(/);
   assert.match(explorerPanel, /cwd=\{model\.explorerCwd\}/);
 });

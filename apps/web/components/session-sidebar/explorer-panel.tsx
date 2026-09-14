@@ -20,7 +20,7 @@ function ExplorerPanel({ model }: ExplorerPanelProps) {
         display: "flex",
         flexDirection: "column",
         flex: model.explorerOpen ? "1 1 0" : "0 0 auto",
-        minHeight: 0,
+        minHeight: model.explorerOpen ? 180 : 0,
         overflow: "hidden",
       }}
     >

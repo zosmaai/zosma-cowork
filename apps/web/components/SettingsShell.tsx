@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ModelsContent, PluginsContent, SkillsContent } from "./SettingsContent";
 import type { ZosmaNotice } from "./ZosmaAuthCard";
+import { pluginsService } from "@/services/plugins.service";
+import { skillsService } from "@/services/skills.service";
 
 export type SettingsCategory =
   | "models"
@@ -102,13 +105,13 @@ function AppearanceSection() {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+    <div className="flex flex-col gap-4">
+      <div className="text-sm font-semibold text-(--text)">
         {t("settings.categories.appearance")}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Theme</div>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div className="flex flex-col gap-2">
+        <div className="text-xs text-(--text-muted)">Theme</div>
+        <div className="flex gap-2">
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -137,11 +140,11 @@ function LanguageSection() {
   const { locale, setLocale, t, supportedLocales } = useI18n();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+    <div className="flex flex-col gap-4">
+      <div className="text-sm font-semibold text-(--text)">
         {t("settings.categories.language")}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="flex flex-col gap-1.5">
         {supportedLocales.map((plugin) => (
           <button
             key={plugin.id}
@@ -161,11 +164,11 @@ function LanguageSection() {
               width: "100%",
             }}
           >
-            <span style={{ fontWeight: locale === plugin.id ? 600 : 400 }}>
+            <span className={`${locale === plugin.id ? "font-semibold" : ""}`}>
               {plugin.label}
             </span>
             {locale === plugin.id && (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-auto">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
@@ -180,11 +183,11 @@ function DefaultsSection() {
   const { t } = useI18n();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+    <div className="flex flex-col gap-4">
+      <div className="text-sm font-semibold text-(--text)">
         {t("settings.categories.defaults")}
       </div>
-      <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+      <p className="m-0 text-xs text-(--text-dim) leading-[1.6px]">
         Default model, thinking level, and tool preset preferences are configured per-session in the composer. Session-level settings override these defaults.
       </p>
     </div>
@@ -200,6 +203,14 @@ export function SettingsShell({
   initialCategory = "models",
   zosmaNotice,
 }: SettingsShellProps) {
+  const queryClient = useQueryClient();
+
+  // Prefetch skills + plugins the moment the settings dialog opens, so the
+  // first tab click renders from cache instead of a live daemon resolve.
+  useEffect(() => {
+    void queryClient.prefetchQuery(pluginsService.byCwdQueryOptions(cwd));
+    void queryClient.prefetchQuery(skillsService.byCwdQueryOptions(cwd));
+  }, [queryClient, cwd]);
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory);

@@ -124,9 +124,11 @@ export function useZosmaAuth(options: UseZosmaAuthOptions = {}) {
   const unlistenRef = useRef<(() => void) | null>(null);
   const deliveredRef = useRef(false);
   const onCompletedRef = useRef(options.onCompleted);
-  onCompletedRef.current = options.onCompleted;
   const redirectUriRef = useRef(options.redirectUri);
-  redirectUriRef.current = options.redirectUri;
+  useEffect(() => {
+    onCompletedRef.current = options.onCompleted;
+    redirectUriRef.current = options.redirectUri;
+  });
 
   const complete = useCallback(async (code: string, state: string) => {
     setPhase("completing");
