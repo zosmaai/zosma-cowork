@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { getGitFileDiff } from "@/lib/git-changes";
+import { isGitAvailable } from "@/lib/git-availability";
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +23,10 @@ export async function GET(request: NextRequest) {
     // that the requested path belongs to this repository and its status.
     if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    if (!isGitAvailable()) {
+      return NextResponse.json({ error: "git_unavailable" }, { status: 503 });
     }
 
     return NextResponse.json(await getGitFileDiff(cwd, filePath));

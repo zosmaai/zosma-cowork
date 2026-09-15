@@ -7,18 +7,32 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "zosma-production": "./dist/index.js",
       "import": "./src/index.ts"
     },
-    "./errors": "./src/errors.ts",
-    "./negotiation": "./src/negotiation.ts"
+    "./errors": {
+      "types": "./src/errors.ts",
+      "zosma-production": "./dist/errors.js",
+      "import": "./src/errors.ts"
+    },
+    "./negotiation": {
+      "types": "./src/negotiation.ts",
+      "zosma-production": "./dist/negotiation.js",
+      "import": "./src/negotiation.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --experimental-strip-types --test 'src/**/*.test.ts'",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

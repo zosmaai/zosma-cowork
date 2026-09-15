@@ -19,6 +19,11 @@ import { randomUUID } from "node:crypto";
 
 export const DATA_DIR = join(tmpdir(), "zosma-cowork", "daemon");
 
+/** Resolve the daemon data dir from an explicit service environment. */
+export function resolveDataDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ZOSMA_DAEMON_DATA_DIR || DATA_DIR;
+}
+
 /** Resolve the shared IPC token from env, else persist a fresh one. */
 export function resolveToken(dataDir: string, env: NodeJS.ProcessEnv = process.env): string {
   if (env.ZOSMA_DAEMON_TOKEN) return env.ZOSMA_DAEMON_TOKEN;
@@ -39,6 +44,7 @@ export function resolvePort(env: NodeJS.ProcessEnv = process.env): number | unde
 
 export interface RunArgs {
   dataDir?: string;
+  env?: NodeJS.ProcessEnv;
   logger?: Logger;
   port?: number;
   exit?: (code: number) => void;
@@ -47,28 +53,29 @@ export interface RunArgs {
 /** Run the daemon from the CLI entrypoint (no side effects except `exit`). */
 export async function run(args: RunArgs = {}): Promise<Daemon> {
   const logger = args.logger ?? createLogger();
-  const dataDir = args.dataDir ?? DATA_DIR;
-  const token = resolveToken(dataDir);
+  const env = args.env ?? process.env;
+  const dataDir = args.dataDir ?? resolveDataDir(env);
+  const token = resolveToken(dataDir, env);
   const pi = new PiAdapter({ storeDir: dataDir });
+  const exit = args.exit ?? ((code: number) => void (process.exitCode = code));
   const handle = await startDaemon({
     token,
     dataDir,
     logger,
     piRpc: (request) => handlePiRpc(pi, request),
     piStream: (request, sink) => handlePiStream(pi, request, sink),
-    port: args.port ?? resolvePort(),
-    exit: args.exit ?? ((code) => void (process.exitCode = code)),
+    port: args.port ?? resolvePort(env),
+    exit,
   });
   if (!handle.acquired) {
     logger.error("already running");
-    (args.exit ?? ((code) => void (process.exitCode = code)))(3);
+    exit(3);
     return handle;
   }
   logger.info("zosma-daemon up", {
     port: handle.port,
     health: `http://127.0.0.1:${handle.port}/health`,
     ipc: `http://127.0.0.1:${handle.port}/ipc`,
-    tokenHint: token.slice(0, 6) + "…",
   });
   // Warm the session-list cache in the background: the sidebar's first load
   // otherwise stalls on a cold multi-second disk scan right after a restart.

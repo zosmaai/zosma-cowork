@@ -19,7 +19,8 @@ import {
   normalizeAdapterError,
   adapterError,
   SessionStore,
-} from "../../../../packages/protocol/src/index.ts";
+} from "@zosma-cowork/protocol";
+
 import type {
   AdapterManifest,
   SessionHandle,
@@ -37,7 +38,7 @@ import type {
   Identity,
   Capability,
   NormalizedEvent,
-} from "../../../../packages/protocol/src/index.ts";
+} from "@zosma-cowork/protocol";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";

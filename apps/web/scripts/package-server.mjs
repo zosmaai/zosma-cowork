@@ -14,6 +14,7 @@
 // node_modules are symlinks into .pnpm, which would dangle once copied.
 
 import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { realpathSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -94,8 +95,41 @@ for (const pkg of external) {
   }
 }
 
+// 4b. The trace can leave a traced package partial (Next mirrors only the
+// traced files under the local pnpm store), dropping declared bin launchers
+// such as `next/dist/bin/next` that pi-web.js needs to start the server.
+// Refresh any traced package whose declared bins are missing from the copy,
+// pulling the complete store closure (the package itself plus the direct
+// dependencies `next start` resolves at runtime).
+let refreshed = 0;
+for (const name of readdirSync(join(dist, "node_modules"))) {
+  const target = join(dist, "node_modules", name);
+  const source = join(root, "node_modules", name);
+  const manifest = join(source, "package.json");
+  if (!(await isFile(manifest)) || !(await stat(target).then(() => true).catch(() => false))) continue;
+  const declared = JSON.parse(await readFile(manifest, "utf8")).bin;
+  if (!declared) continue;
+  let missing = false;
+  for (const rel of Object.values(typeof declared === "string" ? { [name]: declared } : declared)) {
+    if (!(await isFile(join(target, rel)))) {
+      missing = true;
+      break;
+    }
+  }
+  if (missing) {
+    const storeEntry = realpathSync(source);
+    const closure = dirname(storeEntry);
+    for (const dep of readdirSync(closure)) {
+      const depTarget = join(dist, "node_modules", dep);
+      await rm(depTarget, { recursive: true, force: true });
+      await cp(join(closure, dep), depTarget, { recursive: true, dereference: true });
+    }
+    refreshed += 1;
+  }
+}
+
 if (!(await isFile(join(dist, "server.js")))) {
   console.error("packaging failed: dist-server/server.js missing");
   process.exit(1);
 }
-console.log(`dist-server ready (external packages filled: ${filled}/${external.length})`);
+console.log(`dist-server ready (external packages filled: ${filled}/${external.length}, binaries refreshed: ${refreshed})`);
