@@ -64,6 +64,7 @@ const workspace = join(temp, "workspace");
 const daemonState = join(temp, "daemon-state");
 const piState = join(temp, "pi-agent");
 let child;
+let childState = "not-started";
 
 try {
   await mkdir(root, { recursive: true });
@@ -105,16 +106,21 @@ try {
   });
 
   let output = "";
+  childState = `running pid=${child.pid ?? "unknown"}`;
+  child.once("error", (error) => { childState = `spawn error: ${String(error)}`; });
+  child.once("exit", (code, signal) => {
+    childState = `exited code=${code ?? "null"} signal=${signal ?? "none"}`;
+  });
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
 
   await waitFor(`http://127.0.0.1:${daemonPort}/health`, {
     headers: { authorization: `Bearer ${token}` },
-  }, 45_000, () => output);
+  }, 45_000, () => `${output}\nchild state: ${childState}`);
   const webAuthorization = `Basic ${Buffer.from(`pi:${password}`).toString("base64")}`;
   await waitFor(`http://127.0.0.1:${webPort}/api/v1/health`, {
     headers: { authorization: webAuthorization },
-  }, 45_000, () => output);
+  }, 45_000, () => `${output}\nchild state: ${childState}`);
 
   const validate = await fetch(`http://127.0.0.1:${webPort}/api/cwd/validate`, {
     method: "POST",
