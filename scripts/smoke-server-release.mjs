@@ -6,6 +6,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { healthTimeoutMessage } from "./smoke-diagnostics.mjs";
 
 async function freePort() {
   return new Promise((resolvePort, rejectPort) => {
@@ -19,7 +20,7 @@ async function freePort() {
   });
 }
 
-async function waitFor(url, options, timeoutMs = 45_000) {
+async function waitFor(url, options, timeoutMs = 45_000, diagnostics = () => "") {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -30,7 +31,7 @@ async function waitFor(url, options, timeoutMs = 45_000) {
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   }
-  throw new Error(`health timeout: ${url}`);
+  throw new Error(healthTimeoutMessage(url, diagnostics()));
 }
 
 async function post(url, token, body) {
@@ -109,11 +110,11 @@ try {
 
   await waitFor(`http://127.0.0.1:${daemonPort}/health`, {
     headers: { authorization: `Bearer ${token}` },
-  });
+  }, 45_000, () => output);
   const webAuthorization = `Basic ${Buffer.from(`pi:${password}`).toString("base64")}`;
   await waitFor(`http://127.0.0.1:${webPort}/api/v1/health`, {
     headers: { authorization: webAuthorization },
-  });
+  }, 45_000, () => output);
 
   const validate = await fetch(`http://127.0.0.1:${webPort}/api/cwd/validate`, {
     method: "POST",
