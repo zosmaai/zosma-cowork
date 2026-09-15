@@ -25,6 +25,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
 import { BUNDLED_NODE_VERSION } from "./bundled-node-version.mjs";
+import { createSha256Sums } from "./release-manifest.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TARGETS = new Set(["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"]);
@@ -226,7 +227,7 @@ async function main() {
     await mkdir(outputDir, { recursive: true });
     await rename(stagedArchive, finalPath);
     const digest = await sha256(finalPath);
-    await writeFile(join(outputDir, "SHA256SUMS"), `${digest}  ${finalName}\n`, { mode: 0o644 });
+    await writeFile(join(outputDir, "SHA256SUMS"), createSha256Sums([{ name: finalName, digest }]), { mode: 0o644 });
     process.stdout.write(`${finalPath}\n`);
   } finally {
     await rm(temp, { recursive: true, force: true });
