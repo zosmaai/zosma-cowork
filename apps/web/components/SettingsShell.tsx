@@ -187,7 +187,7 @@ function DefaultsSection() {
       <div className="text-sm font-semibold text-(--text)">
         {t("settings.categories.defaults")}
       </div>
-      <p className="m-0 text-xs text-(--text-dim) leading-[1.6px]">
+      <p className="m-0 text-xs text-(--text-dim) leading-[1.6]">
         Default model, thinking level, and tool preset preferences are configured per-session in the composer. Session-level settings override these defaults.
       </p>
     </div>

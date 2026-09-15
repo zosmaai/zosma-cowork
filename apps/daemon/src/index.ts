@@ -11,6 +11,8 @@ import { startDaemon } from "./orchestrator.ts";
 import type { Daemon } from "./orchestrator.ts";
 import { PiAdapter } from "./pi/adapter.ts";
 import { handlePiRpc, handlePiStream } from "./pi/rpc.ts";
+import { ApprovalBroker } from "./approval/broker.ts";
+import { handleApprovalRpc } from "./approval/rpc.ts";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,12 +52,23 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
   const dataDir = args.dataDir ?? DATA_DIR;
   const token = resolveToken(dataDir);
   const pi = new PiAdapter({ storeDir: dataDir });
+  // ZOS-94: durable approval/Ask-User broker. The Pi adapter is the native
+  // ask surface: an `approval:request` for a live session surfaces as a
+  // Pi extension-UI ask (select/editor) and resolves exactly once via the
+  // user's reply; everything else stays pending for an explicit reply,
+  // timeout, or cancel — nothing is ever auto-approved.
+  const approvals = new ApprovalBroker(pi);
+  pi.setApprovalRequester(async (request) => {
+    const outcome = await approvals.request(request);
+    return outcome.ok ? outcome.pending.result ?? null : null;
+  });
   const handle = await startDaemon({
     token,
     dataDir,
     logger,
     piRpc: (request) => handlePiRpc(pi, request),
     piStream: (request, sink) => handlePiStream(pi, request, sink),
+    approvalRpc: (request: { type: string; [key: string]: unknown }) => handleApprovalRpc(approvals, request),
     port: args.port ?? resolvePort(),
     exit: args.exit ?? ((code) => void (process.exitCode = code)),
   });

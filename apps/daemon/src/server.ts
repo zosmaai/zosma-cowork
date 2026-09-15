@@ -18,6 +18,7 @@ import { GIT_RPC_OPS, handleGitRpc, type GitRpcRequest } from "./git/rpc.ts";
 import { FILES_RPC_OPS, handleFilesRpc, type FilesRpcRequest } from "./files/rpc.ts";
 import { READ_RPC_OPS, handleReadRpc, type ReadRpcRequest } from "./read/rpc.ts";
 import { AUTH_RPC_OPS, handleAuthRpc, type AuthRpcRequest } from "./auth/rpc.ts";
+import { APPROVAL_RPC_OPS } from "./approval/rpc.ts";
 import { type IpcResult as PiIpcResult } from "./pi/rpc.ts";
 
 export type Readiness = "starting" | "ready" | "shutting-down" | "error";
@@ -39,6 +40,8 @@ export type PiStreamHandler = (
   sink: (event: unknown) => void,
 ) => Promise<PiIpcResult>;
 
+export type ApprovalRpcHandler = (request: { type: string; [key: string]: unknown }) => Promise<PiIpcResult>;
+
 export interface DaemonServerOptions {
   token: string;
   logger?: {
@@ -51,6 +54,8 @@ export interface DaemonServerOptions {
   piRpc?: PiRpcHandler;
   /** When set, `POST /ipc/stream` (SSE) dispatches to this handler. */
   piStream?: PiStreamHandler;
+  /** When set, `approval:*` ops dispatch to this handler (the broker, ZOS-94). */
+  approvalRpc?: ApprovalRpcHandler;
   /** Fixed port to bind (supervision). Default: ephemeral (`listen(0)`). */
   port?: number;
 }
@@ -236,6 +241,21 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
             (rest.modelConfig as Record<string, unknown> | undefined) ?? undefined,
         };
         const result = await handleAuthRpc(request);
+        const data = (result.body ?? {}) as Record<string, unknown>;
+        return c.json({ ok: result.status < 400, type, ...data }, result.status as 200);
+      } catch (err) {
+        return c.json({ ok: false, error: "internal_error" }, 500);
+      }
+    }
+
+    // Approval/question broker ops (ZOS-94): dispatched only when a broker is
+    // wired. Without one, every `approval:*` op is 501 — no silent approvals.
+    if ((APPROVAL_RPC_OPS as readonly string[]).includes(type)) {
+      if (!options.approvalRpc) {
+        return c.json({ ok: false, error: "approval_adapter_not_configured" }, 501);
+      }
+      try {
+        const result = await options.approvalRpc({ type, ...rest });
         const data = (result.body ?? {}) as Record<string, unknown>;
         return c.json({ ok: result.status < 400, type, ...data }, result.status as 200);
       } catch (err) {

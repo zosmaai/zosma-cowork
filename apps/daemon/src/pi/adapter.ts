@@ -37,8 +37,11 @@ import type {
   Identity,
   Capability,
   NormalizedEvent,
+  ApprovalRequest,
+  ApprovalResult,
 } from "../../../../packages/protocol/src/index.ts";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import type { ApprovalAdapterSurface } from "../approval/broker.ts";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { cacheSessionPath } from "../read/sessions.ts";
@@ -73,8 +76,8 @@ interface AdapterEntry {
   session: PiSession;
 }
 
-/** The `pi` harness adapter. */
-export class PiAdapter {
+/** The `pi` harness adapter (also the broker's native ask surface, ZOS-94). */
+export class PiAdapter implements ApprovalAdapterSurface {
   readonly manifest: AdapterManifest = {
     id: "pi",
     name: "Pi coding agent",
@@ -104,6 +107,7 @@ export class PiAdapter {
   private readonly factory: PiSessionFactory | null;
   private readonly store: SessionStore;
   private readonly cwd?: string;
+  private approvalRequester?: (request: ApprovalRequest) => Promise<ApprovalResult | null>;
   private closed = false;
 
   /**
@@ -122,6 +126,15 @@ export class PiAdapter {
     this.factory = options.sessionFactory ?? startPiSession;
     this.store = new SessionStore(options.storeDir ?? join(tmpdir(), "zosma-cowork", "daemon"));
     this.cwd = options.cwd;
+  }
+
+  /** Route native Pi choice/text asks through the normalized broker. */
+  setApprovalRequester(requester: (request: ApprovalRequest) => Promise<ApprovalResult | null>): void {
+    this.approvalRequester = requester;
+  }
+
+  private async requestNativeApproval(request: ApprovalRequest): Promise<ApprovalResult | null | undefined> {
+    return this.approvalRequester?.(request);
   }
 
   // --- lifecycle -------------------------------------------------------------
@@ -241,7 +254,8 @@ export class PiAdapter {
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd ?? this.cwd ?? resolve("."), undefined);
     const { inner, realSessionId } = await this.factory!(sessionId, manager, options ?? {});
-    const session = new PiSession(inner, realSessionId, () => this.sessions.delete(realSessionId));
+    const session = new PiSession(inner, realSessionId, () => this.sessions.delete(realSessionId),
+      (request) => this.requestNativeApproval(request));
     this.sessions.set(realSessionId, { sessionId: realSessionId, nativeSessionId: realSessionId, state: "running", session });
     const handle: SessionHandle = { sessionId: realSessionId, state: "running", nativeSessionId: realSessionId };
     await this.store.add({
@@ -312,9 +326,32 @@ export class PiAdapter {
     if (!request.prompt || request.options.length === 0) {
       throw normalizeAdapterError(adapterError("pi", "permission", "malformed permission request"));
     }
-    // Headless first: pi gates risky actions inside its own tool loop.
-    return { granted: true, choice: request.options[0] };
+    // ZOS-94 AC "no request auto-approved by fallback": this normalized
+    // surface is not a running Pi gate (pi gates risky actions inside its own
+    // tool loop), so it never invents consent — the explicit normalized path
+    // routes through the approval broker instead.
+    return { granted: false };
   }
+
+  // --- ZOS-94: ApprovalAdapterSurface (the broker's native ask channel) ---
+  // Any approval kind is surfacable to the session user via the extension UI.
+  canAsk(_kind: ApprovalRequest["kind"]): boolean {
+    return true;
+  }
+
+  /** Ask the owning Pi session's user via its native extension-UI surface. */
+  async ask(request: ApprovalRequest): Promise<ApprovalResult | null> {
+    const entry = this.sessions.get(request.sessionId);
+    // Unknown/closed session: no ask is surfaced and no decision invented.
+    if (!entry) return null;
+    return entry.session.askApproval(request);
+  }
+
+  /** Dismiss a broker-owned native ask resolved by an explicit client reply. */
+  complete(request: ApprovalRequest, result: ApprovalResult): void {
+    this.sessions.get(request.sessionId)?.session.completeApproval(request.correlationId, result);
+  }
+
 
   async cancel(sessionId: string): Promise<SessionHandle> {
     const entry = this.sessions.get(sessionId);

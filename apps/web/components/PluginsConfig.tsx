@@ -437,7 +437,7 @@ function PackageDetail({
       </div>
 
       <div
-        className="grid grid-cols-[minmax(96px,_130px)_minmax(0,_1fr)px] gap-y-[9px] gap-x-3.5 text-xs leading-[1.45px]"
+        className="grid grid-cols-[minmax(96px,_130px)_minmax(0,_1fr)] gap-y-[9px] gap-x-3.5 text-xs leading-[1.45]"
       >
         <div className="text-(--text-dim)">{t("i18n.status")}</div>
         <div style={{ color: statusColor(pkg.status), textTransform: "capitalize" }}>{pkg.status}</div>

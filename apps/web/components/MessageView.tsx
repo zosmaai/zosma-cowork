@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { copyText } from "@/lib/clipboard";
@@ -116,9 +117,9 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
     );
   }
   return (
-    <div className={className} style={{ maxHeight: 420, overflow: "auto", fontSize: 12, lineHeight: 1.5 }}>
+    <div className={`${className} max-h-105 overflow-auto text-[12px] leading-[1.5]`}>
       <pre
-        className="m-0 py-2 px-2.5 whitespace-pre-wrap break-words font-(--font-mono) text-(--text-muted)"
+        className="m-0 py-2 px-2.5 whitespace-pre-wrap break-words font-mono text-(--text-muted)"
       >
         {children}
       </pre>
@@ -128,7 +129,12 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
-const USER_BUBBLE_MAX_HEIGHT = 300;
+
+// Quiet 28px icon-only message action button (DeepSeek MessageIconActions
+// spec: 28px circle, 15px glyph, tertiary -> secondary on a hover fill).
+// Revealed on row hover; the accessible name rides an sr-only span.
+const MESSAGE_ACTION_BTN =
+  "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-1.5 text-(--text-dim) transition-colors hover:bg-(--bg-hover) hover:text-(--text-muted)";
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -173,6 +179,9 @@ interface Props {
   showTimestamp?: boolean;
   prevTimestamp?: number;
   sessionId?: string;
+  /** Hide the model/provider label (used for process bubbles nested in the
+   *  turn fold, so the turn shows the model name only once). */
+  hideModelLabel?: boolean;
   /**
    * Files this turn wrote, derived by the caller from the whole turn's
    * successful write/edit tool calls. ChatWindow computes this because the
@@ -238,12 +247,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, sessionId, hideModelLabel, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} writtenFiles={writtenFiles} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} hideModelLabel={hideModelLabel} writtenFiles={writtenFiles} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -271,6 +280,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.forking === next.forking
     && prev.onNavigate === next.onNavigate
     && prev.prevAssistantEntryId === next.prevAssistantEntryId
+    && prev.hideModelLabel === next.hideModelLabel
     && prev.onEditContent === next.onEditContent
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
@@ -339,7 +349,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <img
               src={src}
               alt=""
-              style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid rgba(59,130,246,0.15)" }}
+              className="block max-h-60 max-w-60 rounded-md border border-[rgba(59,130,246,0.15)] object-contain"
             />
           </ImagePreview>
         );
@@ -356,28 +366,12 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   };
 
   return (
-    <div className="user-message"
-      style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
+    <div className="user-message flex flex-col items-end mb-4"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="user-message-stack" style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
-        <div className="user-message-bubble"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            background: "var(--user-bg)",
-            border: "1px solid rgba(59,130,246,0.2)",
-            borderRadius: 12,
-            padding: "8px 12px",
-            fontSize: 13,
-            lineHeight: 1.55,
-            color: "var(--text)",
-            wordBreak: "break-word",
-            maxHeight: USER_BUBBLE_MAX_HEIGHT,
-            overflowY: "auto",
-          }}
-        >
+      <div className="user-message-stack flex items-end gap-2 max-w-[min(525px,82%)]">
+        <div className="user-message-bubble min-w-0 box-border rounded-[22px] bg-(--user-bg) px-4 py-2.5 text-[14px] leading-[22px] text-(--text) break-words max-h-[300px] overflow-y-auto [&>div>p:first-child]:mt-0 [&>div>p:last-child]:mb-0">
           {commandText ? (
             <div className="flex flex-col gap-1.5 min-w-0">
               {imageBlocksNode}
@@ -386,7 +380,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   onClick={() => setExpanded((prev) => !prev)}
                   title={expanded ? t("i18n.collapse") : t("i18n.expand")}
                   aria-expanded={expanded}
-                  className="flex items-center gap-1.5 shrink-0 p-0 bg-none border-none cursor-pointer text-(--accent) font-(--font-mono) text-[13px] text-left"
+                  className="flex items-center gap-1.5 shrink-0 p-0 bg-transparent border-none cursor-pointer text-(--accent) font-mono text-[13px] text-left"
                 >
                   <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                     {commandName}
@@ -400,14 +394,14 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    style={{ flexShrink: 0, opacity: 0.75, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+                    className={`shrink-0 opacity-75 transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
                     aria-hidden="true"
                   >
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
                 </button>
                 {commandArgs && (
-                  <span className="text-(--text) text-sm leading-[1.6px] whitespace-pre-wrap break-words min-w-0 flex-1">
+                  <span className="text-(--text) text-sm leading-[1.6] whitespace-pre-wrap break-words min-w-0 flex-1">
                     {commandArgs}
                   </span>
                 )}
@@ -428,76 +422,39 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
       {/* Bottom row: action buttons + timestamp */}
       {(time || canFork || canNavigate || true) && (
-        <div className="message-actions user-message-actions" style={{
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          gap: 6, marginTop: 3,
-        }}>
-          <div className="message-actions" style={{
-            display: "flex", gap: 3,
-            opacity: hovered ? 1 : 0,
-            pointerEvents: hovered ? "auto" : "none",
-            transition: "opacity 0.12s",
-          }}>
+        <div className="message-actions user-message-actions mt-1.5 flex h-7 items-center justify-end gap-2">
+          <div className={`message-actions flex items-center gap-2 transition-opacity duration-120 ${hovered ? "opacity-100" : "pointer-events-none opacity-0"}`}>
             <button
               onClick={copyContent}
                title={t("i18n.copyMessage")}
-              style={{
-                display: "flex", alignItems: "center", gap: 4,
-                padding: "3px 8px", height: 22,
-                background: "none", border: "none",
-                borderRadius: 5,
-                color: copied ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: 11, fontWeight: 400,
-                whiteSpace: "nowrap",
-                transition: "color 0.12s",
-              }}
-              onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-              onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
+              className={`${MESSAGE_ACTION_BTN} ${copied ? "text-(--accent)" : ""}`}
             >
               {copied ? (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                 </svg>
               )}
-               {copied ? t("i18n.copied") : t("i18n.copy")}
+              <span className="sr-only">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
             </button>
           </div>
           {(canFork || canNavigate) && (
-            <div style={{
-              display: "flex", gap: 3,
-              opacity: (hovered || forking) ? 1 : 0,
-              pointerEvents: (hovered || forking) ? "auto" : "none",
-              transition: "opacity 0.12s",
-            }}>
+            <div className={`flex items-center gap-2 transition-opacity duration-120 ${(hovered || forking) ? "opacity-100" : "pointer-events-none opacity-0"}`}>
               {canNavigate && (
                 <button
                   onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(editTarget); }}
                    title={t("i18n.editFromHereTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: 5,
-                    color: "var(--text-dim)",
-                    cursor: "pointer",
-                    fontSize: 11, fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
+                  className={MESSAGE_ACTION_BTN}
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="15 10 20 15 15 20" />
                     <path d="M4 4v7a4 4 0 0 0 4 4h12" />
                   </svg>
-                   {t("i18n.editFromHere")}
+                  <span className="sr-only">{t("i18n.editFromHere")}</span>
                 </button>
               )}
               {canFork && (
@@ -505,32 +462,20 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   onClick={() => { onFork!(entryId!); }}
                   disabled={forking}
                    title={forking ? t("i18n.creatingSession") : t("i18n.newSessionTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: 5,
-                    color: forking ? "var(--accent)" : "var(--text-dim)",
-                    cursor: forking ? "not-allowed" : "pointer",
-                    fontSize: 11, fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
+                  className={`${MESSAGE_ACTION_BTN} ${forking ? "cursor-not-allowed text-(--accent)" : ""}`}
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="6" y1="3" x2="6" y2="15" />
                     <circle cx="18" cy="6" r="3" />
                     <circle cx="6" cy="18" r="3" />
                     <path d="M18 9a9 9 0 0 1-9 9" />
                   </svg>
-                   {forking ? t("i18n.creating") : t("i18n.newSession")}
+                  <span className="sr-only">{forking ? t("i18n.creating") : t("i18n.newSession")}</span>
                 </button>
               )}
             </div>
           )}
-          {time && <span className="text-[10px] text-(--text-dim)">{time}</span>}
+          {time && <span className="text-[13px] whitespace-nowrap text-(--text-dim)">{time}</span>}
         </div>
       )}
     </div>
@@ -548,6 +493,7 @@ function AssistantMessageView({
   prevTimestamp,
   sessionId,
   entryId,
+  hideModelLabel,
   writtenFiles,
 }: {
   message: AssistantMessage;
@@ -560,6 +506,7 @@ function AssistantMessageView({
   prevTimestamp?: number;
   sessionId?: string;
   entryId?: string;
+  hideModelLabel?: boolean;
   writtenFiles?: WrittenFile[];
 }) {
   const { t } = useI18n();
@@ -693,12 +640,13 @@ function AssistantMessageView({
   if (blocks.length === 0 && !isStreaming && !providerError) return null;
 
   return (
-    <div className="assistant-message"
-      style={{ marginBottom: 16 }}
+    <div
+      className="assistant-message mb-4"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       {/* Model label */}
+      {!hideModelLabel && (
       <div
         className="text-[11px] text-(--text-dim) mb-1 flex items-center gap-1.5"
       >
@@ -719,9 +667,13 @@ function AssistantMessageView({
                     {est}
                   </span>
                   {tps !== null && (() => {
-                    const bg = tps >= 50 ? "#53b3cb" : tps >= 30 ? "#9bc53d" : tps >= 15 ? "#f9c22e" : "#e01a4f";
+                    const tone =
+                      tps >= 50 ? "bg-[#53b3cb]" :
+                      tps >= 30 ? "bg-[#9bc53d]" :
+                      tps >= 15 ? "bg-[#f9c22e]" :
+                      "bg-[#e01a4f]";
                     return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: 11, fontWeight: 400 }}>
+                      <span className={`ml-1.5 rounded-[4px] px-1.5 py-px text-[11px] font-normal text-white ${tone}`}>
                         {tps.toFixed(1)} t/s
                       </span>
                     );
@@ -732,29 +684,18 @@ function AssistantMessageView({
           );
         })()}
       </div>
+      )}
 
-      <div className="assistant-message-blocks" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="assistant-message-blocks flex flex-col gap-2">
         {blockItems.map(({ block, originalIndex }, itemPosition) => (
           <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} isActive={Boolean(isStreaming && itemPosition === blockItems.length - 1)} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
         ))}
       </div>
 
       {providerError && (
-        <div className="assistant-error"
+        <div
+          className={`assistant-error rounded-md border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.07)] px-2.5 py-[7px] font-mono text-[12px] leading-[1.5] whitespace-pre-wrap [overflow-wrap:anywhere] text-(--state-error) ${blocks.length > 0 ? "mt-2" : "mt-0"}`}
           role="alert"
-          style={{
-            marginTop: blocks.length > 0 ? 8 : 0,
-            padding: "7px 10px",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6,
-            background: "rgba(239,68,68,0.07)",
-            color: "var(--state-error)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
         >
           Error: {providerError}
         </div>
@@ -764,11 +705,9 @@ function AssistantMessageView({
         <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} />
       )}
 
-      <div className="message-actions assistant-message-actions" style={{
-        display: "flex", alignItems: "center", gap: 8, marginTop: 4,
-      }}>
+      <div className="message-actions assistant-message-actions mt-1 flex h-7 items-center gap-2">
         {message.usage && !isStreaming && (
-          <div className="text-[11px] text-(--text-dim)">
+          <div className="text-[13px] text-(--text-dim)">
             {formatUsage(message.usage)}
           </div>
         )}
@@ -776,40 +715,51 @@ function AssistantMessageView({
           <button
             onClick={copyContent}
              title={t("i18n.copyMessage")}
-            style={{
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", height: 22,
-              background: "none", border: "none",
-              borderRadius: 5,
-              color: copied ? "var(--accent)" : "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: 11, fontWeight: 400,
-              whiteSpace: "nowrap",
-              opacity: hovered ? 1 : 0,
-              pointerEvents: hovered ? "auto" : "none",
-              transition: "opacity 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
+            className={`${MESSAGE_ACTION_BTN} ${hovered ? "opacity-100" : "pointer-events-none opacity-0"} ${copied ? "text-(--accent)" : ""}`}
           >
             {copied ? (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             ) : (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             )}
-             {copied ? t("i18n.copied") : t("i18n.copy")}
+            <span className="sr-only">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
           </button>
         )}
         {time && !isStreaming && (
-          <span className="text-[10px] text-(--text-dim) ml-auto">{time}</span>
+          <span className="ml-auto text-[13px] whitespace-nowrap text-(--text-dim)">{time}</span>
         )}
       </div>
     </div>
+  );
+}
+
+/** Smooth open/close for thinking + tool detail sections. Fade+silde (not a
+ *  height collapse) so streaming tool input can grow without clipping, and
+ *  streamed input stays out of the DOM while collapsed (AnimatePresence drops
+ *  it on exit). */
+export function Collapsible({ open, children }: { open: boolean; children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  const sequence = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.2, ease: [0.4, 0, 0.2, 1] } as const;
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={sequence}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -917,7 +867,9 @@ function ThinkingBlock({ block, running, active, duration, sessionId, entryId, b
         <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{status}</span>
       </button>
-      {expanded && <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>}
+      <Collapsible open={expanded}>
+        <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>
+      </Collapsible>
     </div>
   );
 }
@@ -960,22 +912,24 @@ function ToolCallBlock({ block, result, running, active, duration, cwd, onOpenFi
         <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{stateText}</span>
       </button>
-      {expanded && toolFilePath && onOpenFile && (
-         <button
-           type="button"
-           className="tool-file-link"
-           title={toolFilePath}
-           onClick={() => onOpenFile?.(toolFilePath)}
-         >
-           {toolFilePath.split(/[\\/]/).pop() || toolFilePath}
-         </button>
-       )}
-       {expanded && (isStreamingInput || !isEditTool) && <div className="tool-detail-input"><span className="tool-detail-label">{t("chat.toolInput")}</span><pre className="tool-detail-input-text">{inputStr}</pre></div>}
-      {expanded && result && (
-        resultDiff
-          ? <PairedDiffResult diff={resultDiff} />
-          : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={state === "error"} />
-      )}
+      <Collapsible open={expanded}>
+        {toolFilePath && onOpenFile && (
+          <button
+            type="button"
+            className="tool-file-link"
+            title={toolFilePath}
+            onClick={() => onOpenFile?.(toolFilePath)}
+          >
+            {toolFilePath.split(/[\\/]/).pop() || toolFilePath}
+          </button>
+        )}
+        {(isStreamingInput || !isEditTool) && <div className="tool-detail-input"><span className="tool-detail-label">{t("chat.toolInput")}</span><pre className="tool-detail-input-text">{inputStr}</pre></div>}
+        {result && (
+          resultDiff
+            ? <PairedDiffResult diff={resultDiff} />
+            : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={state === "error"} />
+        )}
+      </Collapsible>
     </div>
   );
 }
@@ -996,28 +950,22 @@ function SplitPatchView({ text }: { text: string }) {
   const showFileHeaders = files.length > 1;
 
   return (
-    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
+    <div className="max-h-[560px] overflow-x-hidden overflow-y-auto bg-(--bg)">
       {files.map((file, fileIndex) => (
         <div
           key={fileIndex}
-          style={{
-            minWidth: 0,
-            borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            lineHeight: 1.55,
-          }}
+          className={`min-w-0 font-mono text-[12px] leading-[1.55] ${fileIndex === 0 ? "border-t-0" : "border-t border-t-(--border)"}`}
         >
           {showFileHeaders && (
             <div
-              className="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)px] sticky top-0 z-10 bg-(--bg-panel) border-b border-(--border)"
+              className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] border-b border-(--border) bg-(--bg-panel)"
             >
                <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
                <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
             </div>
           )}
 
-          <div className="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)px]">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             {file.rows.map((row, rowIndex) => {
               if (row.type === "hunk") {
                 return null;
@@ -1051,49 +999,24 @@ function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right
 function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" | "right" }) {
   const bg =
     cell.type === "added"
-      ? "rgba(34,197,94,0.12)"
+      ? "bg-[rgba(34,197,94,0.12)]"
       : cell.type === "removed"
-      ? "rgba(248,113,113,0.13)"
+      ? "bg-[rgba(248,113,113,0.13)]"
       : cell.type === "empty"
-      ? "var(--bg-subtle)"
-      : "transparent";
+      ? "bg-(--bg-subtle)"
+      : "bg-transparent";
   const marker =
     cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
   const markerColor =
-    cell.type === "added" ? "var(--state-success)" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
+    cell.type === "added" ? "text-(--state-success)" : cell.type === "removed" ? "text-[#f87171]" : "text-(--text-dim)";
 
   return (
-    <div
-      style={{
-        display: "flex",
-        minWidth: 0,
-        background: bg,
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-      }}
-    >
-      <span
-        style={{
-          width: 42,
-          padding: "0 6px",
-          textAlign: "right",
-          color: "var(--text-dim)",
-          userSelect: "none",
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
+    <div className={`flex min-w-0 ${bg} ${side === "left" ? "border-r border-r-(--border)" : "border-r-0"}`}>
+      <span className="w-[42px] shrink-0 border-r border-r-(--border) bg-(--bg-panel) px-1.5 text-right text-(--text-dim) select-none">
         {cell.lineNo ?? ""}
       </span>
       <span
-        style={{
-          width: 18,
-          padding: "0 5px",
-          color: markerColor,
-          userSelect: "none",
-          fontWeight: cell.type === "context" || cell.type === "empty" ? 400 : 700,
-          flexShrink: 0,
-        }}
+        className={`w-[18px] shrink-0 px-[5px] select-none ${markerColor} ${cell.type === "context" || cell.type === "empty" ? "font-normal" : "font-bold"}`}
       >
         {marker}
       </span>
@@ -1110,7 +1033,7 @@ function PatchTextView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
 
   return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.55, minWidth: 0 }}>
+    <div className="max-h-[520px] min-w-0 overflow-x-hidden overflow-y-auto font-mono text-[12px] leading-[1.55]">
       {lines.map((line, i) => {
         const kind =
           line.startsWith("@@") ? "hunk" :
@@ -1118,46 +1041,27 @@ function PatchTextView({ text }: { text: string }) {
           line.startsWith("-") && !line.startsWith("---") ? "removed" :
           "context";
         const bg =
-          kind === "added" ? "rgba(34,197,94,0.12)" :
-          kind === "removed" ? "rgba(248,113,113,0.13)" :
-          kind === "hunk" ? "rgba(96,165,250,0.12)" :
-          "transparent";
+          kind === "added" ? "bg-[rgba(34,197,94,0.12)]" :
+          kind === "removed" ? "bg-[rgba(248,113,113,0.13)]" :
+          kind === "hunk" ? "bg-[rgba(96,165,250,0.12)]" :
+          "bg-transparent";
         const color =
-          kind === "added" ? "var(--state-success)" :
-          kind === "removed" ? "#f87171" :
-          kind === "hunk" ? "var(--accent)" :
-          "var(--text)";
+          kind === "added" ? "text-(--state-success)" :
+          kind === "removed" ? "text-[#f87171]" :
+          kind === "hunk" ? "text-(--accent)" :
+          "text-(--text)";
+        const edge =
+          kind === "added" ? "border-l-[3px] border-l-(--state-success)" :
+          kind === "removed" ? "border-l-[3px] border-l-[#f87171]" :
+          kind === "hunk" ? "border-l-[3px] border-l-(--accent)" :
+          "border-l-[3px] border-l-transparent";
 
         return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              background: bg,
-              borderLeft: kind === "added"
-                ? "3px solid var(--state-success)"
-                : kind === "removed"
-                ? "3px solid #f87171"
-                : kind === "hunk"
-                ? "3px solid var(--accent)"
-                : "3px solid transparent",
-            }}
-          >
-            <span
-              style={{
-                width: 48,
-                padding: "0 8px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                borderRight: "1px solid var(--border)",
-                textAlign: "right",
-                userSelect: "none",
-                flexShrink: 0,
-              }}
-            >
+          <div key={i} className={`flex ${bg} ${edge}`}>
+            <span className="w-12 shrink-0 border-r border-r-(--border) bg-(--bg-panel) px-2 text-right text-(--text-dim) select-none">
               {i + 1}
             </span>
-            <span style={{ padding: "0 10px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color }}>
+            <span className={`px-2.5 whitespace-pre-wrap [overflow-wrap:anywhere] ${color}`}>
               {line || "\u00a0"}
             </span>
           </div>
@@ -1282,19 +1186,11 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
 
   return (
     <div className="mb-4">
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          overflow: "hidden",
-          background: isHiddenDisplay ? "var(--bg-subtle)" : "var(--bg)",
-          opacity: isHiddenDisplay && !contentExpanded ? 0.82 : 1,
-        }}
-      >
+      <div className={`overflow-hidden rounded-lg border border-(--border) ${isHiddenDisplay ? "bg-(--bg-subtle)" : "bg-(--bg)"} ${isHiddenDisplay && !contentExpanded ? "opacity-[0.82]" : "opacity-100"}`}>
         <div
           className="flex items-center gap-2 py-[7px] px-2.5 border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-xs"
         >
-          <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
+          <span className="font-mono text-[11px] font-[650] text-(--text-muted)">
             {title}
           </span>
            {isHiddenDisplay && <span className="text-(--text-dim) text-[11px]">{t("i18n.hiddenExtensionMessage")}</span>}
@@ -1314,7 +1210,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                       <img
                         src={src}
                         alt=""
-                        style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
+                        className="block max-h-60 max-w-60 rounded-md border border-(--border) object-contain"
                       />
                     </ImagePreview>
                   );
@@ -1338,7 +1234,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           {text || detailsText ? (
             <button
               onClick={copyContent}
-              className={`py-[3px] px-[7px] border-none bg-none cursor-pointer text-[11px] ${copied ? "text-(--accent)" : "text-(--text-dim)"}`}
+              className={`cursor-pointer border-none bg-transparent px-[7px] py-[3px] text-[11px] ${copied ? "text-(--accent)" : "text-(--text-dim) hover:text-(--accent)"}`}
             >
                {copied ? t("i18n.copied") : t("i18n.copy")}
             </button>
@@ -1349,7 +1245,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 if (isHiddenDisplay) setContentExpanded((v) => !v);
                 else setDetailsExpanded((v) => !v);
               }}
-              className="ml-auto py-[3px] px-[7px] border-none bg-none text-(--text-dim) cursor-pointer text-[11px]"
+              className="ml-auto cursor-pointer border-none bg-transparent px-[7px] py-[3px] text-[11px] text-(--text-dim) hover:text-(--accent)"
             >
               {isHiddenDisplay
                  ? (contentExpanded ? t("i18n.collapse") : t("i18n.expand"))
@@ -1359,22 +1255,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
         </div>
 
         {hasDetails && ((isHiddenDisplay && contentExpanded) || (!isHiddenDisplay && detailsExpanded)) && (
-          <pre
-            style={{
-              margin: 0,
-              padding: "9px 10px",
-              borderTop: "1px solid var(--border)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              maxHeight: 360,
-              overflow: "auto",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
+          <pre className="m-0 max-h-90 overflow-auto border-t border-t-(--border) bg-(--bg) px-2.5 py-[9px] font-mono text-[12px] leading-[1.5] whitespace-pre-wrap break-words text-(--text-muted)">
             {detailsText}
           </pre>
         )}
@@ -1524,7 +1405,7 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
             <button
               onClick={loadFullOutput}
               disabled={loadingFull}
-              className={`bg-none border-none text-(--accent) text-[11px] p-0 underline ${loadingFull ? "cursor-default" : "cursor-pointer"}`}
+              className={`bg-transparent border-none text-(--accent) text-[11px] p-0 underline ${loadingFull ? "cursor-default" : "cursor-pointer"}`}
             >
               {loadingFull ? "loading…" : "view full output"}
             </button>

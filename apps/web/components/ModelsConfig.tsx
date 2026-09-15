@@ -459,7 +459,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         )}
 
         {discoveryState.phase === "error" && (
-          <div className="py-[7px] px-[9px] border border-red-500/30 rounded-[5px] text-(--state-error) text-[11px] leading-[1.4px]">
+          <div className="py-[7px] px-[9px] border border-red-500/30 rounded-[5px] text-(--state-error) text-[11px] leading-[1.4]">
             {discoveryState.message}
           </div>
         )}
@@ -1357,7 +1357,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       {/* Status */}
       <div className="min-h-[48px]">
         {loginState.phase === "idle" && (
-          <p className="m-0 text-xs text-(--text-muted) leading-[1.5px]">
+          <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
              {provider.loggedIn ? "Already connected. You can re-login or disconnect." : `Connect your ${provider.name} account.`}
           </p>
         )}
@@ -1366,7 +1366,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {loginState.phase === "select" && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5px]">
+            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
               {loginState.message}
             </p>
             <div className="flex flex-col gap-1.5">
@@ -1384,13 +1384,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {(loginState.phase === "auth" || loginState.phase === "prompt") && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5px]">
+            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
               {loginState.phase === "auth"
                 ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
                 : loginState.message}
             </p>
             {loginState.phase === "auth" && (
-              <p className="m-0 text-[11px] text-(--text-dim) leading-[1.5px]">
+              <p className="m-0 text-[11px] text-(--text-dim) leading-[1.5]">
                 If the browser window did not open,{" "}
                 <a href={loginState.url} target="_blank" rel="noopener noreferrer" className="text-(--accent) break-all">
                   click here to open the login page
@@ -1419,13 +1419,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {loginState.phase === "device_code" && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5px]">
+            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
               Open the verification page and enter this code:
             </p>
             <div className="py-2 px-2.5 bg-(--bg) border border-(--border) rounded-[5px] text-(--text) text-base font-bold font-(--font-mono)">
               {loginState.userCode}
             </div>
-            <p className="m-0 text-[11px] text-(--text-dim) leading-[1.5px]">
+            <p className="m-0 text-[11px] text-(--text-dim) leading-[1.5]">
               <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" className="text-(--accent) break-all">
                 {loginState.verificationUri}
               </a>
@@ -1547,7 +1547,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         </div>
       </div>
 
-      <p className="m-0 text-xs text-(--text-muted) leading-[1.5px]">
+      <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
         {provider.configured
           ? `API key is stored. Enter a new key below to replace it, or disconnect to remove it.`
           : `Enter your ${provider.displayName} API key to enable ${provider.modelCount} model${provider.modelCount !== 1 ? "s" : ""}.`}
@@ -1718,7 +1718,7 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3px] overflow-hidden text-ellipsis whitespace-nowrap">OpenAI / Anthropic compatible</div>
+                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">OpenAI / Anthropic compatible</div>
                      <div className="text-[10px] text-(--text-dim) mt-0.5">{t("i18n.customEndpoint")}</div>
                   </div>
                   <span className="w-[26px] h-[26px] rounded-[5px] bg-(--bg-hover) border border-dashed border-(--border) flex items-center justify-center shrink-0">
@@ -1739,7 +1739,7 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3px] overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
+                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
                     <div className="text-[10px] text-(--text-dim) mt-0.5">OAuth</div>
                   </div>
                   <ProviderIcon id={p.id} size={28} />
@@ -1756,7 +1756,7 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3px] overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</div>
+                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</div>
                     <div className="text-[10px] text-(--text-dim) mt-0.5">{p.modelCount} models</div>
                   </div>
                   <ProviderIcon id={p.id} size={28} />

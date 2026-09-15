@@ -258,7 +258,7 @@ function SkillDetail({
           Description
         </span>
         <span
-          className="text-sm text-(--text-muted) leading-[1.6px]"
+          className="text-sm text-(--text-muted) leading-[1.6]"
         >
           {skill.description}
         </span>
@@ -509,7 +509,7 @@ function AddSkillPanel({
         !searchError &&
         !searching && (
           <div
-            className="text-[13px] text-(--text-dim) leading-[1.8px]"
+            className="text-[13px] text-(--text-dim) leading-[1.8]"
           >
             Search{" "}
             <a

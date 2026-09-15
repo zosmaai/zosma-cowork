@@ -188,10 +188,10 @@ test("renders every stored tool state with disclosure ARIA", () => {
 
 test("renders open-canvas user and assistant message classes", () => {
   const user = renderMessage({ role: "user", content: "hello" });
-  assert.match(user, /class="user-message-bubble"/);
+  assert.match(user, /class="user-message-bubble[\s"]/);
   const assistant = renderMessage({ role: "assistant", content: [{ type: "text", text: "answer" }] });
-  assert.match(assistant, /class="assistant-message"/);
-  assert.match(assistant, /class="markdown-body markdown-assistant-message"/);
+  assert.match(assistant, /class="assistant-message(?: mb-4)?"/);
+  assert.match(assistant, /class="typeset typeset-chat markdown-assistant-message"/);
   assert.doesNotMatch(assistant, /assistant-card/);
 });
 

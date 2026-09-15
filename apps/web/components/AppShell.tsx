@@ -1982,7 +1982,7 @@ export function AppShell() {
                 <div
                   role="menu"
                   aria-label={translate("common.language")}
-                  className="bg-(--bg-panel) border-l border-(--border) border-r border-(--border) border-b border-(--border) overflow-hidden p-1"
+                  className="bg-(--bg-panel) border-l border-(--border) border-r border-b overflow-hidden p-1"
                 >
                   {supportedLocales.map((plugin) => (
                     <button
@@ -2229,6 +2229,7 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
+              onOpenSettings={openSettings}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2240,7 +2241,7 @@ export function AppShell() {
               className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-(--text-muted)"
             >
                <div className="text-sm text-(--text)">{translate("workspace.opening")}</div>
-              <div className="max-w-[min(720px,100%)] font-mono text-xs [overflow-wrap:anywhere]">
+              <div className="max-w-[min(720px,100%)] font-mono text-xs wrap-anywhere">
                 {initialNavigation.requestedCwd}
               </div>
             </div>
@@ -2249,8 +2250,8 @@ export function AppShell() {
               role="alert"
               className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-(--text-muted)"
             >
-               <div className="text-sm text-[var(--state-error)]">{translate("workspace.unable")}</div>
-              <div className="max-w-[min(720px,100%)] font-mono text-xs [overflow-wrap:anywhere]">
+               <div className="text-sm text-(--state-error)">{translate("workspace.unable")}</div>
+              <div className="max-w-[min(720px,100%)] font-mono text-xs wrap-anywhere">
                 {initialNavigation.requestedCwd}
               </div>
               <div className="max-w-180 text-xs">{initialCwdError}</div>
@@ -2259,9 +2260,9 @@ export function AppShell() {
             activeCwd ? (
               <div
                 role="status"
-                className="flex min-h-full flex-col items-center justify-center gap-1.5 p-6 text-center max-w-[420px]"
+                className="flex min-h-full flex-col items-center justify-center gap-1.5 p-6 text-center max-w-105"
               >
-                <div className="text-[15px] font-medium text-[var(--text)]">
+                <div className="text-[15px] font-medium text-(--text)">
                   {translate("workspace.selectSession")}
                 </div>
                 <div className="text-[13px] text-(--text-muted)">
