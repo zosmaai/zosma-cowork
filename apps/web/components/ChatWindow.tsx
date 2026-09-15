@@ -10,6 +10,8 @@ import { ExtensionStatusBar, partitionExtensionWidgets } from "./ExtensionStatus
 import { SessionMetricsLine } from "./SessionMetricsLine";
 import { ZosmaBrand } from "./ZosmaBrand";
 import { Collapsible, MessageView } from "./MessageView";
+import { PiLoader } from "./PiLoader";
+import { formatSessionDuration } from "@/lib/session-details";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -321,8 +323,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
 
   return (
     <div
-      className={`relative flex h-full min-w-0 flex-col overflow-hidden${isEmptyNew ? " new-session-empty" : ""}`}
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className={`relative flex h-full min-w-0 flex-col overflow-hidden ${isEmptyNew ? "new-session-empty" : ""} pb-[env(safe-area-inset-bottom)]`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -343,19 +344,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
       )}
 
       {/* Floating notices above the conversation; click-through to the stage. */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          left: 0,
-          right: 0,
-          zIndex: 40,
-          display: "flex",
-          justifyContent: "center",
-          padding: "0 16px",
-          pointerEvents: "none",
-        }}
-      >
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-40 flex justify-center px-4">
         <NoticeShelf notices={notices} floating />
       </div>
 
@@ -438,14 +427,22 @@ function ConversationSurface({
   messageCwd, sessionId, scrollContainerRef, messagesEndRef, chatInputRef,
   onOpenSettings,
 }: SurfaceProps) {
+  const { t } = useI18n();
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
   const stickToBottomRef = useRef(true);
+  const [atTail, setAtTail] = useState(true);
 
   const onShowMore = useCallback(() => {
     setVisibleCount((prev) => getNextVisibleCount(prev));
   }, []);
+
+  const scrollToLatest = useCallback(() => {
+    stickToBottomRef.current = true;
+    setAtTail(true);
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messagesEndRef]);
 
   // Upward lazy-load: reveal an older page when the top sentinel is visible,
   // preserving the user's scroll distance (the list grows above the viewport).
@@ -479,13 +476,16 @@ function ConversationSurface({
     const container = scrollContainerRef.current;
     if (!container) return;
     const onScroll = () => {
-      stickToBottomRef.current = isScrollAtTail(
+      const next = isScrollAtTail(
         container.scrollTop,
         container.scrollHeight,
         container.clientHeight,
         CHAT_SCROLL_TAIL_TOLERANCE,
       );
+      stickToBottomRef.current = next;
+      setAtTail((prev) => (prev === next ? prev : next));
     };
+    onScroll();
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
   }, [scrollContainerRef]);
@@ -511,8 +511,7 @@ function ConversationSurface({
   return (
     <div
       ref={scrollContainerRef}
-      className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-none"
-      style={{ scrollbarGutter: "stable" }}
+      className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-none scrollbar-gutter-stable px-4 md:px-8"
     >
       {isEmptyNew ? (
         <HeroView
@@ -543,7 +542,29 @@ function ConversationSurface({
           messagesEndRef={messagesEndRef}
           sentinelRef={sentinelRef}
           visibleCount={visibleCount}
+          onShowMore={onShowMore}
         />
+      )}
+
+      {/* DeepSeek's toBottomSlot: a zero-height sticky seat so the control
+          adds no scrollHeight, with the 34px circle pulled up into view. */}
+      {!atTail && (
+        <div className="pointer-events-none sticky bottom-4 z-8 h-0">
+          <div className="mx-auto flex w-full max-w-(--shell-content-max-width) justify-end">
+            <button
+              type="button"
+              onClick={scrollToLatest}
+              className="pointer-events-auto -mt-8.5 grid size-8.5 cursor-pointer place-items-center rounded-full border border-(--border) bg-(--surface-elevated) text-(--text) shadow-[0_4px_16px_rgba(0,0,0,0.24)] transition-colors hover:bg-(--bg-hover)"
+              aria-label={t("chat.scrollToBottom")}
+              title={t("chat.scrollToBottom")}
+              >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14" />
+                <path d="m19 12-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -561,7 +582,7 @@ function HeroView({ title, cwd, onOpenSettings }: {
   const { t } = useI18n();
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-8">
-      <div className="new-session-panel w-full" style={{ maxWidth: "var(--shell-composer-max-width)" }}>
+      <div className="new-session-panel w-full max-w-(--shell-composer-max-width)">
         <div className="mx-auto flex max-w-140 flex-col items-center text-center">
           {/* Hero: brand mark + rotating title on one centered axis. */}
           <div className="flex items-center justify-center gap-3">
@@ -626,27 +647,73 @@ function HeroView({ title, cwd, onOpenSettings }: {
   );
 }
 
+/** Wall-clock of one grouped turn: min..max message timestamp across the
+ *  group (user prompt → final answer / last tool result). Pure; null when the
+ *  group has no usable timestamps. */
+function turnRunDurationMs(messages: AgentMessage[], userIdx: number, endIdx: number): number | null {
+  let start = Infinity;
+  let end = 0;
+  for (let i = userIdx; i < endIdx; i++) {
+    const ts = (messages[i] as { timestamp?: number })?.timestamp;
+    if (typeof ts === "number") {
+      if (ts < start) start = ts;
+      if (ts > end) end = ts;
+    }
+  }
+  if (!Number.isFinite(start) || end <= start) return null;
+  return end - start;
+}
+
+/** Round ms to the nearest second so the parent fold's total matches the
+ *  per-step durations (which round via Math.round, not floor). */
+function roundToSecondMs(ms: number): number {
+  return Math.round(ms / 1000) * 1000;
+}
+
+/** 1s tick from an anchor while the turn is still producing output. */
+function useElapsedSeconds(runningSince: number | null): number {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (runningSince === null) return;
+    setElapsed(Math.max(0, Date.now() - runningSince));
+    const id = setInterval(() => setElapsed(Math.max(0, Date.now() - runningSince)), 1000);
+    return () => clearInterval(id);
+  }, [runningSince]);
+  return elapsed;
+}
+
 /**
  * Parent fold for a single assistant turn's process (all thinking + tool
  * steps together, like GPT's collapsed "reasoning" block). Holds the child
  * thinking/tool folds; collapsed by default once the turn is committed so
- * the final answer reads as the primary result.
+ * the final answer reads as the primary result, and auto-opens while the
+ * turn is still running. The fold header carries the overall ran duration:
+ * a live clock while streaming, the settled total ("Ran for 42s") after.
  */
-function TurnProcessFold({ summary, count, children }: {
+function TurnProcessFold({ summary, duration, runningSince, count, children }: {
   summary: string;
+  duration: string | null;
+  runningSince: number | null;
   count: number;
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const running = runningSince !== null;
+  const elapsed = useElapsedSeconds(runningSince);
+  useEffect(() => {
+    if (running) setOpen(true);
+  }, [running]);
+  const shownDuration = duration ?? (running ? formatSessionDuration(elapsed) : null);
   return (
-    <div className="conversation-disclosure turn-process-fold" data-open={open || undefined}>
+    <div className="conversation-disclosure turn-process-fold" data-open={open || undefined} data-running={running || undefined}>
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="conversation-disclosure-trigger">
-        <span className="conversation-disclosure-dot" aria-hidden="true" />
+        {running ? <PiLoader size={14} /> : <span className="conversation-disclosure-dot" aria-hidden="true" />}
         <span className="conversation-disclosure-title">
           {summary}
         </span>
         <span className="conversation-disclosure-count">{count}</span>
+        {shownDuration !== null && <span className="conversation-disclosure-duration">{shownDuration}</span>}
         <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{open ? t("chat.collapseProcess") : t("chat.expandProcess")}</span>
       </button>
@@ -681,13 +748,14 @@ interface ColumnProps {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   sentinelRef: React.RefObject<HTMLDivElement | null>;
   visibleCount: number;
+  onShowMore: () => void;
 }
 
 function MessageColumn({
   messages, entryIds, streamState, sessionBusy, agentRunning, agentPhase,
   bashRunning, pendingBash, isNew, forkingEntryId, onFork, onNavigate,
   onEditContent, modelNames, onOpenFile, messageCwd, sessionId, toolResultsMap,
-  messagesEndRef, sentinelRef, visibleCount,
+  messagesEndRef, sentinelRef, visibleCount, onShowMore,
 }: ColumnProps) {
   const { t } = useI18n();
 
@@ -730,11 +798,71 @@ function MessageColumn({
       continue;
     }
 
-    // Live streaming turn: render everything plainly; the streamed tail
-    // renders live below the committed entries.
+    // Live streaming turn: user bubble, then the already-committed process
+    // steps grouped under a running fold (live total-time clock, auto-open);
+    // the streamed tail renders live below the committed entries.
     const isLiveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
     if (isLiveTail) {
-      for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
+      rendered.push(renderBubble(messages, userIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState }));
+      const liveProcessIndices: number[] = [];
+      for (let processIdx = userIdx + 1; processIdx < finalAssistantIdx; processIdx++) {
+        liveProcessIndices.push(processIdx);
+      }
+      const liveVisibleProcessIndices = liveProcessIndices.filter((processIdx) => hasDisplayableProcessMessage(messages[processIdx]));
+      const liveFinalAssistant = messages[finalAssistantIdx] as AssistantMessage;
+      const liveFinalSplit = splitFinalAssistantBlocks(liveFinalAssistant);
+      const liveFinalProcessMessage = liveFinalSplit.processBlocks.length > 0
+        ? withAssistantBlocks(liveFinalAssistant, liveFinalSplit.processBlocks, { omitUsage: true })
+        : null;
+      const liveFinalAnswerMessage = liveFinalSplit.answerBlocks.length > 0 || getAssistantErrorMessage(liveFinalAssistant)
+        ? withAssistantBlocks(liveFinalAssistant, liveFinalSplit.answerBlocks)
+        : null;
+      const liveProcessBubbles: React.ReactNode[] = [];
+      if (liveVisibleProcessIndices.length > 0 || liveFinalProcessMessage) {
+        liveVisibleProcessIndices.forEach((processIdx) => {
+          liveProcessBubbles.push(renderBubble(messages, processIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState, keyPrefix: "process", hideModelLabel: true }));
+        });
+        if (liveFinalProcessMessage) {
+          liveProcessBubbles.push(renderBubble(messages, finalAssistantIdx, {
+            entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState,
+            keyPrefix: "process-final",
+            messageOverride: liveFinalProcessMessage,
+            showTimestamp: false,
+            hideModelLabel: true,
+          }));
+        }
+      }
+      if (liveProcessBubbles.length > 0) {
+        const count = liveVisibleProcessIndices.length + (liveFinalProcessMessage ? 1 : 0);
+        let turnStart: number | null = null;
+        for (let i = userIdx; i < endIdx; i++) {
+          const ts = (messages[i] as { timestamp?: number })?.timestamp;
+          if (typeof ts === "number" && (turnStart === null || ts < turnStart)) turnStart = ts;
+        }
+        // Spinner tracks the agent itself, not the session-wide busy flag:
+        // once the agent stops producing, the fold settles even if a bash
+        // command (or late session event) still keeps sessionBusy true.
+        const liveRunMs = turnRunDurationMs(messages, userIdx, endIdx);
+        rendered.push(
+          <TurnProcessFold
+            key={`turn-process-live-${userIdx}`}
+            summary={t("chat.turnProcess")}
+            duration={agentRunning || liveRunMs === null ? null : formatSessionDuration(roundToSecondMs(liveRunMs))}
+            runningSince={agentRunning ? turnStart : null}
+            count={count}
+          >
+            {liveProcessBubbles}
+          </TurnProcessFold>,
+        );
+      }
+      if (liveFinalAnswerMessage) {
+        rendered.push(renderBubble(messages, finalAssistantIdx, {
+          entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState,
+          keyPrefix: "live-answer",
+          messageOverride: liveFinalAnswerMessage,
+        }));
+      }
+      for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
         rendered.push(renderBubble(messages, renderIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState }));
       }
       idx = endIdx;
@@ -760,7 +888,7 @@ function MessageColumn({
     const processBubbles: React.ReactNode[] = [];
     if (visibleProcessIndices.length > 0 || finalProcessMessage) {
       visibleProcessIndices.forEach((processIdx) => {
-        processBubbles.push(renderBubble(messages, processIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState, keyPrefix: "process" }));
+        processBubbles.push(renderBubble(messages, processIdx, { entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId, sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent, streamState, keyPrefix: "process", hideModelLabel: true }));
       });
       if (finalProcessMessage) {
         processBubbles.push(renderBubble(messages, finalAssistantIdx, {
@@ -768,16 +896,20 @@ function MessageColumn({
           keyPrefix: "process-final",
           messageOverride: finalProcessMessage,
           showTimestamp: false,
+          hideModelLabel: true,
         }));
       }
     }
 
     if (processBubbles.length > 0) {
       const count = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
+      const runMs = turnRunDurationMs(messages, userIdx, endIdx);
       rendered.push(
         <TurnProcessFold
           key={`turn-process-${userIdx}`}
           summary={t("chat.turnProcess")}
+          duration={runMs === null ? null : formatSessionDuration(roundToSecondMs(runMs))}
+          runningSince={null}
           count={count}
         >
           {processBubbles}
@@ -810,40 +942,75 @@ function MessageColumn({
 
   return (
     <div
-      className="conversation-column flex min-h-full min-w-0 flex-col pt-4"
-      style={{
-        width: "100%",
-        maxWidth: "var(--shell-content-max-width)",
-        margin: "0 auto",
-      }}
+      className="conversation-column mx-auto flex min-h-full w-full min-w-0 max-w-(--shell-content-max-width) flex-col pt-4"
     >
       <div className="min-w-0">
         {hasMore && (
-          <div ref={sentinelRef} className="py-3 text-center text-xs text-text-muted">
-            {t("chat.loadEarlier", { count: startIndex })}
+          <div ref={sentinelRef} className="flex justify-center py-3">
+            <button
+              type="button"
+              onClick={onShowMore}
+              className="cursor-pointer rounded-[14px] border-none bg-(--bg-hover) px-3 py-1 text-[12px] text-(--text-muted) transition-colors hover:bg-(--bg-selected)"
+            >
+              {t("chat.loadEarlier", { count: startIndex })}
+            </button>
           </div>
         )}
         {rendered.slice(startIndex)}
       </div>
-      <div style={{ minWidth: 0, marginTop: "auto" }}>
-        {streamState.streamingMessage && hasStreamingContent && (
-          <MessageView
-            message={streamState.streamingMessage as AgentMessage}
-            isStreaming
-            modelNames={modelNames}
-            cwd={messageCwd}
-            onOpenFile={onOpenFile}
-          />
-        )}
+      <div className="mt-auto min-w-0">
+        {streamState.streamingMessage && hasStreamingContent && (() => {
+          const streamMsg = streamState.streamingMessage as AssistantMessage;
+          const streamSplit = splitFinalAssistantBlocks(streamMsg, { isStreaming: true });
+          const streamProcessMsg = streamSplit.processBlocks.length > 0
+            ? withAssistantBlocks(streamMsg, streamSplit.processBlocks)
+            : null;
+          const streamAnswerMsg = streamSplit.answerBlocks.length > 0
+            ? withAssistantBlocks(streamMsg, streamSplit.answerBlocks)
+            : null;
+          const anchorTs = (messages[lastAnchorIdx] as { timestamp?: number } | undefined)?.timestamp;
+          const runningSince = agentRunning && typeof anchorTs === "number" ? anchorTs : null;
+          return (
+            <>
+              {streamProcessMsg && (
+                <TurnProcessFold
+                  key="turn-process-live-stream"
+                  summary={t("chat.turnProcess")}
+                  duration={null}
+                  runningSince={runningSince}
+                  count={streamSplit.processBlocks.length}
+                >
+                  <MessageView
+                    message={streamProcessMsg}
+                    isStreaming
+                    hideModelLabel
+                    modelNames={modelNames}
+                    cwd={messageCwd}
+                    onOpenFile={onOpenFile}
+                  />
+                </TurnProcessFold>
+              )}
+              {streamAnswerMsg && (
+                <MessageView
+                  message={streamAnswerMsg}
+                  isStreaming
+                  modelNames={modelNames}
+                  cwd={messageCwd}
+                  onOpenFile={onOpenFile}
+                />
+              )}
+            </>
+          );
+        })()}
 
         {agentRunning && !hasStreamingContent && agentPhase && (
-          <div className="conversation-status is-running wrap-break-word py-2 text-[13px] text-text-muted">
+          <div className="conversation-status is-running inline-flex h-6.5 items-center text-[14px] leading-5.5 font-semibold">
             <span>{phaseLabel(agentPhase, t)}</span>
           </div>
         )}
 
         {bashRunning && !pendingBash && (
-          <div className="conversation-status is-running py-2 text-[13px] text-text-muted">
+          <div className="conversation-status is-running inline-flex h-6.5 items-center text-[14px] leading-5.5 font-semibold">
             <span>{t("chat.runningCommand")}</span>
           </div>
         )}
@@ -883,6 +1050,7 @@ interface BubbleOptions {
   keyPrefix?: string;
   messageOverride?: AgentMessage;
   showTimestamp?: boolean;
+  hideModelLabel?: boolean;
   writtenFiles?: WrittenFile[];
 }
 
@@ -890,7 +1058,7 @@ function renderBubble(messages: AgentMessage[], idx: number, opts: BubbleOptions
   const {
     entryIds, toolResultsMap, modelNames, messageCwd, onOpenFile, sessionId,
     sessionBusy, isNew, forkingEntryId, onFork, onNavigate, onEditContent,
-    streamState, keyPrefix = "message", messageOverride, showTimestamp: forcedShowTimestamp, writtenFiles,
+    streamState, keyPrefix = "message", messageOverride, showTimestamp: forcedShowTimestamp, hideModelLabel, writtenFiles,
   } = opts;
   const msg = messageOverride ?? messages[idx];
   const isVisible = msg.role === "user" || msg.role === "assistant";
@@ -928,6 +1096,7 @@ function renderBubble(messages: AgentMessage[], idx: number, opts: BubbleOptions
       prevAssistantEntryId={sessionBusy ? undefined : prevAssistantEntryId}
       onEditContent={onEditContent}
       showTimestamp={showTimestamp}
+      hideModelLabel={hideModelLabel}
       prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
       sessionId={sessionId ?? undefined}
       writtenFiles={writtenFiles}

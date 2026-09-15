@@ -555,6 +555,12 @@ pre, code {
 .markdown-user-message p {
   white-space: pre-wrap;
 }
+/* Strip the leading paragraph's typeset flow inside the user bubble. The
+   Tailwind mt-0 utility on the bubble can't win: typeset.css is unlayered,
+   so its `.typeset p` margin-block-start beats any @layer utility. */
+.user-message-bubble .typeset > p:first-child {
+  margin-block-start: 0;
+}
 
 .markdown-custom-message {
   line-height: 1.32;
@@ -1848,11 +1854,11 @@ span.token.table {
   font-weight: 600;
   background: linear-gradient(
     90deg,
-    var(--accent) 0%,
-    var(--accent) 40%,
+    #4176e6 0%,
+    #4176e6 40%,
     #d3e2ff 50%,
-    var(--accent) 60%,
-    var(--accent) 100%
+    #4176e6 60%,
+    #4176e6 100%
   );
   background-clip: text;
   -webkit-background-clip: text;
@@ -1906,41 +1912,12 @@ span.token.table {
 @media (prefers-reduced-motion: reduce) { .branch-flow-trigger, .branch-flow-row, .written-file-reference { transition: none; } }
 
 
-.composer-shell { flex-shrink: 0; width: 100%; padding: 0 16px 8px; padding-right: 52px; }
-.composer-width { width: 100%; max-width: var(--shell-composer-max-width); margin: 0 auto; }
 .session-metrics-shell { box-sizing: border-box; width: 100%; padding: 0 52px 4px 16px; }
 .session-metrics-line { display: block; box-sizing: border-box; width: 100%; max-width: var(--shell-composer-max-width); margin: 0 auto; padding: 0 16px; overflow: hidden; color: var(--text-dim); font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .session-metrics-separator { margin: 0 10px; color: var(--border-strong); }
 @media (max-width: 640px) { .session-metrics-shell { padding-right: 16px; } }
-.composer-notice { margin-bottom: 8px; border-radius: 12px; }
-.composer-attachments { min-width: 0; }
-.composer-card { position: relative; min-width: 0; padding: 10px 12px 8px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-elevated); box-shadow: var(--shadow-lv2); }
-.composer-overlay { position: absolute; z-index: 120; }
-.composer-input-row { display: flex; min-width: 0; gap: 8px; align-items: center; min-height: 52px; border: 0; border-radius: 14px; background: transparent; box-shadow: none; }
-.composer-input-row.is-bash { border: 1px solid var(--tool-bg); }
-.composer-input-row.is-streaming { border: 1px solid rgba(234,179,8,0.4); }
-.composer-textarea { flex: 1; min-width: 0; width: 100%; min-height: 24px; max-height: 336px; padding: 0; border: 0; outline: none; resize: none; overflow: auto; background: transparent; color: var(--text); font: inherit; font-size: 16px; line-height: 24px; }
-.composer-textarea:focus-visible { outline: none; }
-.composer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; }
-.composer-toolbar button, .composer-send, .composer-stop { min-height: 34px; border-radius: 10px; }
-.composer-send, .composer-stop { width: 34px !important; height: 34px !important; min-height: 34px; padding: 0 !important; justify-content: center; }
-.composer-send:focus-visible, .composer-stop:focus-visible, .composer-toolbar button:focus-visible, .composer-textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.composer-mode-status { color: var(--text-muted); }
-.composer-queue, .composer-notice.is-retry { padding: 7px 10px; }
-.composer-stream-actions { flex-wrap: wrap; justify-content: flex-end; }
-.composer-model-trigger { min-width: 0; }
-.composer-toolbar-right { min-width: 0; }
-@media (max-width: 640px) {
-  .composer-shell { padding-right: 16px; padding-bottom: env(safe-area-inset-bottom); }
-  .composer-card { border-radius: 18px; }
-  .composer-input-row { border-radius: 18px; }
-  .composer-textarea { max-height: min(240px, 36dvh); font-size: 16px; }
-  .composer-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-  .composer-toolbar .composer-model-trigger { grid-column: 1 / -1; width: 100%; }
-  .composer-stream-actions { grid-column: 1 / -1; width: 100%; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .composer-shell *, .composer-shell, .message-actions, .conversation-disclosure, .branch-flow-node { transition: none !important; }
+  .message-actions, .conversation-disclosure, .branch-flow-node { transition: none !important; }
   .conversation-status.is-running { animation: none !important; }
   .animate-\[pulse_1\.5s_infinite\] { animation: none !important; }
 }
@@ -2742,83 +2719,6 @@ span.token.table {
   line-height: 32px;
 }
 
-/* Active-session composer: one soft surface, quiet controls, clear primary action. */
-.composer-card:not(.is-new-session) {
-  border-color: rgba(255, 255, 255, .075);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-elevated) 98%, white) 0%, var(--surface-elevated) 60%, color-mix(in srgb, var(--surface-elevated) 94%, black) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .055),
-    inset 0 0 0 1px rgba(255, 255, 255, .018),
-    0 18px 48px rgba(0, 0, 0, .28),
-    0 8px 28px rgba(40, 72, 130, .08);
-}
-.composer-card:not(.is-new-session):focus-within {
-  border-color: rgba(112, 151, 224, .18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .07),
-    inset 0 0 0 1px rgba(112, 151, 224, .05),
-    0 20px 56px rgba(0, 0, 0, .31),
-    0 10px 34px rgba(48, 86, 154, .12);
-}
-.composer-card:not(.is-new-session) .composer-input-row {
-  min-height: 58px;
-  align-items: flex-end;
-}
-.composer-card:not(.is-new-session) .composer-textarea {
-  padding: 5px 0 6px;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  font-size: calc(16px * var(--ui-font-scale));
-  line-height: 25px;
-}
-.composer-card:not(.is-new-session) .composer-textarea:focus,
-.composer-card:not(.is-new-session) .composer-textarea:focus-visible {
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-}
-.composer-card:not(.is-new-session) .composer-send {
-  width: 36px !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  padding: 0 !important;
-  border-radius: 50% !important;
-  background: color-mix(in srgb, var(--accent) 78%, var(--surface-elevated)) !important;
-  color: rgba(255, 255, 255, .72) !important;
-  font-size: 0 !important;
-  box-shadow: 0 5px 14px rgba(37, 99, 235, .22);
-}
-.composer-card:not(.is-new-session) .composer-send:not(:disabled) {
-  background: var(--accent) !important;
-  color: #fff !important;
-}
-.composer-card:not(.is-new-session) .composer-send:disabled {
-  background: rgba(255, 255, 255, .08) !important;
-  color: var(--text-dim) !important;
-  box-shadow: none;
-}
-.composer-card:not(.is-new-session) .composer-toolbar {
-  margin-top: 7px !important;
-  gap: 3px;
-}
-.composer-card:not(.is-new-session) .composer-toolbar button {
-  min-height: 32px;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--text-muted);
-}
-.composer-card:not(.is-new-session) .composer-toolbar button:hover:not(:disabled),
-.composer-card:not(.is-new-session) .composer-toolbar button[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  color: var(--text);
-}
-.composer-card:not(.is-new-session) .composer-attach-trigger {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-}
-
 /* DeepSeek-style compact file rail. Keep explorer presentation in CSS, not JSX. */
 .sidebar-file-explorer {
   background: #1b1b1b;
@@ -3121,60 +3021,3 @@ span.token.table {
 }
 
 
-/* Active streaming composer: quiet queue actions, one clear stop control. */
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming {
-  border: 1px solid rgba(255, 255, 255, .09) !important;
-  border-radius: 16px !important;
-  background: color-mix(in srgb, var(--surface-elevated) 96%, var(--accent)) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04) !important;
-  padding: 6px 8px 6px 14px;
-}
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-stream-actions {
-  gap: 2px !important;
-}
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-action {
-  display: inline-flex !important;
-  width: 30px !important;
-  height: 30px !important;
-  min-width: 30px !important;
-  min-height: 30px !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 8px !important;
-  background: transparent !important;
-  color: var(--text-muted) !important;
-  font-size: 0 !important;
-  font-weight: 500 !important;
-  box-shadow: none !important;
-}
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-action:hover:not(:disabled),
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-action:focus-visible {
-  background: color-mix(in srgb, var(--text) 8%, transparent) !important;
-  color: var(--text) !important;
-}
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-action:disabled {
-  opacity: .35;
-}
-.composer-card:not(.is-new-session) .composer-input-row.is-streaming .composer-action svg {
-  width: 14px;
-  height: 14px;
-}
-.composer-card:not(.is-new-session) .composer-stop {
-  width: 32px !important;
-  height: 32px !important;
-  min-width: 32px !important;
-  min-height: 32px !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  border-radius: 50% !important;
-  background: rgba(239, 68, 68, .08) !important;
-  border-color: rgba(239, 68, 68, .28) !important;
-  color: #f87171 !important;
-  font-size: 0 !important;
-}
-.composer-card:not(.is-new-session) .composer-stop:hover {
-  background: rgba(239, 68, 68, .16) !important;
-}

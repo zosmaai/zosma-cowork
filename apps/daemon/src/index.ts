@@ -52,11 +52,12 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
   const dataDir = args.dataDir ?? DATA_DIR;
   const token = resolveToken(dataDir);
   const pi = new PiAdapter({ storeDir: dataDir });
-  // ZOS-94: durable approval/Ask-User broker. No adapter-native ask surface
-  // is wired today (Pi is headless and gates risky actions inside its own
-  // tool loop), so every decision comes from an explicit client reply or
-  // timeout/cancel — nothing is ever auto-approved.
-  const approvals = new ApprovalBroker();
+  // ZOS-94: durable approval/Ask-User broker. The Pi adapter is the native
+  // ask surface: an `approval:request` for a live session surfaces as a
+  // Pi extension-UI ask (select/editor) and resolves exactly once via the
+  // user's reply; everything else stays pending for an explicit reply,
+  // timeout, or cancel — nothing is ever auto-approved.
+  const approvals = new ApprovalBroker(pi);
   const handle = await startDaemon({
     token,
     dataDir,

@@ -14,10 +14,25 @@ const { clearDraft, getDraft, mergeRestoredSubmissionDraft, mergeRestoredSubmiss
 const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
 const globalsCss = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("styles streaming actions as quiet controls", () => {
-  assert.match(globalsCss, /\.composer-card:not\(.is-new-session\) \.composer-input-row\.is-streaming \{[\s\S]*?border: 1px solid rgba\(255, 255, 255, \.09\) !important;/);
-  assert.match(globalsCss, /\.composer-card:not\(.is-new-session\) \.composer-input-row\.is-streaming \.composer-action \{[\s\S]*?font-size: 0 !important;/);
-  assert.match(globalsCss, /\.composer-card:not\(.is-new-session\) \.composer-stop \{[\s\S]*?border-radius: 50% !important;/);
+test("composer chrome is Tailwind utilities, not custom CSS", async () => {
+  const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  // Custom composer chrome rules are gone from the stylesheet.
+  for (const selector of [".composer-card", ".composer-input-row", ".composer-textarea", ".composer-toolbar", ".composer-send", ".composer-stop", ".composer-shell", ".composer-width"]) {
+    assert.doesNotMatch(globalsCss, new RegExp(`\\${selector.charAt(0)}${selector.slice(1)}\\b`));
+  }
+  // Chrome is expressed as Tailwind utilities against the theme tokens.
+  assert.match(source, /rounded-\[22px\]/);
+  assert.match(source, /bg-\(--surface-elevated\)/);
+  assert.match(source, /max-w-\(--shell-composer-max-width\)/);
+});
+
+test("composer has one unified surface across states", async () => {
+  const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  // State is signalled by controls/placeholder, never a second inner border.
+  assert.doesNotMatch(source, /composer-card\$\{bashMode/);
+  assert.doesNotMatch(source, /composer-input-row\$\{/);
+  assert.doesNotMatch(source, /is-streaming"/);
+  assert.doesNotMatch(source, /is-bash"/);
 });
 
 test("renders the upstream model error", () => {
@@ -109,7 +124,7 @@ test("shows and locks the optimistic model while a switch is pending", () => {
   assert.match(html, /aria-busy="true"/);
   assert.match(html, /disabled=""/);
   assert.match(html, />DeepSeek V4 Flash</);
-  assert.match(html, /(?:animation:spin 0\.8s linear infinite|animate-spin)/);
+  assert.match(html, /data-pi-loader/);
 });
 
 test("filters model options by name and id", () => {
@@ -275,7 +290,7 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.match(html, /role="alert"/);
   assert.match(html, /Compaction failed: OpenAI API error/);
   assert.match(html, /&lt;html&gt;request forbidden&lt;\/html&gt;/);
-  assert.match(html, /white-space:pre-wrap/);
+  assert.match(html, /whitespace-pre-wrap/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
 
@@ -303,6 +318,29 @@ test("renders idle rounded composer with preserved controls", () => {
   assert.match(html, /aria-label="Send"/);
   assert.match(html, /accept="image\/\*"/);
   assert.match(html, /multiple=""/);
+});
+
+test("renders DeepSeek chrome: a commands (+) trigger and effort in the model chip", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onModelChange() {},
+        onThinkingLevelChange() {},
+        isStreaming: false,
+        model: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+        modelList: [{ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek-V4-flash" }],
+        thinkingLevel: "high",
+      }),
+    ),
+  );
+  assert.match(html, /composer-command-trigger/);
+  assert.match(html, /aria-label="Commands"/);
+  assert.match(html, /DeepSeek-V4-flash/);
+  assert.match(html, />high<\/span>/);
 });
 
 test("renders streaming composer with one stop and queue actions", () => {

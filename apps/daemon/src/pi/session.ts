@@ -15,8 +15,9 @@
  */
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { NormalizedEvent, Turn } from "@zosma-cowork/protocol";
+import type { ApprovalRequest, ApprovalResult, NormalizedEvent, Turn } from "@zosma-cowork/protocol";
 import { randomUUID } from "node:crypto";
+import { approvalToUiAsk, mapUiReplyToApproval, type NativeUiReply } from "./approval-bridge.ts";
 import { mapPiEvent, SeqCounter } from "./mapping.ts";
 import { generateSessionTitle } from "./title.ts";
 
@@ -94,6 +95,29 @@ export class PiSession {
     this.sessionId = sessionId;
     this.onClose = onClose;
     this.bindUiContext();
+  }
+
+  /**
+   * ZOS-94 — surface a broker approval as a native extension-UI ask
+   * (select for choices, editor for free text) and wait for the user's
+   * reply. The reply flows back through the existing
+   * `extension_ui_response` command; a cancelled/timed-out/closed ask
+   * returns `null` so the broker records no invented decision.
+   */
+  async askApproval(request: ApprovalRequest): Promise<ApprovalResult | null> {
+    const ask = approvalToUiAsk(request);
+    try {
+      const reply = await this.requestUi(
+        ask.method === "select"
+          ? { method: "select", title: ask.title, options: ask.options, ...(request.timeoutMs ? { timeout: request.timeoutMs } : {}) }
+          : { method: "editor", title: ask.title, ...(ask.prefill !== undefined ? { prefill: ask.prefill } : {}), ...(request.timeoutMs ? { timeout: request.timeoutMs } : {}) },
+        (response) => response,
+      );
+      return mapUiReplyToApproval(reply as NativeUiReply);
+    } catch {
+      // Session closed or ask timed out — the broker owns that resolution.
+      return null;
+    }
   }
 
   /** Native session id (never leaks into normalized payloads). */
