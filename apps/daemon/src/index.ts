@@ -58,6 +58,10 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
   // user's reply; everything else stays pending for an explicit reply,
   // timeout, or cancel — nothing is ever auto-approved.
   const approvals = new ApprovalBroker(pi);
+  pi.setApprovalRequester(async (request) => {
+    const outcome = await approvals.request(request);
+    return outcome.ok ? outcome.pending.result ?? null : null;
+  });
   const handle = await startDaemon({
     token,
     dataDir,

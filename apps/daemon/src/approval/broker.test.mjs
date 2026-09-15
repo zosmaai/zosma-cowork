@@ -123,7 +123,9 @@ test("an adapter decision resolves immediately; null keeps the request pending",
     complete: () => {},
   };
   const syncBroker = new ApprovalBroker(syncSurface);
-  await syncBroker.request(perm("c1", "s1"));
+  const resolved = await syncBroker.request(perm("c1", "s1"));
+  assert.equal(resolved.ok, true);
+  if (resolved.ok) assert.equal(resolved.pending.result?.action, "deny");
   assert.equal(syncBroker.list().length, 0, "sync adapter decision must resolve the request");
   assert.equal(syncBroker.history("s1")[0].result?.action, "deny");
 
@@ -190,6 +192,26 @@ test("no request is ever auto-approved: unanswered requests stay pending or reso
   assert.equal(h.length, 1);
   assert.notEqual(h[0].result?.action, "allow");
   assert.equal(h[0].result?.action, "timeout");
+});
+
+test("external resolution completes a native ask once", async () => {
+  let settle;
+  const complete = [];
+  const broker = new ApprovalBroker({
+    canAsk: () => true,
+    ask: () => new Promise((resolve) => { settle = resolve; }),
+    complete: (_request, result) => {
+      complete.push(result);
+      settle(result);
+    },
+  });
+  const pending = broker.request(perm("c1", "s1"));
+  await sleep(0);
+
+  assert.equal(broker.resolve("s1", "c1", { action: "deny" }).ok, true);
+  await pending;
+  assert.equal(broker.history("s1").length, 1);
+  assert.deepEqual(complete, [{ action: "deny" }]);
 });
 
 test("dispose clears timers and is idempotent", async () => {

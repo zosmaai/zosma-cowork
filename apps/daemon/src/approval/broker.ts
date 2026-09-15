@@ -110,12 +110,14 @@ export class ApprovalBroker {
     if (this.adapter?.canAsk(req.kind)) {
       try {
         const decision = await this.adapter.ask(req);
-        if (decision && RESOLVED[decision.action]) this.drop(entry, decision);
+        if (decision && RESOLVED[decision.action] && this.entries.get(req.correlationId) === entry) {
+          return { ok: true, pending: this.drop(entry, decision) };
+        }
       } catch {
         // adapter offline/unavailable: keep pending for the client reply.
       }
     }
-    return { ok: true, pending: this.view(entry, "pending") };
+    return { ok: true, pending: this.resolvedHistory.find((item) => item.correlationId === req.correlationId) ?? this.view(entry, "pending") };
   }
 
   /**

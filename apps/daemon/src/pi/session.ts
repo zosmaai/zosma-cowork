@@ -82,18 +82,22 @@ export class PiSession {
   private promptRunning = false;
   private listeners: Array<(event: NormalizedEvent) => void> = [];
   private pendingUi = new Map<string, PendingUi>();
+  private approvalUiIds = new Map<string, string>();
   readonly inner: AgentSession;
   readonly sessionId: string;
   private readonly onClose: () => void;
+  private readonly requestApproval?: (request: ApprovalRequest) => Promise<ApprovalResult | null | undefined>;
 
   constructor(
     inner: AgentSession,
     sessionId: string,
     onClose: () => void = () => {},
+    requestApproval?: (request: ApprovalRequest) => Promise<ApprovalResult | null | undefined>,
   ) {
     this.inner = inner;
     this.sessionId = sessionId;
     this.onClose = onClose;
+    this.requestApproval = requestApproval;
     this.bindUiContext();
   }
 
@@ -106,18 +110,35 @@ export class PiSession {
    */
   async askApproval(request: ApprovalRequest): Promise<ApprovalResult | null> {
     const ask = approvalToUiAsk(request);
+    const id = randomUUID();
+    this.approvalUiIds.set(request.correlationId, id);
     try {
       const reply = await this.requestUi(
         ask.method === "select"
           ? { method: "select", title: ask.title, options: ask.options, ...(request.timeoutMs ? { timeout: request.timeoutMs } : {}) }
           : { method: "editor", title: ask.title, ...(ask.prefill !== undefined ? { prefill: ask.prefill } : {}), ...(request.timeoutMs ? { timeout: request.timeoutMs } : {}) },
         (response) => response,
+        id,
       );
       return mapUiReplyToApproval(reply as NativeUiReply);
     } catch {
       // Session closed or ask timed out — the broker owns that resolution.
       return null;
+    } finally {
+      this.approvalUiIds.delete(request.correlationId);
     }
+  }
+
+  /** Complete a broker-owned native ask after an explicit client resolution. */
+  completeApproval(correlationId: string, result: ApprovalResult): void {
+    const id = this.approvalUiIds.get(correlationId);
+    if (!id) return;
+    this.approvalUiIds.delete(correlationId);
+    this.resolveExtensionUiResponse({
+      type: "extension_ui_response",
+      id,
+      response: result.action === "allow" && result.value !== undefined ? { value: result.value } : { cancelled: true },
+    });
   }
 
   /** Native session id (never leaks into normalized payloads). */
@@ -179,8 +200,8 @@ export class PiSession {
   private requestUi(
     request: Record<string, unknown>,
     resolveValue: (response: Record<string, unknown>) => unknown,
+    id = randomUUID(),
   ): Promise<unknown> {
-    const id = randomUUID();
     const timeoutMs = typeof request.timeout === "number" ? request.timeout : undefined;
     return new Promise((resolve, reject) => {
       this.pendingUi.set(id, {
@@ -203,18 +224,33 @@ export class PiSession {
   /** Headless extension UI context — requests surface as events, answers resolve them. */
   private createUiContext(): Record<string, unknown> {
     const ctx: Record<string, unknown> = {
-      select: (title: string, options: string[], opts?: { timeout?: number }) =>
-        this.requestUi({ method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-          (r) => ("value" in r ? r.value : undefined)),
+      select: (title: string, options: string[], opts?: { timeout?: number }) => {
+        const direct = () => this.requestUi({ method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+          (r) => ("value" in r ? r.value : undefined));
+        return this.requestApproval
+          ? this.requestApproval({
+              correlationId: randomUUID(), sessionId: this.sessionId, kind: "ask-user", prompt: title, options,
+              ...(opts?.timeout ? { timeoutMs: opts.timeout } : {}),
+            }).then((result) => result === undefined ? direct() : result?.action === "allow" ? result.value : undefined)
+          : direct();
+      },
       confirm: (title: string, message: string, opts?: { timeout?: number }) =>
         this.requestUi({ method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
           (r) => ("confirmed" in r ? r.confirmed : false)),
       input: (title: string, placeholder?: string, opts?: { timeout?: number }) =>
         this.requestUi({ method: "input", title, ...(placeholder !== undefined ? { placeholder } : {}), ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
           (r) => ("value" in r ? r.value : undefined)),
-      editor: (title: string, prefill?: string, opts?: { timeout?: number }) =>
-        this.requestUi({ method: "editor", title, ...(prefill !== undefined ? { prefill } : {}), ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
-          (r) => ("value" in r ? r.value : undefined)),
+      editor: (title: string, prefill?: string, opts?: { timeout?: number }) => {
+        const direct = () => this.requestUi({ method: "editor", title, ...(prefill !== undefined ? { prefill } : {}), ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+          (r) => ("value" in r ? r.value : undefined));
+        return this.requestApproval
+          ? this.requestApproval({
+              correlationId: randomUUID(), sessionId: this.sessionId, kind: "ask-user", prompt: title,
+              ...(prefill !== undefined ? { default: prefill } : {}),
+              ...(opts?.timeout ? { timeoutMs: opts.timeout } : {}),
+            }).then((result) => result === undefined ? direct() : result?.action === "allow" ? result.value : undefined)
+          : direct();
+      },
       notify: (message: string, type: string) => this.emitUi({ method: "notify", message, notifyType: type }),
       onTerminalInput: () => () => {},
       setStatus: (key: string, text: string | undefined) => this.emitUi({ method: "setStatus", statusKey: key, statusText: text }),

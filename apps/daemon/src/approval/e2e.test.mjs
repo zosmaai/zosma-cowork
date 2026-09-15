@@ -42,10 +42,14 @@ function uiRequestId(events, method) {
 
 /** A broker wired to one PiSession via the adapter-surface contract. */
 function sessionBroker(inner) {
-  const session = new PiSession(inner, "s1");
+  let broker;
+  const session = new PiSession(inner, "s1", () => {}, async (request) => {
+    const outcome = await broker.request(request);
+    return outcome.ok ? outcome.pending.result ?? null : null;
+  });
   const events = [];
   session.onEvent((e) => events.push(e));
-  const broker = new ApprovalBroker({
+  broker = new ApprovalBroker({
     canAsk: () => true,
     ask: (request) => session.askApproval(request),
     complete: () => {},
@@ -68,6 +72,18 @@ test("ask-user with options flows broker → select → allow with the choice", 
   assert.equal(out.ok, true);
   assert.equal(broker.size, 0);
   assert.deepEqual(broker.history("s1")[0].result, { action: "allow", value: "Yes" });
+});
+
+test("native select flows through broker before returning its choice", async () => {
+  const inner = fakeInner();
+  const { session, broker, events } = sessionBroker(inner);
+  const answer = inner.getUiContext().select("Pick", ["A", "B"]);
+  await tick();
+  const id = uiRequestId(events, "select");
+  await session.command({ type: "extension_ui_response", id, response: { value: "B" } });
+  assert.equal(await answer, "B");
+  assert.equal(broker.history("s1").length, 1);
+  assert.deepEqual(broker.history("s1")[0].result, { action: "allow", value: "B" });
 });
 
 test("free-text ask-user flows broker → editor → allow with the typed value", async () => {
@@ -113,6 +129,32 @@ test("timeout resolves as timeout while the native ask also expires", async () =
   assert.equal(out.ok, true);
   assert.equal(broker.size, 0);
   assert.deepEqual(broker.history("s1")[0].result, { action: "timeout" });
+});
+
+test("Pi native Ask-User requests enter the normalized broker", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "zosma-native-ask-"));
+  const inner = fakeInner();
+  const adapter = new PiAdapter({
+    storeDir: dir,
+    sessionFactory: async (sessionId) => ({ inner, realSessionId: sessionId }),
+  });
+  const broker = new ApprovalBroker(adapter);
+  adapter.setApprovalRequester(async (request) => {
+    const outcome = await broker.request(request);
+    return outcome.ok ? outcome.pending.result ?? null : null;
+  });
+  try {
+    await adapter.start("s1", "/tmp");
+    const selected = inner.getUiContext().select("Pick one", ["A", "B"]);
+    await tick();
+    const [pending] = broker.list("s1");
+    assert.equal(pending.prompt, "Pick one");
+    assert.deepEqual(pending.options, ["A", "B"]);
+    assert.equal(broker.resolve("s1", pending.correlationId, { action: "allow", value: "B" }).ok, true);
+    assert.equal(await selected, "B");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("PiAdapter is the broker's ask surface for live sessions (wired in index.ts)", async () => {

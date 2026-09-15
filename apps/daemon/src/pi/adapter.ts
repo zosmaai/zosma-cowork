@@ -107,6 +107,7 @@ export class PiAdapter implements ApprovalAdapterSurface {
   private readonly factory: PiSessionFactory | null;
   private readonly store: SessionStore;
   private readonly cwd?: string;
+  private approvalRequester?: (request: ApprovalRequest) => Promise<ApprovalResult | null>;
   private closed = false;
 
   /**
@@ -125,6 +126,15 @@ export class PiAdapter implements ApprovalAdapterSurface {
     this.factory = options.sessionFactory ?? startPiSession;
     this.store = new SessionStore(options.storeDir ?? join(tmpdir(), "zosma-cowork", "daemon"));
     this.cwd = options.cwd;
+  }
+
+  /** Route native Pi choice/text asks through the normalized broker. */
+  setApprovalRequester(requester: (request: ApprovalRequest) => Promise<ApprovalResult | null>): void {
+    this.approvalRequester = requester;
+  }
+
+  private async requestNativeApproval(request: ApprovalRequest): Promise<ApprovalResult | null | undefined> {
+    return this.approvalRequester?.(request);
   }
 
   // --- lifecycle -------------------------------------------------------------
@@ -244,7 +254,8 @@ export class PiAdapter implements ApprovalAdapterSurface {
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd ?? this.cwd ?? resolve("."), undefined);
     const { inner, realSessionId } = await this.factory!(sessionId, manager, options ?? {});
-    const session = new PiSession(inner, realSessionId, () => this.sessions.delete(realSessionId));
+    const session = new PiSession(inner, realSessionId, () => this.sessions.delete(realSessionId),
+      (request) => this.requestNativeApproval(request));
     this.sessions.set(realSessionId, { sessionId: realSessionId, nativeSessionId: realSessionId, state: "running", session });
     const handle: SessionHandle = { sessionId: realSessionId, state: "running", nativeSessionId: realSessionId };
     await this.store.add({
@@ -336,8 +347,10 @@ export class PiAdapter implements ApprovalAdapterSurface {
     return entry.session.askApproval(request);
   }
 
-  /** Nothing to dismiss on completion — the extension dialog closes on reply. */
-  complete(_request: ApprovalRequest, _result: ApprovalResult): void {}
+  /** Dismiss a broker-owned native ask resolved by an explicit client reply. */
+  complete(request: ApprovalRequest, result: ApprovalResult): void {
+    this.sessions.get(request.sessionId)?.session.completeApproval(request.correlationId, result);
+  }
 
 
   async cancel(sessionId: string): Promise<SessionHandle> {
