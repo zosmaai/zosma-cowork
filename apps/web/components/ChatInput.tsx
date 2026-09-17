@@ -319,12 +319,12 @@ function ModelNoticeBanner({ tone, title, body }: { tone: "error" | "warning"; t
   return (
     <div
       role="alert"
-      className={`mb-2 flex max-h-[120px] items-start gap-2 overflow-y-auto rounded-md border px-2.5 py-[7px] text-[11px] leading-[1.45] ${toneClasses}`}
+      className={`mb-2 flex max-h-30 items-start gap-2 overflow-y-auto rounded-md border px-2.5 py-1.75 text-[11px] leading-[1.45] ${toneClasses}`}
     >
       <TriangleAlert size={13} strokeWidth={2} className="shrink-0 mt-[1px]" aria-hidden="true" />
       <div className="min-w-0">
         <div className="font-semibold">{title}</div>
-        <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{body}</div>
+        <div className="whitespace-pre-wrap wrap-anywhere">{body}</div>
       </div>
     </div>
   );

@@ -25,9 +25,11 @@ import {
   CONTROL_ACK,
   CONTROL_PING,
   CONTROL_PONG,
+  CLOSE_MACHINE_REVOKED,
   FRAME_VALIDATORS,
   isControlTag,
 } from "@zosma-cowork/protocol";
+import type { MachineManifestFrame } from "@zosma-cowork/protocol";
 
 export interface RpcReply {
   ok: boolean;
@@ -47,6 +49,8 @@ export interface OutboundOptions {
   machineId: string;
   machineName: string;
   version?: number;
+  /** ZOS-91 capability manifest advertised on `hello` (additive, optional). */
+  manifest?: MachineManifestFrame;
   /** Heartbeat interval; a missed pong (>2×) tears the connection down. Default 30s. */
   heartbeatMs?: number;
   /** Reconnect backoff cap. Default 30s. */
@@ -61,6 +65,8 @@ export interface OutboundStatus {
   connected: boolean;
   watermark: number;
   attempts: number;
+  /** True once the control plane revoked this machine id — reconnecting is over. */
+  revoked: boolean;
   lastError?: string;
 }
 
@@ -80,6 +86,7 @@ export class OutboundConnector {
   private reconnectAttempts = 0;
   private lastError: string | undefined;
   private watermark = 0;
+  private revoked = false;
   private lastPongAt = 0;
   private readonly pending = new Map<string, { resolve: (r: RpcReply) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private readonly opts: Required<Pick<OutboundOptions, "url" | "token" | "machineId" | "machineName" | "version" | "heartbeatMs" | "maxReconnectMs">> &
@@ -99,6 +106,7 @@ export class OutboundConnector {
       connected: this.ws?.readyState === WebSocket.OPEN,
       watermark: this.watermark,
       attempts: this.reconnectAttempts,
+      revoked: this.revoked,
       lastError: this.lastError,
     };
   }
@@ -166,7 +174,7 @@ export class OutboundConnector {
   }
 
   private async dial(): Promise<void> {
-    if (this.stopped || this.dialing) return;
+    if (this.stopped || this.dialing || this.revoked) return;
     this.dialing = true;
     try {
       const ws = new WebSocket(this.opts.url, {
@@ -185,6 +193,7 @@ export class OutboundConnector {
           name: this.opts.machineName,
           version: this.opts.version,
           watermark: this.watermark,
+          ...(this.opts.manifest ? { manifest: this.opts.manifest } : {}),
         }));
         this.opts.logger?.info("control plane connected", { machineId: this.opts.machineId });
       });
@@ -198,9 +207,21 @@ export class OutboundConnector {
         this.opts.logger?.warn("control plane socket error", { error: err.message });
       });
 
-      ws.on("close", () => {
+      ws.on("close", (code) => {
         this.stopHeartbeat();
         this.failPending("rpc_disconnected", "control plane connection closed");
+        // ZOS-91: revocation is terminal. Retrying a revoked identity would be
+        // a reconnect storm against a plane that will keep refusing it.
+        if (code === CLOSE_MACHINE_REVOKED) {
+          this.revoked = true;
+          this.opts.logger?.error(
+            "machine identity revoked by the control plane — not reconnecting. " +
+              `An operator must re-admit it (POST /machines/${this.opts.machineId}/register), then restart this daemon: ` +
+              "a revoked daemon does not dial back on its own. Or run with ZOSMA_MACHINE_ID_RESET=1 to register as a new identity.",
+            { machineId: this.opts.machineId },
+          );
+          return;
+        }
         if (this.stopped) return;
         this.scheduleReconnect();
       });
@@ -282,9 +303,12 @@ export class OutboundConnector {
           } catch (e) {
             reply = { ok: false, error: { code: "cmd_failed", message: e instanceof Error ? e.message : String(e) } };
           }
-          this.ack(cmd.correlationId);
           const frame: Record<string, unknown> = { correlationId: cmd.correlationId, ...reply };
+          // Response must reach the plane before its ACK clears replay state.
+          // WebSocket preserves send order, so a disconnect can replay instead
+          // of losing a completed result between these frames.
           this.send({ type: CONTROL_RPC_RESPONSE, ...frame });
+          this.ack(cmd.correlationId);
         })();
         return;
       }

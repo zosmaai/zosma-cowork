@@ -15,6 +15,8 @@ import {
   ping,
   pong,
   CONTROL_TAGS,
+  CLOSE_MACHINE_REVOKED,
+  CLOSE_DUPLICATE_MACHINE,
 } from "./control-plane.ts";
 
 test("control frame tags are versioned and unique", () => {
@@ -86,4 +88,64 @@ test("ack, watermark and heartbeat frames validate", () => {
   assert.equal(watermark({ watermark: -1 }).ok, false);
   assert.equal(ping({}).ok, true);
   assert.equal(pong({}).ok, true);
+});
+
+// --- ZOS-91: capability manifest on hello (additive) ---
+
+test("hello still validates without a manifest (older daemon)", () => {
+  const r = hello({ machineId: "m-01", name: "dev-laptop", version: 1, watermark: 0 });
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.equal(r.value.manifest, undefined);
+});
+
+test("hello carries a capability manifest", () => {
+  const r = hello({
+    machineId: "m-01",
+    name: "dev-laptop",
+    version: 1,
+    watermark: 3,
+    manifest: {
+      manifestVersion: 1,
+      platform: "darwin",
+      arch: "arm64",
+      hostname: "dev-laptop",
+      daemonVersion: "0.1.0",
+      node: "v22.19.0",
+      adapters: [{ id: "pi", name: "Pi coding agent", protocolVersion: 1, capabilities: [{ name: "streaming", version: 1 }] }],
+      services: ["pi:prompt", "read:capabilities"],
+    },
+  });
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.equal(r.value.manifest?.adapters?.[0]?.id, "pi");
+  assert.deepEqual(r.value.manifest?.services, ["pi:prompt", "read:capabilities"]);
+});
+
+test("the manifest is additive: unknown fields and partial payloads are tolerated", () => {
+  // a newer daemon adding fields must not break an older plane's validator
+  const extra = hello({ machineId: "m-01", name: "l", version: 1, watermark: 0, manifest: { manifestVersion: 2, futureField: { deep: true }, services: ["pi:prompt"] }, anotherFutureField: 1 });
+  assert.equal(extra.ok, true);
+  // a partial manifest (only the version) is valid too
+  const partial = hello({ machineId: "m-01", name: "l", version: 1, watermark: 0, manifest: { manifestVersion: 1 } });
+  assert.equal(partial.ok, true);
+});
+
+test("a malformed manifest is rejected (wrong nested type)", () => {
+  const bad = hello({
+    machineId: "m-01",
+    name: "l",
+    version: 1,
+    watermark: 0,
+    manifest: { manifestVersion: 1, adapters: [{ id: "pi", capabilities: [{ name: 42 }] }] },
+  });
+  assert.equal(bad.ok, false);
+  const noId = hello({ machineId: "m-01", name: "l", version: 1, watermark: 0, manifest: { adapters: [{ capabilities: [] }] } });
+  assert.equal(noId.ok, false);
+});
+
+test("machine close codes are shared constants (4003 revoked, 4004 duplicate)", () => {
+  assert.equal(CLOSE_MACHINE_REVOKED, 4003);
+  assert.equal(CLOSE_DUPLICATE_MACHINE, 4004);
+  assert.notEqual(CLOSE_MACHINE_REVOKED, CLOSE_DUPLICATE_MACHINE);
 });

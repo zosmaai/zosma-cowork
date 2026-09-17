@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+.DS_Store
+docs
+apps/website
+apps/desktop
+apps/oauth-broker
+finds.md
+plan.md

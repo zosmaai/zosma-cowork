@@ -211,6 +211,29 @@ test("approval ops dispatch through the injected handler", async () => {
   }
 });
 
+test("binds the configured host and reports it", async () => {
+  const server = createDaemonServer({ token: TOKEN, host: "0.0.0.0" });
+  const { port, host } = await server.start();
+  try {
+    assert.equal(host, "0.0.0.0");
+    server.setReady("ready");
+    const resp = await fetch(`http://127.0.0.1:${port}/health`);
+    assert.equal(resp.status, 200);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("defaults to a loopback bind", async () => {
+  const server = createDaemonServer({ token: TOKEN });
+  const { host } = await server.start();
+  try {
+    assert.equal(host, "127.0.0.1");
+  } finally {
+    await server.stop();
+  }
+});
+
 test("binds a fixed port when configured (supervision)", async () => {
   const server = createDaemonServer({ token: TOKEN, port: 64_722 });
   const { port } = await server.start();

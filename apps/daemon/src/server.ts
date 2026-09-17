@@ -58,10 +58,12 @@ export interface DaemonServerOptions {
   approvalRpc?: ApprovalRpcHandler;
   /** Fixed port to bind (supervision). Default: ephemeral (`listen(0)`). */
   port?: number;
+  /** Bind host. Default `127.0.0.1`; set `0.0.0.0` for container/fleet reach. */
+  host?: string;
 }
 
 export interface DaemonServer {
-  start(): Promise<{ port: number }>;
+  start(): Promise<{ port: number; host: string }>;
   stop(): Promise<void>;
   setReady(state: Readiness): void;
   getState(): Readiness;
@@ -361,18 +363,19 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     setReady(s: Readiness) {
       state = s;
     },
-    async start(): Promise<{ port: number }> {
+    async start(): Promise<{ port: number; host: string }> {
       return new Promise((resolve, reject) => {
+        const host = options.host ?? "127.0.0.1";
         server = serve(
           {
             fetch: app.fetch,
-            hostname: "127.0.0.1",
+            hostname: host,
             port: options.port ?? 0,
           },
           (info) => {
             boundPort = info.port;
-            log?.info("daemon listening", { port: boundPort });
-            resolve({ port: boundPort });
+            log?.info("daemon listening", { port: boundPort, host });
+            resolve({ port: boundPort, host });
           },
         );
         server.on("error", reject);

@@ -1,0 +1,23 @@
+# Zosma control plane — fleet rendezvous (WS endpoint + command journal).
+# Runs the TypeScript source directly under Node type stripping.
+FROM node:22-alpine
+
+RUN corepack enable
+WORKDIR /repo
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/control-plane/package.json apps/control-plane/
+COPY packages/protocol/package.json packages/protocol/
+RUN pnpm install --frozen-lockfile --filter "@zosma-cowork/control-plane..."
+
+COPY apps/control-plane apps/control-plane
+COPY packages/protocol packages/protocol
+
+ENV NODE_ENV=production
+# 0.0.0.0 — the plane must be reachable by remote daemons (and the operator).
+ENV ZOSMA_CONTROL_PLANE_HOST=0.0.0.0
+ENV ZOSMA_CONTROL_PLANE_PORT=64714
+ENV ZOSMA_CONTROL_PLANE_DATA=/store
+EXPOSE 64714
+
+CMD ["node", "apps/control-plane/bin/zosma-control-plane.js"]

@@ -25,6 +25,11 @@ export function isPromptRejectedError(error: unknown): error is AgentCommandErro
     && error.accepted === false;
 }
 
+export type ExtensionUiResponsePayload =
+  | { value: string }
+  | { confirmed: boolean }
+  | { cancelled: true };
+
 export async function sendAgentCommand<T = unknown>(
   sessionId: string,
   command: Record<string, unknown>,
@@ -50,4 +55,13 @@ export async function sendAgentCommand<T = unknown>(
     );
   }
   return body.data as T;
+}
+
+/** Submit an extension UI answer in PiSession's nested response shape. */
+export async function sendExtensionUiResponse(
+  sessionId: string,
+  id: string,
+  response: ExtensionUiResponsePayload,
+): Promise<void> {
+  await sendAgentCommand(sessionId, { type: "extension_ui_response", id, response });
 }

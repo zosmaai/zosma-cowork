@@ -205,10 +205,16 @@ export function createDaemonAgentEventStream(
             messageOpen = false;
             break;
           }
-          case "status":
+          case "status": {
+            if (payload.phase === "extension_ui_request") {
+              const request = { ...payload };
+              delete request.phase;
+              enqueue({ type: "extension_ui_request", ...request });
+            }
             // turn_start/turn_end/queue_update/model_select — nothing the UI
             // wire needs; skip.
             break;
+          }
           default:
             break;
         }

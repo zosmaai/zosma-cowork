@@ -24,7 +24,11 @@ export interface StartArgs {
   approvalRpc?: Parameters<typeof createDaemonServer>[0]["approvalRpc"];
   /** Fixed port to bind (supervision). Default: ephemeral. */
   port?: number;
+  /** Bind host. Default `127.0.0.1`; `0.0.0.0` for container reach. */
+  host?: string;
   signals?: NodeJS.Signals[];
+  /** Extra teardown (e.g. fleet connector) — runs before the server stops. */
+  onShutdown?: () => void | Promise<void>;
   /** override exit (tests). default: process.exit */
   exit?: (code: number) => void;
 }
@@ -56,6 +60,7 @@ export async function startDaemon(args: StartArgs): Promise<Daemon> {
     piStream: args.piStream,
     approvalRpc: args.approvalRpc,
     port: args.port,
+    host: args.host,
   });
   const { port } = await server.start();
 
@@ -77,6 +82,7 @@ export async function startDaemon(args: StartArgs): Promise<Daemon> {
           // dispose failure must not wedge shutdown
         }
       }
+      if (args.onShutdown) await args.onShutdown();
       await server.stop();
       instance.release();
       logger.info("daemon stopped");
