@@ -1,0 +1,41 @@
+# Zosma web — Next.js app (standalone output, see apps/web/next.config.ts).
+FROM node:22-alpine AS build
+
+RUN corepack enable
+WORKDIR /repo
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY apps/daemon/package.json apps/daemon/
+COPY apps/control-plane/package.json apps/control-plane/
+COPY packages/protocol/package.json packages/protocol/
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm web:build
+# Package the standalone output exactly like the desktop release does
+# (apps/web/scripts/package-server.mjs): dereferences pnpm store symlinks and
+# fills external packages (undici) — plain `COPY standalone` leaves dangling
+# .pnpm links that crash server.js with MODULE_NOT_FOUND.
+RUN node apps/web/scripts/package-server.mjs
+
+# Runtime: the packaged standalone server.
+FROM node:22-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+COPY --from=build /repo/apps/web/dist-server ./
+# The standalone trace ships a trimmed `next` (dist/ only, no package.json) and
+# omits next's own runtime deps (@next/env, @swc/helpers, styled-jsx, postcss,
+# caniuse-lite, baseline-browser-mapping), so require('next') cannot resolve
+# outside the pnpm workspace. Install the real pinned runtime tree here.
+# Keep these versions in sync with apps/web/package.json.
+RUN printf '{"name":"zosma-web-runtime","private":true,"dependencies":{"next":"16.3.3","undici":"8.10.0"}}' > package.json \
+ && npm install --omit=dev --no-audit --no-fund \
+ && rm -rf /root/.npm
+
+EXPOSE 3000
+CMD ["node", "server.js"]

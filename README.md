@@ -238,6 +238,54 @@ pnpm daemon:build
 pnpm desktop:build # Tauri release bundle (needs TAURI_SIGNING_PRIVATE_KEY for signed updater)
 ```
 
+## Docker deployment
+
+See [`fleet.md`](./fleet.md) for what fleet mode is, how to start it, how it works, and when to use it.
+
+Experimental Docker deployment supports local single-host use and fleet control-plane testing. Requires Docker Desktop or Docker Engine, Node 22-compatible Pi credentials in `~/.pi`, and a trusted work directory.
+
+```bash
+cp .env.example .env
+# Set ZOSMA_DAEMON_TOKEN to: openssl rand -hex 32
+# Set ZOSMA_WORK_DIR to an absolute host directory you want the daemon to use.
+docker compose up --build
+```
+
+Open `http://localhost:3000`, then **Add folder… → `/work`** to open the mounted workspace and start chatting.
+
+The web container proxies to the daemon over the Docker network; daemon state and Pi home use named volumes. The work directory is mounted at `/work` in both containers (the picker browses the web container's filesystem, the daemon executes in its own).
+
+Provider credentials: the container starts with an empty `/root/.pi`, so prompts fail with `No API key found for the selected model` until you sign in through the UI or bind-mount an existing Pi home:
+
+```yaml
+# docker-compose.yml, daemon service
+volumes:
+  - ${HOME}/.pi:/root/.pi
+```
+
+### Fleet
+
+Fleet adds a control plane (`:64714`) that many daemons dial **out** to — no inbound port on any machine. Set the fleet variables in `.env`, then:
+
+```bash
+# ZOSMA_CONTROL_PLANE_TOKEN=$(openssl rand -hex 32)
+# ZOSMA_CONTROL_PLANE_URL=ws://control-plane:64714/ws
+# ZOSMA_MACHINE_ID=node-1
+docker compose --profile fleet up --build -d
+```
+
+Then verify and dispatch work (the control plane refuses to start without a token, and machine ids are durable — see the reference for exact semantics):
+
+```bash
+TOKEN=$(grep '^ZOSMA_CONTROL_PLANE_TOKEN=' .env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:64714/machines
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"method":"pi:health"}' http://localhost:64714/machines/node-1/commands
+```
+
+A machine can be revoked (`DELETE /machines/:id`, terminal for its daemon) and re-admitted (`POST /machines/:id/register` — restart that daemon afterwards). Run the control plane behind a TLS-terminating reverse proxy for anything off-localhost.
+
+**Full reference: [`fleet.md`](./fleet.md)** — quick start, every environment variable, wire protocol, identity/revocation semantics, delivery guarantees, security model, limits, and how a future Kubernetes deployment sits on top of this.
+
 ## Principles
 
 1. **Work is the product.** The agent and harness should disappear behind the result.

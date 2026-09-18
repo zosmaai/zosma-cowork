@@ -112,10 +112,13 @@ export {
   PING as CONTROL_PING,
   PONG as CONTROL_PONG,
   WATERMARK as CONTROL_WATERMARK,
+  CLOSE_MACHINE_REVOKED,
+  CLOSE_DUPLICATE_MACHINE,
   CONTROL_TAGS,
   FRAME_VALIDATORS,
   isControlTag,
   hello as controlHello,
+  machineManifest,
   rpcRequest as controlRpcRequest,
   rpcResponse as controlRpcResponse,
   ack as controlAck,
@@ -123,6 +126,7 @@ export {
   ping as controlPing,
   pong as controlPong,
 } from "./control-plane.ts";
+export type { HelloFrame, MachineManifestFrame, AdapterDescriptorFrame } from "./control-plane.ts";
 
 // --- responses (daemon -> client terminal) ---
 export { HELLO_RESPONSE, COMMAND_RESPONSE, responseTags, helloResponse, command, createHelloResponseEnvelope } from "./responses.ts";

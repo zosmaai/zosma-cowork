@@ -24,9 +24,12 @@ import {
   CONTROL_ACK,
   CONTROL_PING,
   CONTROL_PONG,
+  CLOSE_MACHINE_REVOKED,
+  CLOSE_DUPLICATE_MACHINE,
   FRAME_VALIDATORS,
 } from "@zosma-cowork/protocol";
-import type { CommandStore } from "./store.ts";
+import type { MachineManifestFrame } from "@zosma-cowork/protocol";
+import type { CommandStore, MachineRecord } from "./store.ts";
 
 export interface RpcReply {
   ok: boolean;
@@ -35,10 +38,19 @@ export interface RpcReply {
 }
 
 export interface ControlPlaneServer {
-  start(port?: number): Promise<{ port: number }>;
+  start(port?: number, host?: string): Promise<{ port: number; host: string }>;
   stop(): Promise<void>;
-  /** Registry snapshot for ops/tests. */
-  machines(): Array<{ machineId: string; connected: boolean; watermark: number }>;
+  /** Registry snapshot for ops/tests (durable records + live connection state). */
+  machines(): Array<{
+    machineId: string;
+    connected: boolean;
+    watermark: number;
+    name?: string;
+    manifest?: unknown;
+    firstSeenAt?: string;
+    lastSeenAt?: string;
+    revoked: boolean;
+  }>;
   /** Ingest a command for a machine; pushes immediately if connected. */
   push(machineId: string, cmd: { method: string; params?: Record<string, unknown> }): Promise<{ correlationId: string; seq: number }>;
   store: CommandStore;
@@ -85,6 +97,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
   const log = options.logger ?? { info() {} };
 
   const connections = new Map<string, Conn>();
+  // Sync mirror of the durable registry so `machines()` stays synchronous for
+  // the many existing call sites; hydrated in start(), updated on register/
+  // revoke. Without it, `machines()` could only ever show live machines.
+  const registryMirror = new Map<string, MachineRecord>();
 
   const send = (c: Conn, type: string, payload: Record<string, unknown>): void => {
     if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify({ type, ...payload }));
@@ -100,6 +116,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
     const pending = await store.pending(c.machineId);
     for (const cmd of pending) {
       if (cmd.seq <= c.watermark) continue;
+      // ZOS-91: a durable reply means the machine already ran it. The socket can
+      // die between rpc.response and ack, so replaying on a lost ack alone would
+      // run the handler twice. Answered commands are readable via the command route.
+      if (await store.reply(cmd.correlationId)) continue;
       sendCommand(c, cmd.correlationId, cmd.method, cmd.params);
     }
   };
@@ -121,15 +141,30 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
 
     switch (tag) {
       case CONTROL_HELLO: {
-        const hello = res.value as { machineId: string; watermark: number };
+        const hello = res.value as { machineId: string; name: string; watermark: number; manifest?: MachineManifestFrame };
         if (c.machineId && c.machineId !== hello.machineId) {
           c.ws.close(4002, "machine id change on live connection");
+          return;
+        }
+        // ZOS-91: a revoked identity is refused outright, and a second live
+        // connection may not silently take over a registered machine id.
+        if (store.isRevoked(hello.machineId)) {
+          log.info("revoked machine refused", { machineId: hello.machineId });
+          c.ws.close(CLOSE_MACHINE_REVOKED, "machine revoked");
+          return;
+        }
+        const live = connections.get(hello.machineId);
+        if (live && live !== c && live.ws.readyState === WebSocket.OPEN) {
+          log.info("duplicate machine id refused", { machineId: hello.machineId });
+          c.ws.close(CLOSE_DUPLICATE_MACHINE, "machine id already connected");
           return;
         }
         c.machineId = hello.machineId;
         c.watermark = hello.watermark;
         connections.set(hello.machineId, c);
-        log.info("machine registered", { machineId: hello.machineId, watermark: hello.watermark });
+        const record = await store.register(hello.machineId, hello.name, hello.manifest);
+        registryMirror.set(record.machineId, record);
+        log.info("machine registered", { machineId: hello.machineId, watermark: hello.watermark, manifestVersion: hello.manifest?.manifestVersion });
         void replay(c);
         return;
       }
@@ -149,8 +184,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
         return;
       }
       case CONTROL_RPC_RESPONSE: {
-        // Machine answering a server-pushed command — nothing to route in v1
-        // (responses surfaced later); ack still records completion.
+        const r = res.value as { correlationId: string; ok: boolean; data?: unknown; error?: { code: string; message: string } };
+        await store.recordReply(r.correlationId, { ok: r.ok, ...(r.data !== undefined ? { data: r.data } : {}), ...(r.error !== undefined ? { error: r.error } : {}) });
         return;
       }
       default:
@@ -174,7 +209,34 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
   return {
     store,
     machines() {
-      return [...connections.values()].map((x) => ({ machineId: x.machineId, connected: x.ws.readyState === WebSocket.OPEN, watermark: x.watermark }));
+      const out = new Map<string, ReturnType<ControlPlaneServer["machines"]>[number]>();
+      // durable registry first: an offline machine still shows up
+      for (const [id, rec] of registryMirror) {
+        out.set(id, {
+          machineId: id,
+          connected: false,
+          watermark: 0,
+          name: rec.name,
+          manifest: rec.manifest,
+          firstSeenAt: rec.firstSeenAt,
+          lastSeenAt: rec.lastSeenAt,
+          revoked: false,
+        });
+      }
+      for (const c of connections.values()) {
+        const known = out.get(c.machineId);
+        out.set(c.machineId, {
+          machineId: c.machineId,
+          connected: c.ws.readyState === WebSocket.OPEN,
+          watermark: c.watermark,
+          ...(known?.name !== undefined ? { name: known.name } : {}),
+          ...(known?.manifest !== undefined ? { manifest: known.manifest } : {}),
+          ...(known?.firstSeenAt !== undefined ? { firstSeenAt: known.firstSeenAt } : {}),
+          ...(known?.lastSeenAt !== undefined ? { lastSeenAt: known.lastSeenAt } : {}),
+          revoked: false,
+        });
+      }
+      return [...out.values()];
     },
     async push(machineId, cmd) {
       const correlationId = randomUUID();
@@ -183,7 +245,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
       if (conn) sendCommand(conn, correlationId, cmd.method, cmd.params);
       return { correlationId, seq };
     },
-    async start(port = 0) {
+    async start(port = 0, host = "127.0.0.1") {
+      for (const rec of await store.registry()) registryMirror.set(rec.machineId, rec);
       httpServer = createServer(async (req, res) => {
         const url = new URL(req.url ?? "/", "http://x");
         if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { status: "ready" });
@@ -201,6 +264,32 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
         if (ackMatch) {
           await store.ack(decodeURIComponent(ackMatch[2]!));
           return json(res, 200, { ok: true });
+        }
+        const readMatch = req.method === "GET" ? /^\/machines\/([^/]+)\/commands\/([^/]+)$/.exec(url.pathname) : null;
+        if (readMatch) {
+          const machineId = decodeURIComponent(readMatch[1]!);
+          const correlationId = decodeURIComponent(readMatch[2]!);
+          const command = await store.command(machineId, correlationId);
+          if (!command) return json(res, 404, { ok: false, error: "not_found" });
+          return json(res, 200, { ok: true, command, reply: await store.reply(correlationId) });
+        }
+        // ZOS-91: revoke a machine (tombstone + drop the live socket).
+        const revokeMatch = req.method === "DELETE" ? /^\/machines\/([^/]+)$/.exec(url.pathname) : null;
+        if (revokeMatch) {
+          const machineId = decodeURIComponent(revokeMatch[1]!);
+          const known = registryMirror.has(machineId) || connections.has(machineId) || store.isRevoked(machineId);
+          if (!known) return json(res, 404, { ok: false, error: "not_found" });
+          await store.revoke(machineId);
+          registryMirror.delete(machineId);
+          connections.get(machineId)?.ws.close(CLOSE_MACHINE_REVOKED, "machine revoked");
+          return json(res, 200, { ok: true, machineId, revoked: true });
+        }
+        // ZOS-91: re-admit a revoked machine (operator action).
+        const readmitMatch = req.method === "POST" ? /^\/machines\/([^/]+)\/register$/.exec(url.pathname) : null;
+        if (readmitMatch) {
+          const machineId = decodeURIComponent(readmitMatch[1]!);
+          await store.clearRevocation(machineId);
+          return json(res, 200, { ok: true, machineId, revoked: false });
         }
         if (req.method === "GET" && url.pathname === "/machines") {
           return json(res, 200, { ok: true, machines: this.machines() });
@@ -228,9 +317,9 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): Co
 
       const actual = await new Promise<number>((resolve, reject) => {
         httpServer!.once("error", reject);
-        httpServer!.listen(port, "127.0.0.1", () => resolve((httpServer!.address() as { port: number }).port));
+        httpServer!.listen(port, host, () => resolve((httpServer!.address() as { port: number }).port));
       });
-      return { port: actual };
+      return { port: actual, host };
     },
     async stop() {
       for (const c of connections.values()) c.ws.close();

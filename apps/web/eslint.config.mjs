@@ -2,7 +2,7 @@ import coreWebVitals from "eslint-config-next/core-web-vitals";
 import typescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
-  { ignores: ["dist-server/**", ".next/**", "node_modules/**"] },
+  { ignores: [".pi/**", "dist-server/**", ".next/**", "node_modules/**"] },
   ...coreWebVitals,
   ...typescript,
   {

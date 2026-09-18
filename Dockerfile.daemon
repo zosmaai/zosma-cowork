@@ -1,0 +1,27 @@
+# Zosma daemon — headless harness executor.
+# Runs the TypeScript source directly under Node type stripping (same as local
+# dev), so there is no separate build step.
+FROM node:22-alpine
+
+RUN corepack enable
+WORKDIR /repo
+
+# Dependency layer (cached until the lockfile / package manifests change).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/daemon/package.json apps/daemon/
+COPY apps/control-plane/package.json apps/control-plane/
+COPY packages/protocol/package.json packages/protocol/
+RUN pnpm install --frozen-lockfile --filter "@zosma-cowork/daemon..."
+
+# Source layer.
+COPY apps/daemon apps/daemon
+COPY apps/control-plane apps/control-plane
+COPY packages/protocol packages/protocol
+RUN pnpm daemon:build
+
+ENV NODE_ENV=production
+# Fixed port so the web container can reach it over the compose network.
+ENV ZOSMA_DAEMON_PORT=7441
+EXPOSE 7441
+
+CMD ["node", "apps/daemon/bin/zosma-daemon.js"]

@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCommandStore, createControlPlaneServer } from "@zosma-cowork/control-plane";
-import { CONTROL_RPC_REQUEST } from "@zosma-cowork/protocol";
+import { CONTROL_RPC_REQUEST, CONTROL_HELLO, CLOSE_MACHINE_REVOKED } from "@zosma-cowork/protocol";import { WebSocketServer } from "ws";
 import { OutboundConnector } from "./connector.ts";
 
 const TOKEN = "test-token";
@@ -63,14 +63,123 @@ const waitConnected = (c, timeoutMs = 2000) =>
     tick();
   });
 
+const waitFor = (predicate, what, timeoutMs = 2000) =>
+  new Promise((resolve, reject) => {
+    const start = Date.now();
+    const tick = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error(`timeout waiting for ${what}`));
+      setTimeout(tick, 10);
+    };
+    tick();
+  });
+
 test("connects outbound, registers on hello, appears in the registry", async () => {
   await withControlPlane(async ({ server, port }) => {
     const c = connect(port);
     c.start();
     await waitConnected(c);
     await new Promise((r) => setTimeout(r, 60));
-    const machines = server.machines();
-    assert.deepEqual(machines, [{ machineId: "m-1", connected: true, watermark: 0 }]);
+    const [m] = server.machines();
+    assert.equal(m.machineId, "m-1");
+    assert.equal(m.connected, true);
+    assert.equal(m.watermark, 0);
+    assert.equal(m.name, "dev-laptop");
+    assert.equal(m.revoked, false);
+    await c.stop();
+  });
+});
+
+/** Raw WS endpoint that records frames — lets a test read the outbound hello. */
+async function withRawSocket(fn) {
+  const wss = new WebSocketServer({ port: 0 });
+  await new Promise((r) => wss.once("listening", r));
+  const port = wss.address().port;
+  const frames = [];
+  const sockets = [];
+  wss.on("connection", (ws) => {
+    sockets.push(ws);
+    ws.on("message", (d) => frames.push(JSON.parse(String(d))));
+  });
+  try {
+    await fn({ port, frames, sockets });
+  } finally {
+    for (const s of sockets) s.terminate();
+    await new Promise((r) => wss.close(r));
+  }
+}
+
+test("hello carries the capability manifest when one is provided", async () => {
+  await withRawSocket(async ({ port, frames }) => {
+    const manifest = { manifestVersion: 1, platform: "linux", services: ["pi:prompt", "read:capabilities"] };
+    const c = connect(port, { manifest });
+    c.start();
+    await waitConnected(c);
+    await new Promise((r) => setTimeout(r, 60));
+    await c.stop();
+    const hello = frames.find((f) => f.type === CONTROL_HELLO);
+    assert.ok(hello, "hello frame sent on connect");
+    assert.equal(hello.machineId, "m-1");
+    assert.equal(hello.manifest.manifestVersion, 1);
+    assert.deepEqual(hello.manifest.services, ["pi:prompt", "read:capabilities"]);
+  });
+});
+
+test("hello omits the manifest when none is configured (older daemon shape)", async () => {
+  await withRawSocket(async ({ port, frames }) => {
+    const c = connect(port);
+    c.start();
+    await waitConnected(c);
+    await new Promise((r) => setTimeout(r, 60));
+    await c.stop();
+    const hello = frames.find((f) => f.type === CONTROL_HELLO);
+    assert.ok(hello);
+    assert.equal("manifest" in hello, false);
+  });
+});
+
+// --- ZOS-91: revocation is terminal ---
+
+test("a revoked machine stops reconnecting instead of hot-looping", async () => {
+  await withRawSocket(async ({ port, sockets }) => {
+    const c = connect(port, { maxReconnectMs: 50 });
+    c.start();
+    await waitConnected(c);
+    await new Promise((r) => setTimeout(r, 40));
+    for (const s of sockets) s.close(CLOSE_MACHINE_REVOKED, "machine revoked");
+    await new Promise((r) => setTimeout(r, 400)); // several backoff windows
+    assert.equal(c.status().revoked, true);
+    assert.equal(c.status().attempts, 0, "no reconnect attempts after revocation");
+    await c.stop();
+  });
+});
+
+test("the revocation log tells the operator what actually recovers the machine", async () => {
+  const errors = [];
+  await withRawSocket(async ({ port, sockets }) => {
+    const c = connect(port, { maxReconnectMs: 50, logger: { info: () => {}, warn: () => {}, debug: () => {}, error: (m) => errors.push(String(m)) } });
+    c.start();
+    await waitConnected(c);
+    await new Promise((r) => setTimeout(r, 40));
+    for (const s of sockets) s.close(CLOSE_MACHINE_REVOKED, "machine revoked");
+    await waitFor(() => c.status().revoked, "revoked status");
+    await c.stop();
+  });
+  const msg = errors.join("\n");
+  assert.match(msg, /revoked/i);
+  assert.match(msg, /restart/i, "re-admission alone does not revive a revoked daemon — the log must say to restart it");
+  assert.match(msg, /m-1/, "the operator needs the id to re-admit");
+});
+
+test("a non-revoked drop still reconnects", async () => {
+  await withRawSocket(async ({ port, sockets, frames }) => {
+    const c = connect(port, { maxReconnectMs: 50 });
+    c.start();
+    await waitConnected(c);
+    await new Promise((r) => setTimeout(r, 40));
+    sockets[sockets.length - 1].terminate(); // abnormal close, not a revocation
+    await waitFor(() => frames.filter((f) => f.type === CONTROL_HELLO).length >= 2, "reconnect hello");
+    assert.equal(c.status().revoked, false);
     await c.stop();
   });
 });
@@ -94,6 +203,41 @@ test("server push reaches onCommand and ack clears the store", async () => {
     assert.equal(store.watermark("m-1"), 1);
     await c.stop();
   });
+});
+
+test("persists reply before acknowledging a pushed command", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cp-reply-ack-"));
+  const store = createCommandStore(dir);
+  const order = [];
+  const server = createControlPlaneServer({
+    token: TOKEN,
+    store: {
+      ...store,
+      async recordReply(...args) {
+        order.push("reply");
+        return store.recordReply(...args);
+      },
+      async ack(...args) {
+        order.push("ack");
+        return store.ack(...args);
+      },
+    },
+  });
+  const { port } = await server.start(0);
+  const c = connect(port, { onCommand: async () => ({ ok: true, data: { done: true } }) });
+  try {
+    c.start();
+    await waitConnected(c);
+    await server.push("m-1", { method: "pi:health" });
+    const started = Date.now();
+    while (order.length < 2 && Date.now() - started < 2_000) await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(order, ["reply", "ack"]);
+  } finally {
+    await c.stop();
+    await server.stop();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("machine-initiated rpc round-trips through control-plane handleRpc", async () => {
