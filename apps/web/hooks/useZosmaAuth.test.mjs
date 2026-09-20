@@ -7,7 +7,7 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { parseCallbackUrl, safeError, isTauri } = await jiti.import("./useZosmaAuth.ts");
+const { parseCallbackUrl, parseDeepLink, safeError, isTauri } = await jiti.import("./useZosmaAuth.ts");
 
 // ── parseCallbackUrl ────────────────────────────────────────────────
 // Accepts: deep links, loopback redirect URLs, full pasted URLs, bare code.
@@ -70,4 +70,28 @@ test("isTauri is false outside Tauri", () => {
 
 test("isTauri is true when __TAURI_INTERNALS__ exists", () => {
   assert.equal(isTauri({ __TAURI_INTERNALS__: { invoke: () => {} } }), true);
+});
+
+// ── deep-link shape (spec: scheme ai.zosma.cowork, host oauth, path /callback)
+
+test("parseDeepLink accepts only the exact app callback shape", () => {
+  assert.deepEqual(
+    parseDeepLink("ai.zosma.cowork://oauth/callback?code=c1&state=s1"),
+    { code: "c1", state: "s1" },
+  );
+});
+
+test("parseDeepLink rejects a wrong host, path, or missing state", () => {
+  assert.equal(parseDeepLink("ai.zosma.cowork://other/callback?code=c&state=s"), null);
+  assert.equal(parseDeepLink("ai.zosma.cowork://oauth/other?code=c&state=s"), null);
+  assert.equal(parseDeepLink("ai.zosma.cowork://oauth/callback?code=c"), null);
+  assert.equal(parseDeepLink("ai.zosma.cowork://oauth/callback?state=s"), null);
+  assert.equal(parseDeepLink("ai.zosma.cowork://oauth/callback?code=c&code=d&state=s"), null);
+  assert.equal(parseDeepLink("ai.zosma.cowork://oauth/callback?code=c&state=s&state=t"), null);
+  assert.equal(parseDeepLink("https://example.com/oauth/callback?code=c&state=s"), null);
+});
+
+test("parseCallbackUrl routes the app scheme through the strict deep-link parser", () => {
+  assert.equal(parseCallbackUrl("ai.zosma.cowork://oauth/other?code=c&state=s"), null);
+  assert.deepEqual(parseCallbackUrl("http://127.0.0.1:30141/cb?code=c"), { code: "c" });
 });

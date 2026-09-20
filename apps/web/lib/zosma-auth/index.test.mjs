@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,8 +10,9 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { startZosmaAuth, ZOSMA_CLIENT_ID, completeZosmaAuth, disconnectZosmaAuth, cancelZosmaAuth, refreshZosmaModels, getZosmaStatus, authenticateWithKey } = await jiti.import("./index.ts");
+const { startZosmaAuth, ZOSMA_CLIENT_ID, completeZosmaAuth, disconnectZosmaAuth, cancelZosmaAuth, refreshZosmaModels, getZosmaStatus, authenticateWithKey, productionDeps } = await jiti.import("./index.ts");
 const stateModule = await jiti.import("./state.ts");
+const { createSessionToken } = await jiti.import("./session.ts");
 
 function withPiDir(run) {
   return async () => {
@@ -31,6 +32,18 @@ function stubFetch(handler) {
 function fileExists(path) {
   return readFile(path, "utf-8").then(() => true, () => false);
 }
+
+test("productionDeps reads provider models straight from models.json", withPiDir(async (dir) => {
+  await writeFile(
+    join(dir, "models.json"),
+    JSON.stringify({ providers: { "zosma-router": { id: "zosma-router", models: [{ id: "m1" }, { id: "m2" }] } } }),
+  );
+  assert.deepEqual(await productionDeps(dir).getAvailable("zosma-router"), [
+    { id: "m1", provider: "zosma-router" },
+    { id: "m2", provider: "zosma-router" },
+  ]);
+  assert.deepEqual(await productionDeps(dir).getAvailable("nope"), []);
+}));
 
 test("startZosmaAuth returns the server authorization_url", withPiDir(async (dir) => {
   const fetch = stubFetch(async () =>
@@ -318,12 +331,33 @@ test("getZosmaStatus is clean when nothing is set up", withPiDir(async (dir) => 
   const status = getZosmaStatus(dir);
   assert.deepEqual(status, {
     configured: false,
+    signedIn: false,
     pending: false,
     modelCount: 0,
     baseUrl: null,
     authBaseUrl: "https://auth.zosma.ai",
     routerBaseUrl: "https://router.zosma.ai/v1",
   });
+}));
+
+test("getZosmaStatus reports signedIn only for a session matching this key", withPiDir(async (dir) => {
+  const deps = {
+    reload: async () => {},
+    getAvailable: async (pid) => [{ id: "m1", provider: pid }],
+    fetch: async () => Response.json({ data: [{ id: "m1" }] }),
+  };
+  await authenticateWithKey("sk-live", dir, deps);
+
+  assert.equal(getZosmaStatus(dir).signedIn, false);
+  assert.equal(getZosmaStatus(dir, { sessionToken: null }).signedIn, false);
+  assert.equal(
+    getZosmaStatus(dir, { sessionToken: createSessionToken("sk-someone-else") }).signedIn,
+    false,
+  );
+  assert.equal(
+    getZosmaStatus(dir, { sessionToken: createSessionToken("sk-live") }).signedIn,
+    true,
+  );
 }));
 
 test("authenticateWithKey saves a fresh key and its catalog", withPiDir(async (dir) => {

@@ -23,12 +23,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
-import { agentDir as getAgentDir } from "../agent-dir";
-import { piAuth } from "../daemon-client";
+import { agentDir } from "../agent-dir";
 import { invalidateModelsCache } from "../models-cache";
 import { generateCodeVerifier, generateState, sha256Base64url } from "./crypto";
 import { deletePending, loadPending, savePending } from "./state";
 import { resolveRouterConfig } from "./router-config";
+import { verifySessionToken } from "./session";
 import { ZOSMA_PROVIDER_ID, deleteProvider, readProviderEntry, restoreProvider, snapshotProvider, upsertProvider } from "./models-json";
 
 export const ZOSMA_CLIENT_ID = "zosma-cowork";
@@ -64,6 +64,12 @@ export interface CompleteAuthResult {
 
 export interface ZosmaStatus {
   configured: boolean;
+  /**
+   * Does *this browser* carry a valid session cookie? `configured` says the
+   * machine has a router key; only `signedIn` unlocks the app for a given
+   * browser.
+   */
+  signedIn: boolean;
   pending: boolean;
   modelCount: number;
   baseUrl: string | null;
@@ -156,11 +162,19 @@ export async function startZosmaAuth(
  * Default piDir for route handlers.
  */
 export function zosmaPiDir(): string {
-  return getAgentDir();
+  return agentDir();
 }
 
 // Facade re-export (routes import config ops from @/lib/zosma-auth).
 export { saveRouterConfig } from "./router-config";
+export {
+  SESSION_COOKIE,
+  readSessionCookie,
+  signInCookies,
+  signOutCookies,
+  verifySessionToken,
+  currentRouterKey,
+} from "./session";
 
 type ModelInput = "text" | "image";
 
@@ -353,20 +367,29 @@ declare global {
 }
 
 /**
- * Production dependency wiring: web models-cache invalidation + daemon
- * provider-model reads (roadmap item 6 end-to-end: ModelRuntime lives in the
- * daemon; web relays via the auth:* ops).
+ * Production dependency wiring: web models-cache invalidation + native
+ * ModelRuntime reads. Router sign-in must work without a daemon relay.
  */
-export function productionDeps(): ZosmaAuthDeps {
+/**
+ * Production dependency wiring.
+ *
+ * The model registry stays in the daemon/pi process: this tier answers
+ * "which models does this provider expose" by reading the same models.json
+ * the registry reads, so sign-in works with no daemon running and the
+ * pi-coding-agent SDK never enters the web bundle.
+ */
+export function productionDeps(piDir: string = agentDir()): ZosmaAuthDeps {
   return {
     reload: async () => {
       invalidateModelsCache();
     },
     getAvailable: async (providerId) => {
-      const { models } = await piAuth("provider-models", { providerId }) as {
-        models: Array<{ id: string; provider: string }>;
-      };
-      return models;
+      const provider = readProviderEntry(join(piDir, "models.json"), providerId);
+      const models = Array.isArray(provider?.models) ? provider.models : [];
+      return models
+        .map((model) => (model as { id?: unknown }).id)
+        .filter((id): id is string => typeof id === "string")
+        .map((id) => ({ id, provider: providerId }));
     },
   };
 }
@@ -493,11 +516,15 @@ export async function authenticateWithKey(
  * Read-only status for the UI: is the provider configured, is a sign-in
  * in flight, how many models, which base URLs are effective.
  */
-export function getZosmaStatus(piDir: string): ZosmaStatus {
+export function getZosmaStatus(
+  piDir: string,
+  opts: { sessionToken?: string | null } = {},
+): ZosmaStatus {
   const config = resolveRouterConfig(piDir);
   const provider = readProviderEntry(join(piDir, "models.json"), ZOSMA_PROVIDER_ID);
   return {
     configured: Boolean(provider),
+    signedIn: verifySessionToken(opts.sessionToken, provider?.apiKey),
     pending: Boolean(loadPending(piDir)),
     modelCount: provider?.models?.length ?? 0,
     baseUrl: provider?.baseUrl ?? null,

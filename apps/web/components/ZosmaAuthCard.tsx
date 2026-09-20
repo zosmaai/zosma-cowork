@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useZosmaAuth } from "@/hooks/useZosmaAuth";
+import { ZOSMA_SIGNED_OUT_EVENT } from "@/hooks/useZosmaGate";
 
 /** One-shot landing notice from the callback redirect (?zosma=success|error). */
 export interface ZosmaNotice {
@@ -12,6 +13,7 @@ export interface ZosmaNotice {
 
 interface ZosmaStatus {
   configured: boolean;
+  signedIn?: boolean;
   pending: boolean;
   modelCount: number;
   baseUrl: string | null;
@@ -138,6 +140,9 @@ export function ZosmaAuthCard({ onRefresh, notice: noticeProp }: Props) {
     reset();
     void loadStatus();
     onRefresh();
+    // The server cleared this browser's session cookie — send the app back
+    // to the login screen instead of leaving it on dead API calls.
+    window.dispatchEvent(new Event(ZOSMA_SIGNED_OUT_EVENT));
   };
 
   const refreshModels = async () => {

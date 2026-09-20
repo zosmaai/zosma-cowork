@@ -50,12 +50,43 @@ export interface ParsedCallback {
 }
 
 /**
+ * Exact deep-link shape only (spec 4.3): scheme `ai.zosma.cowork`, host
+ * `oauth`, path `/callback`, one `code`, one `state`. Anything else is a
+ * stray URL and is ignored rather than handed to the completion route.
+ */
+export function parseDeepLink(raw: string): ParsedCallback | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "ai.zosma.cowork:") return null;
+  if (parsed.host !== "oauth") return null;
+  if (parsed.pathname !== "/callback") return null;
+  if (parsed.searchParams.getAll("code").length !== 1) return null;
+  if (parsed.searchParams.getAll("state").length !== 1) return null;
+
+  const code = parsed.searchParams.get("code");
+  const state = parsed.searchParams.get("state");
+  if (!code || !state) return null;
+  return { code, state };
+}
+
+/**
  * Extract { code, state? } from a deep link, redirect URL, or bare code.
  * Pure + exported for tests.
  */
 export function parseCallbackUrl(raw: string): ParsedCallback | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+
+  // The app's own scheme goes through the strict parser — a malformed deep
+  // link must never reach the completion route.
+  if (/^ai\.zosma\.cowork:/i.test(trimmed)) return parseDeepLink(trimmed);
 
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     let parsed: URL;
@@ -64,13 +95,8 @@ export function parseCallbackUrl(raw: string): ParsedCallback | null {
     } catch {
       return null;
     }
-    // Deep links: only the app's own scheme. http(s): any host (loopback or
-    // whatever the auth server sent back).
-    if (
-      parsed.protocol !== "http:" &&
-      parsed.protocol !== "https:" &&
-      parsed.protocol !== "ai.zosma.cowork:"
-    ) {
+    // Loopback / auth-server redirects and pasted address-bar URLs.
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
     }
     if (parsed.searchParams.getAll("code").length !== 1) return null;
@@ -152,25 +178,33 @@ export function useZosmaAuth(options: UseZosmaAuthOptions = {}) {
   }, []);
 
   // ── Tauri deep-link listener ─────────────────────────────────────
+  // `getCurrent()` covers the launch-by-deep-link case (the app was opened
+  // from the browser completion page, so onOpenUrl never fires for it);
+  // `onOpenUrl` covers links delivered while the app is already running.
   useEffect(() => {
     let cancelled = false;
+
+    function deliver(urls: string[] | null | undefined) {
+      if (cancelled || deliveredRef.current) return;
+      for (const url of urls ?? []) {
+        const parsed = parseCallbackUrl(url);
+        if (parsed?.state) {
+          deliveredRef.current = true;
+          void complete(parsed.code, parsed.state);
+          return;
+        }
+      }
+    }
+
     async function listen() {
       const win = window as Window & { __TAURI_INTERNALS__?: unknown };
       if (!win.__TAURI_INTERNALS__) return;
       try {
         const mod = await import("@tauri-apps/plugin-deep-link");
         if (cancelled) return;
-        unlistenRef.current = await mod.onOpenUrl((urls: string[]) => {
-          if (deliveredRef.current) return;
-          for (const url of urls) {
-            const parsed = parseCallbackUrl(url);
-            if (parsed?.state) {
-              deliveredRef.current = true;
-              void complete(parsed.code, parsed.state);
-              return;
-            }
-          }
-        });
+        unlistenRef.current = await mod.onOpenUrl((urls: string[]) => deliver(urls));
+        if (cancelled) return;
+        deliver(await mod.getCurrent());
       } catch {
         // Browser / plugin unavailable — manual paste still works.
       }
@@ -226,6 +260,41 @@ export function useZosmaAuth(options: UseZosmaAuthOptions = {}) {
     [complete],
   );
 
+  /**
+   * Degraded sign-in: paste a Zosma Router key directly. The only path that
+   * always works — the auth server rejects `redirect_uri`, so browsers that
+   * cannot receive the app deep link have no other way in.
+   */
+  const submitApiKey = useCallback(
+    async (raw: string) => {
+      const apiKey = raw.trim();
+      if (!apiKey) {
+        setError("Paste a Zosma Router key to continue.");
+        setPhase("error");
+        return;
+      }
+      setPhase("completing");
+      setError(null);
+      try {
+        const res = await fetch("/api/auth/zosma/api-key", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error ?? `sign-in returned ${res.status}`);
+        const result = body as ZosmaAuthResult;
+        setResult(result);
+        setPhase("done");
+        onCompletedRef.current?.(result);
+      } catch (err) {
+        setError(safeError(err));
+        setPhase("error");
+      }
+    },
+    [],
+  );
+
   const cancel = useCallback(async () => {
     try {
       await fetch("/api/auth/zosma/cancel", { method: "POST" });
@@ -242,5 +311,5 @@ export function useZosmaAuth(options: UseZosmaAuthOptions = {}) {
     setResult(null);
   }, []);
 
-  return { phase, error, result, start, cancel, reset, complete, submitManual };
+  return { phase, error, result, start, cancel, reset, complete, submitManual, submitApiKey };
 }

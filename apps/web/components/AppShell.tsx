@@ -8,6 +8,7 @@ import { SessionSidebar } from "./SessionSidebar";
 import { DeleteSessionDialog } from "./session-sidebar/session-dialogs/delete-session-dialog";
 import { RenameSessionDialog } from "./session-sidebar/session-dialogs/rename-session-dialog";
 import { ZosmaLoadingState } from "./ZosmaLoadingState";
+import { LoginScreen } from "./LoginScreen";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
@@ -25,6 +26,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
+import { useZosmaGate } from "@/hooks/useZosmaGate";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { listSessions } from "@/lib/api-v1-client";
@@ -90,6 +92,8 @@ export function AppShell() {
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
   // is not mounted. ChatWindow receives the audio callbacks as props.
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio, soundEnabledRef } = useAudio();
+  // Whole-app sign-in gate: no Zosma account -> LoginScreen instead of the app.
+  const zosmaGate = useZosmaGate();
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
@@ -1697,6 +1701,16 @@ export function AppShell() {
       </button>
     );
   };
+
+  if (zosmaGate.state !== "signed-in") {
+    return zosmaGate.state === "loading" ? (
+      <div className="flex min-h-screen w-full items-center justify-center bg-(--bg)">
+        <ZosmaLoadingState label={translate("i18n.loading")} />
+      </div>
+    ) : (
+      <LoginScreen onSignedIn={zosmaGate.refresh} />
+    );
+  }
 
   return (
     <>
