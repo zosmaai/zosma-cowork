@@ -68,6 +68,11 @@ test("isTauri is false outside Tauri", () => {
   assert.equal(isTauri({}), false);
 });
 
+test("isTauri is false when handed nothing at all", () => {
+  assert.equal(isTauri(undefined), false);
+  assert.equal(isTauri(null), false);
+});
+
 test("isTauri is true when __TAURI_INTERNALS__ exists", () => {
   assert.equal(isTauri({ __TAURI_INTERNALS__: { invoke: () => {} } }), true);
 });

@@ -40,8 +40,10 @@ export interface UseZosmaAuthOptions {
   redirectUri?: string;
 }
 
-export function isTauri(win: Window | Record<string, unknown>): boolean {
-  return Boolean((win as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+export function isTauri(win?: Window | Record<string, unknown> | null): boolean {
+  // Tolerates undefined on purpose: this is read during render/effect in the
+  // browser and in SSR-adjacent code paths, so it must never throw.
+  return Boolean((win as { __TAURI_INTERNALS__?: unknown } | null | undefined)?.__TAURI_INTERNALS__);
 }
 
 export interface ParsedCallback {
