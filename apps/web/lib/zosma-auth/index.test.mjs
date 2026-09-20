@@ -375,6 +375,34 @@ test("authenticateWithKey saves a fresh key and its catalog", withPiDir(async (d
   assert.equal(models.providers["zosma-router"].apiKey, "sk-pasted");
 }));
 
+test("authenticateWithKey cannot shrink an existing catalog (router lists fewer models)", withPiDir(async (dir) => {
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: {
+      "zosma-router": {
+        id: "zosma-router",
+        name: "Zosma AI",
+        apiKey: "sk-old",
+        api: "openai-completions",
+        models: [{ id: "keep-a", name: "Keep A" }, { id: "k1", name: "Stale K1" }],
+      },
+    },
+  }));
+  const deps = {
+    reload: async () => {},
+    getAvailable: async (pid) => ["k1", "keep-a"].map((id) => ({ id, provider: pid })),
+    fetch: stubFetch(async () => Response.json({ data: [{ id: "k1", display_name: "Fresh K1" }] })),
+  };
+  const res = await authenticateWithKey("sk-pasted", dir, deps);
+  assert.equal(res.modelCount, 2);
+  const models = JSON.parse(await readFile(join(dir, "models.json"), "utf-8"));
+  assert.deepEqual(
+    models.providers["zosma-router"].models.map((m) => m.id),
+    ["k1", "keep-a"],
+  );
+  assert.equal(models.providers["zosma-router"].models[0].name, "Fresh K1");
+}));
+
 test("authenticateWithKey rolls back on verification failure", withPiDir(async (dir) => {
   const { writeFile } = await import("node:fs/promises");
   await writeFile(join(dir, "models.json"), JSON.stringify({

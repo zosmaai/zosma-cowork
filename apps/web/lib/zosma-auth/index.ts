@@ -502,8 +502,16 @@ export async function authenticateWithKey(
 
   const models = mapCatalogRows(rows);
   const existing = readProviderEntry(join(piDir, "models.json"), ZOSMA_PROVIDER_ID);
+  // A raw router key can only see this key's LiteLLM routes, which is often a
+  // subset of the entitlement catalog the auth host wrote. Merge instead of
+  // replace so pasting a key can never delete models (union, fresh row wins on
+  // an id collision).
+  const known = new Set(models.map((m) => m.id));
+  const kept = (existing?.models ?? [])
+    .filter((m) => typeof m.id === "string" && !known.has(m.id as string))
+    .map((m) => m as unknown as MappedModel);
   return saveCatalogAndVerify(
-    models,
+    [...models, ...kept],
     key,
     piDir,
     deps,
