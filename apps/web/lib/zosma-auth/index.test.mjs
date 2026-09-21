@@ -85,6 +85,16 @@ test("startZosmaAuth sends frozen client_id, PKCE fields and device id", withPiD
   assert.match(body.device_id, /^cowork-/);
 }));
 
+test("startZosmaAuth sends supplied browser callback", withPiDir(async (dir) => {
+  let body;
+  const fetch = stubFetch(async (_url, init) => {
+    body = JSON.parse(init.body);
+    return Response.json({ authorization_url: "https://x/authorize" });
+  });
+  await startZosmaAuth(dir, { fetch }, { redirectUri: "https://cowork.example.test/api/auth/zosma/callback" });
+  assert.equal(body.redirect_uri, "https://cowork.example.test/api/auth/zosma/callback");
+}));
+
 test("startZosmaAuth reuses an existing device id across calls", withPiDir(async (dir) => {
   const fetch = stubFetch(async () => Response.json({ authorization_url: "https://x/authorize" }));
   await startZosmaAuth(dir, { fetch });

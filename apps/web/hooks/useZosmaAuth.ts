@@ -262,11 +262,7 @@ export function useZosmaAuth(options: UseZosmaAuthOptions = {}) {
     [complete],
   );
 
-  /**
-   * Degraded sign-in: paste a Zosma Router key directly. The only path that
-   * always works — the auth server rejects `redirect_uri`, so browsers that
-   * cannot receive the app deep link have no other way in.
-   */
+  /** Fallback sign-in: paste a Zosma Router key when browser return cannot complete. */
   const submitApiKey = useCallback(
     async (raw: string) => {
       const apiKey = raw.trim();

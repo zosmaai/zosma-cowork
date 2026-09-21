@@ -66,10 +66,12 @@ Cookie lifecycle:
 
 - `LoginScreen` drives the existing `useZosmaAuth` flow (start → external
   authorization URL → completion). It is reused verbatim; no second auth system.
-- Two completion paths are offered:
-  1. **Deep link** — the auth server's Cowork page opens `ai.zosma.cowork://oauth/callback?code=…&state=…`.
-  2. **Router-key paste** — always available, so a browser that cannot receive the
-     deep link still has a guaranteed way in.
+- `proxy.ts` redirects an anonymous `/` request to `/login`, so anonymous
+  visitors no longer receive app HTML. A valid session redirects `/login` to `/`.
+- Three completion paths are offered:
+  1. **Browser return** — auth server redirects to the configured Cowork callback.
+  2. **Deep link** — auth server's Cowork page opens `ai.zosma.cowork://oauth/callback?code=…&state=…`.
+  3. **Router-key paste** — fallback when browser return or deep link cannot complete.
 - Copy is phase- and platform-aware: the desktop app says *"Opening browser…"*,
   a plain browser says *"Opening your sign-in link…"* (`auth.openingLink`, en + zh-CN).
   `isTauri()` takes an optional window and is null-safe, so it is safe to call from
@@ -148,19 +150,21 @@ runtime crash, and cut `POST /api/auth/zosma/start` from ~10.5s to under 1s in d
    `Info.plist`, so this is untestable from `next dev`. Macros: build the bundle,
    sign in, and check the launch-by-link and running-app paths.
 
-### 2.2 Known gaps / accepted trade-offs
+### 2.2 Web status
 
-- **`/` HTML is still served to anonymous visitors.** It contains no data — every
-  byte of app data comes from `/api/*`, which returns 401 — but the shell markup
-  itself is public. Closing that needs a server-side redirect from `/` to a login
-  route in `proxy.ts`.
+Web sign-in boundary is complete: anonymous `/` requests redirect to `/login`,
+`/api/*` remains session-gated, and a browser that completes sign-in returns to
+`/`. The remaining items below are deliberate trade-offs or auth-server work.
+
+### 2.3 Known gaps / accepted trade-offs
+
 - **A second browser on an already-signed-in machine must redo the PKCE flow.**
   Per-browser sessions cannot be granted from machine-wide state, and the flow
   overwrites the `zosma-router` entry with a fresh device key.
-- **No loopback auto-return to the browser.** `POST /start` deliberately does not
-  forward `redirect_uri` (the deployed auth server rejects unexpected fields; a test
-  asserts this). Completion therefore relies on the deep link or the router-key
-  paste, not on a `http://127.0.0.1:…/api/auth/zosma/callback` bounce.
+- **Browser return requires deployment configuration.** Auth server accepts only
+  `redirect_uri` matching its `COWORK_REDIRECT_URI`; Cowork forwards its callback
+  to the authorization request. Empty/mismatched configuration preserves deep-link
+  and manual-paste completion without redirecting.
 - **Windows/Linux deep links may open a second instance.** `tauri-plugin-single-instance`
   is not installed; macOS LaunchServices delivers the URL to the running app, the
   other platforms generally do not.
@@ -176,6 +180,16 @@ runtime crash, and cut `POST /api/auth/zosma/start` from ~10.5s to under 1s in d
 - **Pending PKCE transactions** live in `<agentDir>/zosma-auth-pending.json` with a
   10-minute TTL and are overwritten by each new `start`. A stale file makes
   `/status` report `pending:true` until it expires. Harmless, but noisy.
+
+### 2.4 auth.zosma.ai repo work
+
+1. Make `COWORK_AUTH_SECRET` required in production; fail startup when absent or
+   equal to the development default.
+2. Replace the no-op authorization limiter with a shared, bounded store (for
+   example KV/Redis), keyed by client IP and device id. In-memory limits do not
+   hold across replicas.
+3. Set `COWORK_REDIRECT_URI` to the exact Cowork callback URL in the auth-service
+   Cloud Build trigger before deploying. The auth server rejects any other value.
 
 ## 3. Where the pieces live
 

@@ -109,15 +109,12 @@ export function loadDeviceId(piDir: string): string {
  * 4. POST {auth}/v1/cowork/authorizations
  * 5. Return authorizationUrl for the system browser
  *
- * `redirectUri` (optional): loopback callback URL forwarded to the auth
- * server so browsers can complete the flow over HTTP. Servers that ignore
- * it simply deep-link instead; the manual-paste path always works.
+ * `redirectUri` (optional): browser callback URL forwarded to the auth server.
  */
 export async function startZosmaAuth(
   piDir: string,
   deps: ZosmaAuthDeps,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _opts: { redirectUri?: string } = {},
+  opts: { redirectUri?: string } = {},
 ): Promise<StartAuthResult> {
   const config = resolveRouterConfig(piDir);
   const state = generateState();
@@ -136,6 +133,7 @@ export async function startZosmaAuth(
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
     device_id: deviceId,
+    ...(opts.redirectUri ? { redirect_uri: opts.redirectUri } : {}),
   };
   const res = await fetchImpl(deps)(`${config.authBaseUrl}/v1/cowork/authorizations`, {
     method: "POST",

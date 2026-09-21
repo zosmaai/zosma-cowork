@@ -80,9 +80,20 @@ test("an unconfigured machine still cannot reach the app API", withAgentDir(asyn
   assert.equal(proxy(request("/api/v1/sessions")).status, 401);
 }));
 
-test("non-API paths are left to the client-side gate", withAgentDir(async (dir) => {
+test("signed-out visitors are redirected to the login route", withAgentDir(async (dir) => {
   await configureZosma(dir);
-  assert.equal(passed(proxy(request("/"))), true);
+  const res = proxy(request("/"));
+  assert.equal(res.status, 307);
+  assert.equal(new URL(res.headers.get("location")).pathname, "/login");
+}));
+
+test("signed-in visitors can open the app and are kept out of the login route", withAgentDir(async (dir) => {
+  await configureZosma(dir);
+  const cookie = `${SESSION_COOKIE}=${createSessionToken(ROUTER_KEY)}`;
+  assert.equal(passed(proxy(request("/", { cookie }))), true);
+  const res = proxy(request("/login", { cookie }));
+  assert.equal(res.status, 307);
+  assert.equal(new URL(res.headers.get("location")).pathname, "/");
 }));
 
 test("basic-auth callers are not forced through the browser flow", withAgentDir(async (dir, t) => {
