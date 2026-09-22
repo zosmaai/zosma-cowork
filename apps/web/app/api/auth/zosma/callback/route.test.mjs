@@ -10,6 +10,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { GET } = await jiti.import("./route.ts");
 const stateModule = await jiti.import("../../../../../lib/zosma-auth/state.ts");
+const { verifySessionToken } = await jiti.import("../../../../../lib/zosma-auth/session.ts");
 
 function seedPending(dir, state = "s1") {
   stateModule.savePending(
@@ -66,4 +67,15 @@ test("GET /callback without code+state redirects to an error", withAgentDir(asyn
   assert.equal(res.status, 302);
   const loc = new URL(res.headers.get("location"));
   assert.equal(loc.searchParams.get("zosma"), "error");
+}));
+
+test("GET /callback issues a browser session cookie on success", withAgentDir(async (dir, t) => {
+  seedPending(dir);
+  stubRegistryAndNetwork(t);
+  const res = await GET(new Request("http://localhost/api/auth/zosma/callback?code=c1&state=s1"));
+  assert.equal(res.status, 302);
+  const cookie = res.headers.get("set-cookie") ?? "";
+  assert.match(cookie, /^zosma_session=/);
+  const token = cookie.slice("zosma_session=".length).split(";")[0];
+  assert.equal(verifySessionToken(token, "sk-new"), true);
 }));

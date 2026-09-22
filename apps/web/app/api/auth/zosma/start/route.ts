@@ -3,8 +3,7 @@ import { startZosmaAuth, productionDeps, zosmaPiDir } from "@/lib/zosma-auth";
 export const dynamic = "force-dynamic";
 
 // POST /api/auth/zosma/start — kick off the PKCE sign-in.
-// Body (optional): { redirectUri?: string } — loopback callback URL forwarded
-// to the auth server for browser completion.
+// Body (optional): { redirectUri?: string } — callback URL forwarded to auth server.
 export async function POST(req: Request) {
   let body: { redirectUri?: string } = {};
   try {

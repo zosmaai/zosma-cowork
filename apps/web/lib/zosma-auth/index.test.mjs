@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,8 +10,9 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { startZosmaAuth, ZOSMA_CLIENT_ID, completeZosmaAuth, disconnectZosmaAuth, cancelZosmaAuth, refreshZosmaModels, getZosmaStatus, authenticateWithKey } = await jiti.import("./index.ts");
+const { startZosmaAuth, ZOSMA_CLIENT_ID, completeZosmaAuth, disconnectZosmaAuth, cancelZosmaAuth, refreshZosmaModels, getZosmaStatus, authenticateWithKey, productionDeps } = await jiti.import("./index.ts");
 const stateModule = await jiti.import("./state.ts");
+const { createSessionToken } = await jiti.import("./session.ts");
 
 function withPiDir(run) {
   return async () => {
@@ -31,6 +32,18 @@ function stubFetch(handler) {
 function fileExists(path) {
   return readFile(path, "utf-8").then(() => true, () => false);
 }
+
+test("productionDeps reads provider models straight from models.json", withPiDir(async (dir) => {
+  await writeFile(
+    join(dir, "models.json"),
+    JSON.stringify({ providers: { "zosma-router": { id: "zosma-router", models: [{ id: "m1" }, { id: "m2" }] } } }),
+  );
+  assert.deepEqual(await productionDeps(dir).getAvailable("zosma-router"), [
+    { id: "m1", provider: "zosma-router" },
+    { id: "m2", provider: "zosma-router" },
+  ]);
+  assert.deepEqual(await productionDeps(dir).getAvailable("nope"), []);
+}));
 
 test("startZosmaAuth returns the server authorization_url", withPiDir(async (dir) => {
   const fetch = stubFetch(async () =>
@@ -70,6 +83,16 @@ test("startZosmaAuth sends frozen client_id, PKCE fields and device id", withPiD
   assert.match(body.code_challenge, /^[A-Za-z0-9_-]+$/);
   assert.equal(body.code_challenge_method, "S256");
   assert.match(body.device_id, /^cowork-/);
+}));
+
+test("startZosmaAuth sends supplied browser callback", withPiDir(async (dir) => {
+  let body;
+  const fetch = stubFetch(async (_url, init) => {
+    body = JSON.parse(init.body);
+    return Response.json({ authorization_url: "https://x/authorize" });
+  });
+  await startZosmaAuth(dir, { fetch }, { redirectUri: "https://cowork.example.test/api/auth/zosma/callback" });
+  assert.equal(body.redirect_uri, "https://cowork.example.test/api/auth/zosma/callback");
 }));
 
 test("startZosmaAuth reuses an existing device id across calls", withPiDir(async (dir) => {
@@ -318,12 +341,33 @@ test("getZosmaStatus is clean when nothing is set up", withPiDir(async (dir) => 
   const status = getZosmaStatus(dir);
   assert.deepEqual(status, {
     configured: false,
+    signedIn: false,
     pending: false,
     modelCount: 0,
     baseUrl: null,
     authBaseUrl: "https://auth.zosma.ai",
     routerBaseUrl: "https://router.zosma.ai/v1",
   });
+}));
+
+test("getZosmaStatus reports signedIn only for a session matching this key", withPiDir(async (dir) => {
+  const deps = {
+    reload: async () => {},
+    getAvailable: async (pid) => [{ id: "m1", provider: pid }],
+    fetch: async () => Response.json({ data: [{ id: "m1" }] }),
+  };
+  await authenticateWithKey("sk-live", dir, deps);
+
+  assert.equal(getZosmaStatus(dir).signedIn, false);
+  assert.equal(getZosmaStatus(dir, { sessionToken: null }).signedIn, false);
+  assert.equal(
+    getZosmaStatus(dir, { sessionToken: createSessionToken("sk-someone-else") }).signedIn,
+    false,
+  );
+  assert.equal(
+    getZosmaStatus(dir, { sessionToken: createSessionToken("sk-live") }).signedIn,
+    true,
+  );
 }));
 
 test("authenticateWithKey saves a fresh key and its catalog", withPiDir(async (dir) => {
@@ -339,6 +383,34 @@ test("authenticateWithKey saves a fresh key and its catalog", withPiDir(async (d
   assert.deepEqual(res, { providerId: "zosma-router", selectedModelId: "k1", modelCount: 1 });
   const models = JSON.parse(await readFile(join(dir, "models.json"), "utf-8"));
   assert.equal(models.providers["zosma-router"].apiKey, "sk-pasted");
+}));
+
+test("authenticateWithKey cannot shrink an existing catalog (router lists fewer models)", withPiDir(async (dir) => {
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: {
+      "zosma-router": {
+        id: "zosma-router",
+        name: "Zosma AI",
+        apiKey: "sk-old",
+        api: "openai-completions",
+        models: [{ id: "keep-a", name: "Keep A" }, { id: "k1", name: "Stale K1" }],
+      },
+    },
+  }));
+  const deps = {
+    reload: async () => {},
+    getAvailable: async (pid) => ["k1", "keep-a"].map((id) => ({ id, provider: pid })),
+    fetch: stubFetch(async () => Response.json({ data: [{ id: "k1", display_name: "Fresh K1" }] })),
+  };
+  const res = await authenticateWithKey("sk-pasted", dir, deps);
+  assert.equal(res.modelCount, 2);
+  const models = JSON.parse(await readFile(join(dir, "models.json"), "utf-8"));
+  assert.deepEqual(
+    models.providers["zosma-router"].models.map((m) => m.id),
+    ["k1", "keep-a"],
+  );
+  assert.equal(models.providers["zosma-router"].models[0].name, "Fresh K1");
 }));
 
 test("authenticateWithKey rolls back on verification failure", withPiDir(async (dir) => {

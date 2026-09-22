@@ -31,3 +31,16 @@ test("POST /disconnect is a clean no-op when not configured", withAgentDir(async
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true });
 }));
+
+test("POST /disconnect clears the browser session cookie", withAgentDir(async (dir, t) => {
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: { "zosma-router": { id: "zosma-router", apiKey: "sk-live", models: [] } },
+  }));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("ok", { status: 200 });
+  t.after(() => { globalThis.fetch = realFetch; });
+  const res = await POST(new Request("http://localhost/api/auth/zosma/disconnect", { method: "POST" }));
+  const cookie = res.headers.get("set-cookie") ?? "";
+  assert.match(cookie, /^zosma_session=;/);
+  assert.match(cookie, /Max-Age=0/);
+}));
