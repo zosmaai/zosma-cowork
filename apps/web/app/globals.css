@@ -2721,25 +2721,25 @@ span.token.table {
 
 /* DeepSeek-style compact file rail. Keep explorer presentation in CSS, not JSX. */
 .sidebar-file-explorer {
-  background: #1b1b1b;
-  color: #e7e7e7;
+  background: var(--surface-sidebar);
+  color: var(--text);
 }
 .sidebar-file-explorer > div:first-child {
   min-height: 30px;
-  border-bottom: 1px solid #353535;
-  background: #1b1b1b;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sidebar);
 }
 .sidebar-file-explorer > div:first-child > button {
   min-height: 30px;
   padding: 0 8px;
-  color: #c6c6c6;
+  color: var(--text-muted);
   font-size: 11px;
   letter-spacing: .06em;
 }
 .sidebar-file-explorer .file-explorer-section {
   min-height: 100%;
   padding: 2px 4px 8px;
-  background: #1b1b1b;
+  background: var(--surface-sidebar);
 }
 .file-explorer-row,
 .file-explorer-change-row {
@@ -2749,7 +2749,7 @@ span.token.table {
   box-sizing: border-box;
   height: 24px;
   border-radius: 3px;
-  color: #d8d8d8;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
@@ -2761,11 +2761,11 @@ span.token.table {
 .file-explorer-row.is-hovered,
 .file-explorer-change-row:hover,
 .file-explorer-change-row.is-hovered {
-  background: #303030;
+  background: var(--bg-hover);
 }
 .file-explorer-row:focus-visible,
 .file-explorer-change-row:focus-visible {
-  outline: 1px solid #6b9cff;
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 .file-explorer-row.depth-0,
@@ -2818,7 +2818,7 @@ span.token.table {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  color: #dedede;
+  color: var(--text);
   font-size: 12px;
   line-height: 24px;
   text-overflow: ellipsis;
@@ -2837,7 +2837,7 @@ span.token.table {
   height: 6px;
   border-radius: 50%;
 }
-.file-explorer-dot.is-uploaded { background: #4d91ff; }
+.file-explorer-dot.is-uploaded { background: var(--accent); }
 .file-explorer-dot.is-changed { background: #d6a84b; }
 .file-explorer-status-badge {
   display: flex;
@@ -2865,9 +2865,9 @@ span.token.table {
   justify-content: center;
   gap: 4px;
   transform: translateY(-50%);
-  border: 1px solid #454545;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: #292929;
+  background: var(--surface-elevated);
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
@@ -2876,13 +2876,13 @@ span.token.table {
 .file-explorer-mention {
   right: 4px;
   padding: 0 7px;
-  color: #7ca7ff;
+  color: var(--accent);
 }
 .file-explorer-mention.is-file { right: 28px; }
 .file-explorer-download {
   right: 4px;
   padding: 0 5px;
-  color: #bdbdbd;
+  color: var(--text-muted);
   text-decoration: none;
 }
 .file-explorer-empty,
@@ -2890,14 +2890,14 @@ span.token.table {
   display: flex;
   height: 22px;
   align-items: center;
-  color: #777;
+  color: var(--text-dim);
   font-size: 11px;
 }
 .file-explorer-state { padding: 8px 12px; height: auto; }
 .file-explorer-state.is-error { color: #f87171; }
 .file-explorer-feedback {
   padding: 6px 8px;
-  border-bottom: 1px solid #353535;
+  border-bottom: 1px solid var(--border);
 }
 .file-explorer-upload-status,
 .file-explorer-upload-summary {
@@ -2905,7 +2905,7 @@ span.token.table {
   align-items: center;
   gap: 8px;
   min-height: 22px;
-  color: #bdbdbd;
+  color: var(--text-muted);
   font-size: 11px;
 }
 .file-explorer-upload-status { justify-content: space-between; }
@@ -2918,18 +2918,18 @@ span.token.table {
   overflow: hidden;
   border: 0;
   border-radius: 2px;
-  background: #353535;
+  background: var(--border);
 }
-.file-explorer-progress::-webkit-progress-bar { background: #353535; }
-.file-explorer-progress::-webkit-progress-value { background: #a5a5a5; }
-.file-explorer-progress::-moz-progress-bar { background: #a5a5a5; }
+.file-explorer-progress::-webkit-progress-bar { background: var(--border); }
+.file-explorer-progress::-webkit-progress-value { background: var(--text-muted); }
+.file-explorer-progress::-moz-progress-bar { background: var(--text-muted); }
 .file-explorer-conflict {
   padding: 7px;
-  border: 1px solid color-mix(in srgb, #f59e0b 55%, #353535);
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--border));
   border-radius: 4px;
-  background: color-mix(in srgb, #f59e0b 9%, #242424);
+  background: color-mix(in srgb, #f59e0b 9%, var(--surface-elevated));
 }
-.file-explorer-conflict-summary { color: #e7e7e7; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.file-explorer-conflict-summary { color: var(--text); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .file-explorer-conflict-warning { margin-top: 3px; color: #f59e0b; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
 .file-explorer-conflict-actions { display: flex; gap: 5px; margin-top: 7px; }
 .file-explorer-conflict-actions button,
@@ -2941,8 +2941,8 @@ span.token.table {
   font-size: 10px;
 }
 .file-explorer-conflict-replace { border: 1px solid #ef4444; background: transparent; color: #ef4444; }
-.file-explorer-conflict-skip { border: 1px solid #454545; background: #292929; color: #e7e7e7; }
-.file-explorer-conflict-cancel { border: 0; background: transparent; color: #a5a5a5; }
+.file-explorer-conflict-skip { border: 1px solid var(--border-strong); background: var(--surface-elevated); color: var(--text); }
+.file-explorer-conflict-cancel { border: 0; background: transparent; color: var(--text-muted); }
 .file-explorer-upload-error,
 .file-explorer-upload-error-item { display: flex; align-items: flex-start; gap: 6px; color: #f87171; font-size: 11px; line-height: 1.35; }
 .file-explorer-upload-error-text,
@@ -2950,14 +2950,14 @@ span.token.table {
 .file-explorer-upload-counts { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; }
 .file-explorer-upload-count { display: flex; align-items: center; gap: 3px; }
 .file-explorer-upload-count.is-uploaded { color: #22c55e; }
-.file-explorer-upload-count.is-skipped { color: #777; }
+.file-explorer-upload-count.is-skipped { color: var(--text-dim); }
 .file-explorer-upload-count.is-failed { color: #f87171; }
-.file-explorer-mention-uploaded { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; border: 1px solid #454545; background: #292929; color: #7ca7ff; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.file-explorer-dismiss { width: 24px; height: 24px; flex-shrink: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #777; cursor: pointer; }
-.file-explorer-dismiss:hover { background: #303030; color: #bdbdbd; }
+.file-explorer-mention-uploaded { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border-strong); background: var(--surface-elevated); color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.file-explorer-dismiss { width: 24px; height: 24px; flex-shrink: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.file-explorer-dismiss:hover { background: var(--bg-hover); color: var(--text-muted); }
 .file-explorer-changes { padding: 0 4px 2px; }
 .file-explorer-change-stats { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; font-size: 12px; }
-.file-explorer-change-count { color: #777; }
+.file-explorer-change-count { color: var(--text-dim); }
 .file-explorer-change-additions { color: #4ade80; font-family: var(--font-mono); }
 .file-explorer-change-deletions { color: #f87171; font-family: var(--font-mono); }
 .file-explorer-change-row { gap: 6px; padding: 0 8px 0 10px; }
