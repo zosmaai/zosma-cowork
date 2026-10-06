@@ -85,7 +85,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 
   if (groups.length === 0) {
     return (
-      <div className="text-xs text-(--text-dim)">
+      <div className="text-[13px] text-(--text-dim)">
         {pkg.disabled ? t("i18n.packageDisabled") : t("i18n.noResolvedResources")}
       </div>
     );
@@ -109,7 +109,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
             {group.resources.map((resource) => (
               <div key={`${resource.kind}:${resource.path}`} className="min-w-0">
                 <div
-                  className="text-xs text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap"
+                  className="text-[13px] text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap"
                   title={resource.path}
                 >
                   {resource.name}
@@ -147,7 +147,7 @@ function buttonStyle(disabled?: boolean, danger?: boolean): React.CSSProperties 
     borderRadius: 6,
     color: danger ? "var(--state-error)" : "var(--text-muted)",
     cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: 12,
+    fontSize: 13,
     opacity: disabled ? 0.5 : 1,
   };
 }
@@ -205,7 +205,7 @@ function SegmentedScope({
             }}
             disabled={disabled}
             title={disabled ? t("trust.projectScopeUnavailable") : undefined}
-            className={`w-[76px] border-none text-xs ${scope === "global" ? "border-r border-(--border)" : "border-r-0"} ${active ? "bg-(--bg-selected)" : "bg-none"} ${active ? "text-(--text)" : "text-(--text-muted)"} ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${disabled ? "opacity-[0.45]" : ""}`}
+            className={`w-[76px] border-none text-[13px] ${scope === "global" ? "border-r border-(--border)" : "border-r-0"} ${active ? "bg-(--bg-selected)" : "bg-none"} ${active ? "text-(--text)" : "text-(--text-muted)"} ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${disabled ? "opacity-[0.45]" : ""}`}
           >
             {scope}
           </button>
@@ -255,7 +255,7 @@ function AddPluginPanel({
             href="https://pi.dev/packages"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-[5px] text-(--accent) text-xs no-underline whitespace-nowrap"
+            className="inline-flex items-center gap-[5px] text-(--accent) text-[13px] no-underline whitespace-nowrap"
           >
             <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false" className="shrink-0">
               <path
@@ -268,13 +268,13 @@ function AddPluginPanel({
             pi.dev/packages
           </a>
         </div>
-        <div className="text-xs text-(--text-dim) font-(--font-mono)">
+        <div className="text-[13px] text-(--text-dim) font-(--font-mono)">
           {installLocation(scope, cwd)}
         </div>
       </div>
 
       <div className="flex flex-col gap-7">
-        <label htmlFor="plugin-source" className="text-xs font-semibold text-(--text-muted)">
+        <label htmlFor="plugin-source" className="text-[13px] font-semibold text-(--text-muted)">
           Source
         </label>
         <input
@@ -320,7 +320,7 @@ function AddPluginPanel({
       </div>
 
       <div className="flex flex-col gap-7">
-        <div className="text-xs font-semibold text-(--text-muted)">
+        <div className="text-[13px] font-semibold text-(--text-muted)">
           Examples
         </div>
         <div className="flex flex-col gap-6">
@@ -346,7 +346,7 @@ function AddPluginPanel({
       </div>
 
       {actionError && (
-        <div className="text-xs text-(--state-error) whitespace-pre-wrap leading-[1.5]">
+        <div className="text-[13px] text-(--state-error) whitespace-pre-wrap leading-[1.5]">
           {actionError}
         </div>
       )}
@@ -404,7 +404,7 @@ function PackageDetail({
             </span>
           )}
           <span
-            className="font-(--font-mono) text-xs text-(--text) overflow-hidden text-ellipsis whitespace-nowrap"
+            className="font-(--font-mono) text-[13px] text-(--text) overflow-hidden text-ellipsis whitespace-nowrap"
           >
             {pkg.source}
           </span>
@@ -437,7 +437,7 @@ function PackageDetail({
       </div>
 
       <div
-        className="grid grid-cols-[minmax(96px,_130px)_minmax(0,_1fr)] gap-y-[9px] gap-x-3.5 text-xs leading-[1.45]"
+        className="grid grid-cols-[minmax(96px,_130px)_minmax(0,_1fr)] gap-y-[9px] gap-x-3.5 text-[13px] leading-[1.45]"
       >
         <div className="text-(--text-dim)">{t("i18n.status")}</div>
         <div style={{ color: statusColor(pkg.status), textTransform: "capitalize" }}>{pkg.status}</div>
@@ -462,19 +462,19 @@ function PackageDetail({
       </div>
 
       <div className="flex flex-col gap-8">
-        <div className="text-xs font-bold text-(--text)">
+        <div className="text-[13px] font-bold text-(--text)">
           {t("i18n.resolvedResources")}
         </div>
         <ResourceList pkg={pkg} />
       </div>
 
       {actionMessage && (
-        <div className="text-xs text-(--state-success)">
+        <div className="text-[13px] text-(--state-success)">
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div className="text-xs text-(--state-error) whitespace-pre-wrap leading-[1.5]">
+        <div className="text-[13px] text-(--state-error) whitespace-pre-wrap leading-[1.5]">
           {actionError}
         </div>
       )}
@@ -676,7 +676,7 @@ export function PluginsConfig({
         {!projectResourcesLoaded && (
           <div
             role="status"
-            className="py-2 px-[18px] border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-xs"
+            className="py-2 px-[18px] border-b border-(--border) bg-(--bg-panel) text-(--text-muted) text-[13px]"
           >
             {t("trust.pluginsNotLoaded")}
           </div>
@@ -697,7 +697,7 @@ export function PluginsConfig({
           >
             <div className="flex-1 overflow-y-auto py-2 px-1.5">
               {loading ? (
-                <div className="py-2.5 px-2 text-xs text-(--text-muted)">
+                <div className="py-2.5 px-2 text-[13px] text-(--text-muted)">
                   Loading...
                 </div>
               ) : error ? (
@@ -747,7 +747,7 @@ export function PluginsConfig({
                           />
                           <div className="min-w-0 flex-1">
                             <div
-                              className={`text-xs text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap ${isSelected ? "font-semibold" : ""}`}
+                              className={`text-[13px] text-(--text) font-(--font-mono) overflow-hidden text-ellipsis whitespace-nowrap ${isSelected ? "font-semibold" : ""}`}
                             >
                               {pkg.source}
                             </div>
@@ -779,7 +779,7 @@ export function PluginsConfig({
                   setActionError(null);
                   setActionMessage(null);
                 }}
-                className={`flex items-center gap-1.5 py-[7px] px-2 rounded-[5px] border-none w-full cursor-pointer text-xs ${addMode ? "bg-(--bg-selected)" : "bg-none"} ${addMode ? "text-(--accent)" : "text-(--text-dim)"}`}
+                className={`flex items-center gap-1.5 py-[7px] px-2 rounded-[5px] border-none w-full cursor-pointer text-[13px] ${addMode ? "bg-(--bg-selected)" : "bg-none"} ${addMode ? "text-(--accent)" : "text-(--text-dim)"}`}
                 onMouseEnter={(e) => {
                   if (!addMode) e.currentTarget.style.background = "var(--bg-hover)";
                 }}

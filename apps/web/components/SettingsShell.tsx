@@ -6,7 +6,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { ModelsContent, PluginsContent, SkillsContent } from "./SettingsContent";
-import type { ZosmaNotice } from "./ZosmaAuthCard";
+import type { ZosmaNotice } from "./ZosmaRouterDetail";
 import { pluginsService } from "@/services/plugins.service";
 import { skillsService } from "@/services/skills.service";
 
@@ -93,6 +93,9 @@ const CATEGORIES: { id: SettingsCategory; icon: React.ReactNode }[] = [
   },
 ];
 
+// Categories that render a full config panel with its own header/footer.
+const EMBEDDED_CATEGORIES: ReadonlySet<SettingsCategory> = new Set(["models", "plugins", "skills"]);
+
 const FOCUSABLE_SELECTOR = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 function AppearanceSection() {
@@ -110,7 +113,7 @@ function AppearanceSection() {
         {t("settings.categories.appearance")}
       </div>
       <div className="flex flex-col gap-2">
-        <div className="text-xs text-(--text-muted)">Theme</div>
+        <div className="text-[13px] text-(--text-muted)">Theme</div>
         <div className="flex gap-2">
           {options.map((opt) => (
             <button
@@ -123,7 +126,7 @@ function AppearanceSection() {
                 background: preference === opt.value ? "var(--accent)" : "var(--bg-panel)",
                 color: preference === opt.value ? "#fff" : "var(--text-muted)",
                 cursor: "pointer",
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: preference === opt.value ? 600 : 400,
               }}
             >
@@ -159,7 +162,7 @@ function LanguageSection() {
               background: locale === plugin.id ? "var(--bg-selected)" : "var(--bg-panel)",
               color: locale === plugin.id ? "var(--text)" : "var(--text-muted)",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: 13,
               textAlign: "left",
               width: "100%",
             }}
@@ -187,7 +190,7 @@ function DefaultsSection() {
       <div className="text-sm font-semibold text-(--text)">
         {t("settings.categories.defaults")}
       </div>
-      <p className="m-0 text-xs text-(--text-dim) leading-[1.6]">
+      <p className="m-0 text-[13px] text-(--text-dim) leading-[1.6]">
         Default model, thinking level, and tool preset preferences are configured per-session in the composer. Session-level settings override these defaults.
       </p>
     </div>
@@ -370,7 +373,7 @@ export function SettingsShell({
 
           {/* Right: content pane */}
           <div
-            className="settings-content-pane"
+            className={`settings-content-pane ${EMBEDDED_CATEGORIES.has(activeCategory) ? "settings-content-pane--embedded" : ""}`}
             role="tabpanel"
             aria-label={t(`settings.categories.${activeCategory}`)}
           >

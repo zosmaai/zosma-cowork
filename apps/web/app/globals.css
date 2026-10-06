@@ -199,13 +199,6 @@ html.dark .catppuccin-file-icon {
 }
 
 button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-button,
 a,
 [role="button"],
 [role="tab"] {
@@ -2331,6 +2324,25 @@ span.token.table {
     padding: 16px;
     min-height: 0;
   }
+}
+
+/* Embedded config panels (Models/Plugins/Skills) own their header, footer and
+   inner scroll, so the pane must not pad or scroll around them. */
+.settings-content-pane--embedded {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-content-pane--embedded > .settings-embedded-host {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The Settings dialog already has a close button. */
+.settings-embedded-host .settings-embedded-hide {
+  display: none;
 }
 
 /* Sidebar: column flex so the content area fills and the footer pins bottom.
