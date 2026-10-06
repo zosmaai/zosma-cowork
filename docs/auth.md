@@ -76,7 +76,7 @@ Cookie lifecycle:
   a plain browser says *"Opening your sign-in link…"* (`auth.openingLink`, en + zh-CN).
   `isTauri()` takes an optional window and is null-safe, so it is safe to call from
   a render or effect in any environment.
-- `ZosmaAuthCard` (settings → models) dispatches `ZOSMA_SIGNED_OUT_EVENT` on
+- `ZosmaRouterDetail` (settings → models → Zosma Router) dispatches `ZOSMA_SIGNED_OUT_EVENT` on
   Disconnect, so the gate returns to the login screen without a reload.
 
 ### 1.4 Desktop deep link

@@ -10,7 +10,7 @@
  */
 
 import { ModelsConfig } from "./ModelsConfig";
-import type { ZosmaNotice } from "./ZosmaAuthCard";
+import type { ZosmaNotice } from "./ZosmaRouterDetail";
 import { PluginsConfig } from "./PluginsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 

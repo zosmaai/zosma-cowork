@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
-import { ZosmaAuthCard, type ZosmaNotice } from "@/components/ZosmaAuthCard";
+import { ZosmaRouterDetail, useZosmaRouterStatus, type ZosmaNotice } from "@/components/ZosmaRouterDetail";
 import type { ModelCatalogPreset, ModelCatalogRecommendation } from "@/lib/model-catalog";
 import type { DiscoveredModel } from "@/lib/model-discovery";
 import {
@@ -179,7 +179,8 @@ type Selection =
   | { type: "provider"; name: string }
   | { type: "model"; providerName: string; index: number }
   | { type: "oauth"; providerId: string }
-  | { type: "apikey"; providerId: string };
+  | { type: "apikey"; providerId: string }
+| { type: "zosma" };
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 
@@ -188,7 +189,7 @@ const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messag
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] text-(--text-muted) font-medium">{label}</label>
+      <label className="text-[12px] text-(--text-muted) font-medium">{label}</label>
       {children}
     </div>
   );
@@ -200,7 +201,7 @@ const inputStyle = {
   border: "1px solid var(--border)",
   borderRadius: 5,
   color: "var(--text)",
-  fontSize: 12,
+  fontSize: 13,
   outline: "none",
   width: "100%",
   boxSizing: "border-box" as const,
@@ -208,7 +209,7 @@ const inputStyle = {
 
 function TextInput({ value, onChange, placeholder, mono, className }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean; className?: string }) {
   return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-    className={`${className ?? ""} py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border ${mono ? "font-(--font-mono)" : ""}`} />;
+    className={`${className ?? ""} py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border ${mono ? "font-(--font-mono)" : ""}`} />;
 }
 
 function SecretTextInput({
@@ -247,7 +248,7 @@ function SecretTextInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
-        className={`py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border pr-[34px] ${mono ? "font-(--font-mono)" : ""}`}
+        className={`py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border pr-[34px] ${mono ? "font-(--font-mono)" : ""}`}
         autoComplete={autoComplete}
         spellCheck={spellCheck}
       />
@@ -284,7 +285,7 @@ function Select({ value, onChange, options, required }: { value: string; onChang
   const { t } = useI18n();
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
-      className={`py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border ${value ? "text-(--text)" : "text-(--text-dim)"}`}>
+      className={`py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border ${value ? "text-(--text)" : "text-(--text-dim)"}`}>
        {!required && <option value="">— {t("i18n.default")} / none —</option>}
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -293,7 +294,7 @@ function Select({ value, onChange, options, required }: { value: string; onChang
 
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-(--text-muted)">
+    <label className="flex items-center gap-1.5 cursor-pointer text-[13px] text-(--text-muted)">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
         className="w-[13px] h-[13px] accent-(--accent) cursor-pointer" />
       {label}
@@ -428,7 +429,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       <Field label="API Key">
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
           placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
-        <span className="text-[10px] text-(--text-dim) mt-0.5">
+        <span className="text-[11px] text-(--text-dim) mt-0.5">
           Prefix with <code className="font-(--font-mono)">!</code> to run a shell command, or use an env var name
         </span>
       </Field>
@@ -442,7 +443,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
           headers={provider.headers}
           onChange={(headers) => set("headers", headers)}
         />
-        <span className="text-[10px] text-(--text-dim) mt-0.5">
+        <span className="text-[11px] text-(--text-dim) mt-0.5">
           Added to every request from this provider (e.g. User-Agent). Useful for gateways with bot detection.
         </span>
       </Field>
@@ -471,12 +472,12 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
               onChange={(event) => setDiscoveryQuery(event.target.value)}
               placeholder={t("models.discoveryFilterPlaceholder", { count: discoveryState.models.length })}
               aria-label={t("models.discoveryFilter")}
-              className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border w-full min-w-0"
+              className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border w-full min-w-0"
             />
 
             <div className="max-h-[220px] overflow-y-auto border border-(--border) rounded-md bg-(--bg-panel)">
               <label
-                className={`min-h-[32px] py-[5px] px-[9px] flex items-center gap-2 sticky top-0 z-10 border-b border-(--border) bg-(--bg) text-(--text-muted) text-[10px] font-semibold ${selectableShownIds.length ? "cursor-pointer" : "cursor-default"}`}
+                className={`min-h-[32px] py-[5px] px-[9px] flex items-center gap-2 sticky top-0 z-10 border-b border-(--border) bg-(--bg) text-(--text-muted) text-[11px] font-semibold ${selectableShownIds.length ? "cursor-pointer" : "cursor-default"}`}
               >
                 <input
                   ref={selectShownRef}
@@ -507,16 +508,16 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-[11px]">{model.name ?? model.id}</span>
-                      {model.name && <code className="block overflow-hidden text-ellipsis whitespace-nowrap text-(--text-dim) text-[10px] font-(--font-mono)">{model.id}</code>}
+                      {model.name && <code className="block overflow-hidden text-ellipsis whitespace-nowrap text-(--text-dim) text-[11px] font-(--font-mono)">{model.id}</code>}
                     </span>
-                    {alreadyAdded && <span className="text-(--text-dim) text-[10px]">{t("models.discoveryAdded")}</span>}
+                    {alreadyAdded && <span className="text-(--text-dim) text-[11px]">{t("models.discoveryAdded")}</span>}
                   </label>
                 );
               })}
             </div>
 
             <div className="flex items-center justify-between gap-2.5">
-              <span title={discoveryState.endpoint} className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-dim) text-[10px]">
+              <span title={discoveryState.endpoint} className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-dim) text-[11px]">
                 {filteredDiscoveredModels.length > shownDiscoveredModels.length
                   ? t("models.discoveryShowing", { shown: shownDiscoveredModels.length, total: filteredDiscoveredModels.length })
                   : t("models.discoveryFetched", { count: discoveryState.models.length })}
@@ -581,7 +582,7 @@ function ThinkingLevelMapEditor({
         const strVal = typeof raw === "string" ? raw : "";
         const color = LEVEL_COLORS[level];
 
-        const btnBaseCls = "py-1 px-2.5 text-[10px] font-normal border-none cursor-pointer whitespace-nowrap transition-colors duration-100 bg-(--bg-panel) text-(--text-dim)";
+        const btnBaseCls = "py-1 px-2.5 text-[11px] font-normal border-none cursor-pointer whitespace-nowrap transition-colors duration-100 bg-(--bg-panel) text-(--text-dim)";
         const btnActiveCls = "bg-(--accent) text-white font-semibold";
         const btnActiveDisabledCls = "bg-(--state-error) text-white font-semibold";
 
@@ -701,9 +702,9 @@ function HeaderListEditor({ headers, onChange }: {
       {rows.map((row) => (
         <div key={row.id} className="flex gap-1.5">
           <input value={row.name} onChange={(e) => setEntry(row.id, { name: e.target.value })}
-            placeholder="Header-Name" className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border font-(--font-mono) flex-1" />
+            placeholder="Header-Name" className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border font-(--font-mono) flex-1" />
           <input value={row.value} onChange={(e) => setEntry(row.id, { value: e.target.value })}
-            placeholder="value" className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none w-full box-border font-(--font-mono) flex-1" />
+            placeholder="value" className="py-1.5 px-[9px] bg-(--bg-panel) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none w-full box-border font-(--font-mono) flex-1" />
           <button onClick={() => removeEntry(row.id)} style={rowBtnStyle}>✕</button>
         </div>
       ))}
@@ -1030,7 +1031,7 @@ function ModelDetail({
             href="https://github.com/anomalyco/models.dev"
             target="_blank"
             rel="noreferrer"
-            className="ml-auto text-(--text-dim) text-[10px] no-underline"
+            className="ml-auto text-(--text-dim) text-[11px] no-underline"
           >
             {t("models.catalogSource")}
           </a>
@@ -1041,7 +1042,7 @@ function ModelDetail({
             aria-live="polite"
             style={{
               marginTop: 8, display: "flex", alignItems: "center",
-              justifyContent: "space-between", gap: 8, color: catalogStatusColor, fontSize: 10,
+              justifyContent: "space-between", gap: 8, color: catalogStatusColor, fontSize: 11,
             }}
           >
             <span
@@ -1053,7 +1054,7 @@ function ModelDetail({
             {catalogUndoRef.current && (
               <button
                 onClick={undoCatalogFill}
-                className="shrink-0 py-0 px-0.5 border-none bg-none text-(--accent) cursor-pointer text-[10px]"
+                className="shrink-0 py-0 px-0.5 border-none bg-none text-(--accent) cursor-pointer text-[11px]"
               >
                 {t("models.catalogUndo")}
               </button>
@@ -1078,7 +1079,7 @@ function ModelDetail({
             type="button"
             onClick={toggleCostEditing}
             aria-expanded={costEditing}
-            className="py-0.5 px-1 border-none bg-transparent text-(--accent) cursor-pointer text-[10px]"
+            className="py-0.5 px-1 border-none bg-transparent text-(--accent) cursor-pointer text-[11px]"
           >
             {costEditing ? t("models.finishEditingCosts") : t("models.editCosts")}
           </button>
@@ -1096,7 +1097,7 @@ function ModelDetail({
         </div>
 
         <div className="mt-4">
-          <div className="text-[10px] text-(--text-dim) font-semibold uppercase">
+          <div className="text-[11px] text-(--text-dim) font-semibold uppercase">
             {t("models.costPerMillion")}
           </div>
           {costEditing ? (
@@ -1107,7 +1108,7 @@ function ModelDetail({
                 </Field>
               ))}
               {hasModelCostDraftValue(costDraft) && !parseCompleteModelCost(costDraft) && (
-                <div aria-live="polite" className="col-span-full text-(--state-warning) text-[10px]">
+                <div aria-live="polite" className="col-span-full text-(--state-warning) text-[11px]">
                   {t("models.costAllRequired")}
                 </div>
               )}
@@ -1118,8 +1119,8 @@ function ModelDetail({
                 const missing = model.cost?.[key] === undefined;
                 return (
                   <div key={key} className="min-w-0">
-                    <div className="text-[10px] text-(--text-dim) whitespace-nowrap overflow-hidden text-ellipsis">{label}</div>
-                    <div className={`mt-[3px] text-xs font-(--font-mono) tabular-nums ${missing ? "text-(--text-dim)" : "text-(--text)"}`}>
+                    <div className="text-[11px] text-(--text-dim) whitespace-nowrap overflow-hidden text-ellipsis">{label}</div>
+                    <div className={`mt-[3px] text-[13px] font-(--font-mono) tabular-nums ${missing ? "text-(--text-dim)" : "text-(--text)"}`}>
                       {formatCost(key)}
                     </div>
                   </div>
@@ -1140,7 +1141,7 @@ function ModelDetail({
         >
           <span className="min-w-0">
             <span className="block text-[11px] font-semibold">{t("models.advancedSettings")}</span>
-            <span className="block mt-[3px] text-(--text-dim) text-[10px] overflow-hidden text-ellipsis whitespace-nowrap">
+            <span className="block mt-[3px] text-(--text-dim) text-[11px] overflow-hidden text-ellipsis whitespace-nowrap">
               {advancedSummary}
             </span>
           </span>
@@ -1171,7 +1172,7 @@ function ModelDetail({
                 headers={model.headers}
                 onChange={(headers) => set("headers", headers)}
               />
-              <span className="text-[10px] text-(--text-dim) mt-0.5">
+              <span className="text-[11px] text-(--text-dim) mt-0.5">
                 {t("models.headersHelp")}
               </span>
             </Field>
@@ -1196,7 +1197,7 @@ function ModelDetail({
                       <button
                         type="button"
                         onClick={() => set("thinkingLevelMap", undefined)}
-                        className="text-[10px] py-0.5 px-[5px] bg-none border-none text-(--text-dim) cursor-pointer"
+                        className="text-[11px] py-0.5 px-[5px] bg-none border-none text-(--text-dim) cursor-pointer"
                       >
                         {t("models.clearAll")}
                       </button>
@@ -1357,16 +1358,16 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       {/* Status */}
       <div className="min-h-[48px]">
         {loginState.phase === "idle" && (
-          <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
+          <p className="m-0 text-[13px] text-(--text-muted) leading-[1.5]">
              {provider.loggedIn ? "Already connected. You can re-login or disconnect." : `Connect your ${provider.name} account.`}
           </p>
         )}
         {loginState.phase === "connecting" && (
-            <p className="m-0 text-xs text-(--text-muted)">{t("i18n.openingBrowser")}</p>
+            <p className="m-0 text-[13px] text-(--text-muted)">{t("i18n.openingBrowser")}</p>
         )}
         {loginState.phase === "select" && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
+            <p className="m-0 text-[13px] text-(--text-muted) leading-[1.5]">
               {loginState.message}
             </p>
             <div className="flex flex-col gap-1.5">
@@ -1374,7 +1375,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 <button
                   key={option.id}
                   onClick={() => submitSelection(loginState.token, option.id)}
-                  className="py-1.5 px-[9px] bg-(--bg) border border-(--border) rounded-[5px] text-(--text) cursor-pointer text-xs text-left"
+                  className="py-1.5 px-[9px] bg-(--bg) border border-(--border) rounded-[5px] text-(--text) cursor-pointer text-[13px] text-left"
                 >
                   {option.label}
                 </button>
@@ -1384,7 +1385,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {(loginState.phase === "auth" || loginState.phase === "prompt") && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
+            <p className="m-0 text-[13px] text-(--text-muted) leading-[1.5]">
               {loginState.phase === "auth"
                 ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
                 : loginState.message}
@@ -1405,12 +1406,12 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") submitCode(loginState.token, inputValue); }}
                 placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? "Enter value…")}
-                className="flex-1 py-1.5 px-[9px] bg-(--bg) border border-(--border) rounded-[5px] text-(--text) text-xs outline-none font-(--font-mono) box-border"
+                className="flex-1 py-1.5 px-[9px] bg-(--bg) border border-(--border) rounded-[5px] text-(--text) text-[13px] outline-none font-(--font-mono) box-border"
               />
               <button
                 onClick={() => submitCode(loginState.token, inputValue)}
                 disabled={!inputValue.trim()}
-                className={`py-1.5 px-3 border-none rounded-[5px] text-xs font-semibold shrink-0 ${inputValue.trim() ? "bg-(--accent)" : "bg-(--bg-panel)"} ${inputValue.trim() ? "text-white" : "text-(--text-dim)"} ${inputValue.trim() ? "cursor-pointer" : "cursor-not-allowed"}`}
+                className={`py-1.5 px-3 border-none rounded-[5px] text-[13px] font-semibold shrink-0 ${inputValue.trim() ? "bg-(--accent)" : "bg-(--bg-panel)"} ${inputValue.trim() ? "text-white" : "text-(--text-dim)"} ${inputValue.trim() ? "cursor-pointer" : "cursor-not-allowed"}`}
               >
                  {t("i18n.submit")}
               </button>
@@ -1419,7 +1420,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {loginState.phase === "device_code" && (
           <div className="flex flex-col gap-2.5">
-            <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
+            <p className="m-0 text-[13px] text-(--text-muted) leading-[1.5]">
               Open the verification page and enter this code:
             </p>
             <div className="py-2 px-2.5 bg-(--bg) border border-(--border) rounded-[5px] text-(--text) text-base font-bold font-(--font-mono)">
@@ -1434,13 +1435,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           </div>
         )}
         {loginState.phase === "progress" && (
-          <p className="m-0 text-xs text-(--text-muted)">{loginState.message}</p>
+          <p className="m-0 text-[13px] text-(--text-muted)">{loginState.message}</p>
         )}
         {loginState.phase === "success" && (
-             <p className="m-0 text-xs text-(--state-success)">{t("i18n.connectedSuccessfully")}</p>
+             <p className="m-0 text-[13px] text-(--state-success)">{t("i18n.connectedSuccessfully")}</p>
         )}
         {loginState.phase === "error" && (
-          <p className="m-0 text-xs text-(--state-error)">{loginState.message}</p>
+          <p className="m-0 text-[13px] text-(--state-error)">{loginState.message}</p>
         )}
       </div>
 
@@ -1449,7 +1450,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         {isWorking ? (
           <button
             onClick={() => { eventSourceRef.current?.close(); setLoginState({ phase: "idle" }); }}
-            className="py-[5px] px-3 bg-none border border-(--border) rounded-[5px] text-(--text-muted) cursor-pointer text-xs"
+            className="py-[5px] px-3 bg-none border border-(--border) rounded-[5px] text-(--text-muted) cursor-pointer text-[13px]"
           >
              {t("i18n.cancel")}
           </button>
@@ -1457,14 +1458,14 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           <>
             <button
               onClick={handleLogin}
-              className="py-[5px] px-3.5 bg-(--accent) border-none rounded-[5px] text-white cursor-pointer text-xs font-semibold"
+              className="py-[5px] px-3.5 bg-(--accent) border-none rounded-[5px] text-white cursor-pointer text-[13px] font-semibold"
             >
                {provider.loggedIn ? t("i18n.relogin") : t("i18n.login")}
             </button>
             {provider.loggedIn && (
               <button
                 onClick={handleLogout}
-                className="py-[5px] px-3 bg-none border border-red-500/30 rounded-[5px] text-(--state-error) cursor-pointer text-xs"
+                className="py-[5px] px-3 bg-none border border-red-500/30 rounded-[5px] text-(--state-error) cursor-pointer text-[13px]"
               >
                  {t("i18n.disconnect")}
               </button>
@@ -1547,7 +1548,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         </div>
       </div>
 
-      <p className="m-0 text-xs text-(--text-muted) leading-[1.5]">
+      <p className="m-0 text-[13px] text-(--text-muted) leading-[1.5]">
         {provider.configured
           ? `API key is stored. Enter a new key below to replace it, or disconnect to remove it.`
           : `Enter your ${provider.displayName} API key to enable ${provider.modelCount} model${provider.modelCount !== 1 ? "s" : ""}.`}
@@ -1568,7 +1569,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
           <button
             onClick={handleSave}
             disabled={saving || !apiKey.trim() || savedOk}
-            className={`py-1.5 px-3 border-none rounded-[5px] text-xs font-semibold shrink-0 flex items-center gap-[5px] ${savedOk ? "bg-(--state-success) text-white" : apiKey.trim() ? "bg-(--accent) text-white" : "bg-(--bg-panel) text-(--text-dim)"} ${saving || !apiKey.trim() || savedOk ? "cursor-not-allowed" : "cursor-pointer"}`}
+            className={`py-1.5 px-3 border-none rounded-[5px] text-[13px] font-semibold shrink-0 flex items-center gap-[5px] ${savedOk ? "bg-(--state-success) text-white" : apiKey.trim() ? "bg-(--accent) text-white" : "bg-(--bg-panel) text-(--text-dim)"} ${saving || !apiKey.trim() || savedOk ? "cursor-not-allowed" : "cursor-pointer"}`}
           >
             {savedOk && (
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -1580,13 +1581,13 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         </div>
       </Field>
 
-      {error && <p className="m-0 text-xs text-(--state-error)">{error}</p>}
+      {error && <p className="m-0 text-[13px] text-(--state-error)">{error}</p>}
 
       {provider.configured && (
         <button
           onClick={handleRemove}
           disabled={removing}
-          className={`self-start py-[5px] px-3 bg-none border border-red-500/30 rounded-[5px] text-(--state-error) text-xs ${removing ? "cursor-not-allowed" : "cursor-pointer"}`}
+          className={`self-start py-[5px] px-3 bg-none border border-red-500/30 rounded-[5px] text-(--state-error) text-[13px] ${removing ? "cursor-not-allowed" : "cursor-pointer"}`}
         >
            {removing ? t("i18n.removing") : t("i18n.disconnect")}
         </button>
@@ -1704,11 +1705,11 @@ function AddProviderPicker({
         {/* Card grid */}
         <div className="flex-1 overflow-y-auto p-3.5">
           {totalCount === 0 ? (
-            <div className="py-5 px-0 text-xs text-(--text-dim) text-center">{t("i18n.noProviders")}</div>
+            <div className="py-5 px-0 text-[13px] text-(--text-dim) text-center">{t("i18n.noProviders")}</div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fit,_minmax(min(240px,_100%),_1fr))px] gap-2">
               {showCustom && (
-                 <div className="col-span-full text-[10px] font-semibold text-(--text-dim) uppercase tracking-[0.07em]">{t("i18n.custom")}</div>
+                 <div className="col-span-full text-[11px] font-semibold text-(--text-dim) uppercase tracking-[0.07em]">{t("i18n.custom")}</div>
               )}
               {showCustom && (
                 <button
@@ -1718,8 +1719,8 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">OpenAI / Anthropic compatible</div>
-                     <div className="text-[10px] text-(--text-dim) mt-0.5">{t("i18n.customEndpoint")}</div>
+                    <div className="text-[13px] font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">OpenAI / Anthropic compatible</div>
+                     <div className="text-[11px] text-(--text-dim) mt-0.5">{t("i18n.customEndpoint")}</div>
                   </div>
                   <span className="w-[26px] h-[26px] rounded-[5px] bg-(--bg-hover) border border-dashed border-(--border) flex items-center justify-center shrink-0">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-(--text-dim)">
@@ -1730,7 +1731,7 @@ function AddProviderPicker({
               )}
 
               {availableOAuth.length > 0 && (
-                 <div className={`col-span-full text-[10px] font-semibold text-(--text-dim) uppercase tracking-[0.07em] ${showCustom ? "pt-1.5" : "pt-0"}`}>{t("i18n.subscriptions")}</div>
+                 <div className={`col-span-full text-[11px] font-semibold text-(--text-dim) uppercase tracking-[0.07em] ${showCustom ? "pt-1.5" : "pt-0"}`}>{t("i18n.subscriptions")}</div>
               )}
               {availableOAuth.map((p) => (
                 <button key={p.id} onClick={() => { onSelectOAuth(p.id); onClose(); }}
@@ -1739,15 +1740,15 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
-                    <div className="text-[10px] text-(--text-dim) mt-0.5">OAuth</div>
+                    <div className="text-[13px] font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
+                    <div className="text-[11px] text-(--text-dim) mt-0.5">OAuth</div>
                   </div>
                   <ProviderIcon id={p.id} size={28} />
                 </button>
               ))}
 
               {availableApiKey.length > 0 && (
-                <div className={`col-span-full text-[10px] font-semibold text-(--text-dim) uppercase tracking-[0.07em] ${availableOAuth.length > 0 ? "pt-1.5" : "pt-0"}`}>API Key</div>
+                <div className={`col-span-full text-[11px] font-semibold text-(--text-dim) uppercase tracking-[0.07em] ${availableOAuth.length > 0 ? "pt-1.5" : "pt-0"}`}>API Key</div>
               )}
               {availableApiKey.map((p) => (
                 <button key={p.id} onClick={() => { onSelectApiKey(p.id); onClose(); }}
@@ -1756,8 +1757,8 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</div>
-                    <div className="text-[10px] text-(--text-dim) mt-0.5">{p.modelCount} models</div>
+                    <div className="text-[13px] font-semibold text-(--text) leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</div>
+                    <div className="text-[11px] text-(--text-dim) mt-0.5">{p.modelCount} models</div>
                   </div>
                   <ProviderIcon id={p.id} size={28} />
                 </button>
@@ -1787,7 +1788,9 @@ export function ModelsConfig({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  // Landing from the Zosma sign-in redirect opens the Zosma Router pane.
+  const [selection, setSelection] = useState<Selection | null>(zosmaNotice ? { type: "zosma" } : null);
+  const { status: zosmaStatus, reload: reloadZosmaStatus } = useZosmaRouterStatus();
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1826,7 +1829,7 @@ export function ModelsConfig({
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
         const keys = Object.keys(normalized.providers ?? {});
-        if (keys.length > 0) setSelection({ type: "provider", name: keys[0] });
+        if (keys.length > 0) setSelection((prev) => prev ?? { type: "provider", name: keys[0] });
       })
       .catch(() => setConfig({ providers: {} }))
       .finally(() => setLoading(false));
@@ -1947,6 +1950,16 @@ export function ModelsConfig({
   // Resolve current detail
   const detailContent = (() => {
     if (!selection) return null;
+    if (selection.type === "zosma") {
+      return (
+        <ZosmaRouterDetail
+          status={zosmaStatus}
+          onStatusChange={reloadZosmaStatus}
+          onRefresh={refreshAuthProviders}
+          notice={zosmaNotice}
+        />
+      );
+    }
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
@@ -1999,7 +2012,7 @@ export function ModelsConfig({
              <span className="text-[15px] font-bold text-(--text)">{t("common.models")}</span>
             <code className="text-[11px] text-(--text-muted) font-(--font-mono)">~/.pi/agent/models.json</code>
           </div>
-          <button onClick={onClose} className="bg-none border-none text-(--text-muted) cursor-pointer text-xl leading-none py-0.5 px-1.5">×</button>
+          <button onClick={onClose} className="settings-embedded-hide bg-none border-none text-(--text-muted) cursor-pointer text-xl leading-none py-0.5 px-1.5">×</button>
         </div>
 
         {/* Body */}
@@ -2014,6 +2027,22 @@ export function ModelsConfig({
             display: "flex", flexDirection: "column", flexShrink: 0, background: "var(--bg-panel)",
           }}>
             <div className="flex-1 overflow-y-auto py-2 px-1.5">
+              {/* Zosma Router — same selectable row as the other providers */}
+              {(() => {
+                const isSelected = selection?.type === "zosma";
+                return (
+                  <div
+                    onClick={() => setSelection({ type: "zosma" })}
+                    className={`flex items-center gap-[7px] py-[5px] px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/zosma-logo.png" alt="" width={16} height={16} className="shrink-0 rounded-[3px]" />
+                    <span className="text-[13px] text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap">Zosma Router</span>
+                    {zosmaStatus?.configured && <span className="w-[6px] h-[6px] rounded-full bg-(--state-success) shrink-0" aria-label="Connected" />}
+                  </div>
+                );
+              })()}
+
               {/* Active OAuth subscriptions */}
               {activeOAuth.map((p) => {
                 const isSelected = selection?.type === "oauth" && selection.providerId === p.id;
@@ -2021,12 +2050,10 @@ export function ModelsConfig({
                   <div
                     key={p.id}
                     onClick={() => setSelection({ type: "oauth", providerId: p.id })}
-                    className={`flex items-center gap-[7px] py-[5px] px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "bg-none"}`}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
+                    className={`flex items-center gap-[7px] py-[5px] px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
                   >
                     <ProviderIcon id={p.id} size={16} />
-                    <span className="text-xs text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
+                    <span className="text-[13px] text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
                   </div>
                 );
               })}
@@ -2038,17 +2065,13 @@ export function ModelsConfig({
                   <div
                     key={p.id}
                     onClick={() => setSelection({ type: "apikey", providerId: p.id })}
-                    className={`flex items-center gap-[7px] py-[5px] px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "bg-none"}`}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
+                    className={`flex items-center gap-[7px] py-[5px] px-2 rounded-[5px] cursor-pointer ${isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
                   >
                     <ProviderIcon id={p.id} size={16} />
-                    <span className="text-xs text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</span>
+                    <span className="text-[13px] text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{p.displayName}</span>
                   </div>
                 );
               })}
-
-              <ZosmaAuthCard onRefresh={refreshAuthProviders} notice={zosmaNotice} />
 
               {/* Divider before custom providers, only when there are active managed providers */}
               {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
@@ -2057,7 +2080,7 @@ export function ModelsConfig({
 
               {/* Custom providers */}
               {loading ? (
-                 <div className="py-2.5 px-2 text-xs text-(--text-muted)">{t("i18n.loading")}</div>
+                 <div className="py-2.5 px-2 text-[13px] text-(--text-muted)">{t("i18n.loading")}</div>
               ) : providers.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
                 const models = pData.models ?? [];
@@ -2066,9 +2089,7 @@ export function ModelsConfig({
                     {/* Provider row */}
                     <div
                       onClick={() => setSelection({ type: "provider", name: pName })}
-                      className={`flex items-center gap-1.5 py-[7px] px-2 rounded-[5px] cursor-pointer ${isProviderSelected ? "bg-(--bg-selected)" : "bg-none"}`}
-                      onMouseEnter={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                      onMouseLeave={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "none"; }}
+                      className={`flex items-center gap-1.5 py-[7px] px-2 rounded-[5px] cursor-pointer ${isProviderSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-(--text-dim) shrink-0">
                         <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
@@ -2077,7 +2098,7 @@ export function ModelsConfig({
                         <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
                         <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
                       </svg>
-                      <span className={`text-xs text-(--text) font-(--font-mono) flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${isProviderSelected ? "font-semibold" : ""}`}>
+                      <span className={`text-[13px] text-(--text) flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${isProviderSelected ? "font-semibold" : "font-medium"}`}>
                         {pName}
                       </span>
                     </div>
@@ -2089,15 +2110,13 @@ export function ModelsConfig({
                         <div
                           key={i}
                           onClick={() => setSelection({ type: "model", providerName: pName, index: i })}
-                          className={`flex items-center gap-1.5 py-[5px] pr-2 pl-[26px] rounded-[5px] cursor-pointer ${isModelSelected ? "bg-(--bg-selected)" : "bg-none"}`}
-                          onMouseEnter={(e) => { if (!isModelSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                          onMouseLeave={(e) => { if (!isModelSelected) e.currentTarget.style.background = "none"; }}
+                          className={`flex items-center gap-1.5 py-[5px] pr-2 pl-[26px] rounded-[5px] cursor-pointer ${isModelSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
                         >
-                          <span className={`text-[11px] font-(--font-mono) flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${m.id ? "text-(--text-muted)" : "text-(--text-dim)"}`}>
+                          <span className={`text-[12px] font-(--font-mono) flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${m.id ? "text-(--text-muted)" : "text-(--text-dim)"}`}>
                              {m.id || t("i18n.newModel")}
                           </span>
                           {m.reasoning && (
-                            <span className="text-[10px] py-[1px] px-1 bg-indigo-500/15 text-indigo-500/80 rounded-[3px] shrink-0">T</span>
+                            <span className="text-[11px] py-[1px] px-1 bg-indigo-500/15 text-indigo-500/80 rounded-[3px] shrink-0">T</span>
                           )}
                         </div>
                       );
@@ -2110,7 +2129,7 @@ export function ModelsConfig({
                       onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
                     >
-                       <span className="text-[11px]">+ {t("i18n.model")}</span>
+                       <span className="text-[12px]">+ {t("i18n.model")}</span>
                     </div>
                   </div>
                 );
@@ -2119,7 +2138,7 @@ export function ModelsConfig({
 
             {/* Add provider */}
             <div className="border-t border-(--border) py-2 px-1.5">
-              <button onClick={() => setPickerOpen(true)} className="flex items-center justify-center gap-[5px] w-full py-1.5 px-0 bg-none border border-dashed border-(--border) rounded-[5px] text-(--text-muted) cursor-pointer text-xs"
+              <button onClick={() => setPickerOpen(true)} className="flex items-center justify-center gap-[5px] w-full py-1.5 px-0 bg-none border border-dashed border-(--border) rounded-[5px] text-(--text-muted) cursor-pointer text-[13px]"
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
               >
@@ -2140,7 +2159,7 @@ export function ModelsConfig({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2.5 py-2.5 px-[18px] border-t border-(--border) shrink-0">
-          {saveError && <span className="text-xs text-(--state-error) flex-1">{saveError}</span>}
+          {saveError && <span className="text-[13px] text-(--state-error) flex-1">{saveError}</span>}
           <button onClick={onClose} className="py-1.5 px-3.5 bg-none border border-(--border) rounded-md text-(--text-muted) cursor-pointer text-[13px]">
              {t("i18n.cancel")}
           </button>

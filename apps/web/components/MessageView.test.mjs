@@ -153,22 +153,32 @@ test("renders custom-message images as buttons that open a larger preview", () =
 });
 
 
-test("renders live and completed thinking disclosures with accessible state", () => {
+test("renders thinking inline with its state, with no toggle to open it", () => {
   const live = renderMessage({
     role: "assistant",
-    content: [{ type: "thinking", thinking: "working" }],
+    content: [{ type: "thinking", thinking: "working on it" }],
   }, { isStreaming: true });
-  assert.match(live, /class="conversation-disclosure thinking-row" data-state="running"/);
-  assert.match(live, /aria-expanded="true"/);
+  assert.match(live, /class="thinking-row" data-state="running"/);
+  assert.match(live, /working on it/);
   assert.match(live, /Thinking in progress/);
+  assert.doesNotMatch(live, /aria-expanded/);
 
   const complete = renderMessage({
     role: "assistant",
-    content: [{ type: "thinking", thinking: "done" }],
+    content: [{ type: "thinking", thinking: "done and dusted" }],
   });
   assert.match(complete, /data-state="complete"/);
-  assert.match(complete, /aria-expanded="false"/);
+  assert.match(complete, /done and dusted/);
   assert.match(complete, /Thinking complete/);
+  assert.doesNotMatch(complete, /<button/);
+});
+
+test("thinking text drops trailing blank lines so the left bar ends with the text", () => {
+  const html = renderMessage({
+    role: "assistant",
+    content: [{ type: "thinking", thinking: "\n  first\n\nlast line\n\n" }],
+  });
+  assert.match(html, /<div class="thinking-detail">first\n\nlast line<\/div>/);
 });
 
 test("renders every stored tool state with disclosure ARIA", () => {
@@ -222,4 +232,33 @@ test("keeps tool-file action callback wiring in expanded details", () => {
   assert.match(source, /className=\"tool-file-link\"/);
   assert.match(source, /onOpenFile\?\.\(toolFilePath\)/);
   assert.match(source, /cwd=\{cwd\} onOpenFile=\{onOpenFile\}/);
+});
+
+test("collapsed tool row shows the command and a settled verb without expanding", () => {
+  const block = { type: "toolCall", toolCallId: "c1", toolName: "bash", input: { command: "pnpm test --filter web" } };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+  }, { toolResults: new Map([["c1", { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "ok" }] }]]) });
+
+  assert.match(html, /tool-row-verb[^>]*>Ran</);
+  assert.match(html, /pnpm test --filter web/);
+  assert.match(html, /aria-expanded="false"/);
+});
+
+test("edit row carries its +/- line stats in the collapsed header", () => {
+  const block = { type: "toolCall", toolCallId: "e1", toolName: "edit", input: { path: "/repo/src/a.ts" } };
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [block],
+  }, { toolResults: new Map([["e1", { role: "toolResult", toolCallId: "e1", content: [], details: { diff: "+a\n+b\n-c" } }]]) });
+
+  assert.match(html, /Edited/);
+  assert.match(html, />a\.ts</);
+  assert.match(html, /diff-stat-add[^>]*>\+2</);
+  assert.match(html, /diff-stat-del[^>]*>−1</);
 });

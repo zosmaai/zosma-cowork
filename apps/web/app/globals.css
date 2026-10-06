@@ -123,6 +123,7 @@ html.dark {
 
 .zosma-brand-name {
   overflow: hidden;
+  font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
   line-height: 24px;
@@ -198,13 +199,6 @@ html.dark .catppuccin-file-icon {
 }
 
 button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-button,
 a,
 [role="button"],
 [role="tab"] {
@@ -232,7 +226,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--font-size-base);
   overscroll-behavior: none;
 }
@@ -378,7 +372,10 @@ button.extension-widget-trigger:focus-visible,
 }
 
 :root {
-  --font-mono: var(--font-noto-mono), 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
+  /* Three families only: DM Sans (UI/body), Chakra Petch (display), Geist Mono (code). Fallbacks are system fonts. */
+  --font-sans: var(--font-dm-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-chakra-petch), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 pre, code {
@@ -399,6 +396,7 @@ pre, code {
 .markdown-body p:last-child { margin-bottom: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  font-family: var(--font-display);
   font-weight: 600;
   margin: 10px 0 5px;
   color: var(--text);
@@ -1782,21 +1780,15 @@ span.token.table {
 .conversation-disclosure-title { flex: 0 0 auto; color: var(--text); font-size: 14px; font-weight: 550; }
 .conversation-disclosure-summary { min-width: 0; overflow: hidden; color: var(--text-dim); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-disclosure-duration { flex: 0 0 auto; margin-left: auto; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-.conversation-disclosure-count { flex: 0 0 auto; min-width: 22px; padding: 1px 6px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
 .conversation-disclosure-chevron { flex: 0 0 auto; color: var(--text-dim); font-size: 14px; line-height: 1; transition: transform var(--motion-fast) var(--ease-standard); }
-.conversation-disclosure-trigger[aria-expanded="true"] .conversation-disclosure-chevron { transform: rotate(180deg); }
-.conversation-disclosure-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: var(--bg-subtle); border: 1px solid var(--border); color: var(--accent); }
-.conversation-disclosure-icon svg { width: 15px; height: 15px; }
-.conversation-disclosure-icon-active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.tool-row-error .conversation-disclosure-icon { color: var(--state-error); }
-.tool-row-success .conversation-disclosure-icon { color: var(--state-success); }
-.thinking-row[data-state="running"] .conversation-disclosure-dot, .tool-row-running .conversation-disclosure-dot { background: var(--accent); }
-.tool-row-success .conversation-disclosure-dot { background: var(--state-success); }
-.tool-row-error .conversation-disclosure-dot { background: var(--state-error); }
-.tool-row-error .conversation-disclosure-summary { color: var(--state-error); }
-.tool-row-success .conversation-disclosure-summary { color: var(--state-success); }
-.thinking-detail, .tool-detail-input, .tool-detail-output { max-height: 560px; margin: 4px 0 0 13px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
-.thinking-detail { padding: 8px 10px; color: var(--text-muted); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.conversation-disclosure-trigger[aria-expanded="true"] .conversation-disclosure-chevron { transform: rotate(90deg); }
+.tool-row-running .conversation-disclosure-dot { background: var(--accent); }
+.tool-detail-input, .tool-detail-output { max-height: 560px; margin: 4px 0 0 13px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-subtle); }
+.thinking-row { padding: 8px 12px; }
+.thinking-row-label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; color: var(--text-dim); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-display); }
+.thinking-row-duration { font-weight: 500; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.thinking-row[data-state="running"] .thinking-row-label::before { width: 6px; height: 6px; align-self: center; border-radius: 50%; background: var(--accent); content: ""; }
+.thinking-row .thinking-detail { max-height: 320px; margin: 0; padding: 0; overflow: auto; border: 0; background: transparent; color: var(--text-dim); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
 .thinking-detail.is-error { color: var(--state-error); }
 .tool-detail-input, .tool-detail-output-text { box-sizing: border-box; width: 100%; margin: 0; padding: 8px 10px; color: var(--text-muted); font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool-detail-output { background: var(--bg); }
@@ -1807,9 +1799,30 @@ span.token.table {
 .tool-row-running .conversation-disclosure-trigger, .tool-row-running .tool-detail-input, .tool-row-running .tool-detail-output { position: relative; z-index: 1; }
 /* Parent fold over one assistant turn's process: all thinking + tool steps
    nest as child folds under a single collapsed row (GPT-style). */
-.turn-process-fold .conversation-disclosure-trigger { font-size: 13px; min-height: 28px; }
-.turn-process-fold .conversation-disclosure-title { color: var(--text); }
-.turn-process-children { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 0 14px; padding-left: 12px; border-left: 1px solid var(--border-strong); }
+.turn-process-fold > .conversation-disclosure-trigger { min-height: 28px; gap: 8px; }
+.turn-process-label { min-width: 0; overflow: hidden; color: var(--text-muted); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.turn-process-fold > .conversation-disclosure-trigger:hover .turn-process-label { color: var(--text); }
+.diff-stat { display: inline-flex; flex: 0 0 auto; overflow: hidden; border-radius: 5px; font: 600 11px/18px var(--font-mono); font-variant-numeric: tabular-nums; }
+.diff-stat-add { padding: 0 6px; background: color-mix(in srgb, var(--state-success) 18%, transparent); color: color-mix(in srgb, var(--state-success) 70%, var(--text)); }
+.diff-stat-del { padding: 0 6px; background: color-mix(in srgb, var(--state-error) 16%, transparent); color: var(--state-error); }
+/* Expanded turn: one bordered list, one row per step, hairline dividers. */
+.turn-process-children { margin-top: 6px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; }
+.turn-process-list { margin-top: -1px; }
+.turn-process-list .assistant-message { margin-bottom: 0; }
+/* Step bubbles inside the fold have no copy/timestamp row; its reserved height read as dead space under every row. */
+.turn-process-list .assistant-message-actions { display: none; }
+.turn-process-list .assistant-message-blocks { gap: 0 !important; }
+.turn-process-list .conversation-disclosure, .turn-process-list .thinking-row, .turn-process-list .markdown-assistant-message { border-top: 1px solid var(--border); }
+.turn-process-list .conversation-disclosure-trigger { min-height: 36px; padding: 6px 12px; }
+.turn-process-list .conversation-disclosure-trigger:hover { background: var(--bg-hover); }
+.turn-process-list .conversation-disclosure-dot { display: none; }
+.turn-process-list .markdown-assistant-message { padding: 8px 12px; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+.turn-process-list .tool-detail-input, .turn-process-list .tool-detail-output { margin: 0 12px 10px; }
+.tool-row-verb { flex: 0 0 auto; color: var(--text-dim); font-size: 14px; }
+.tool-row-target { min-width: 0; overflow: hidden; color: var(--text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row-target.is-command { font-family: var(--font-mono); font-size: 12.5px; }
+.tool-row-error-line { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--state-error); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row-error .tool-row-verb { color: var(--state-error); }
 @media (prefers-reduced-motion: reduce) { .tool-row-running::after { animation: none; } .conversation-disclosure-chevron { transition: none; } }
 
 
@@ -1912,10 +1925,6 @@ span.token.table {
 @media (prefers-reduced-motion: reduce) { .branch-flow-trigger, .branch-flow-row, .written-file-reference { transition: none; } }
 
 
-.session-metrics-shell { box-sizing: border-box; width: 100%; padding: 0 52px 4px 16px; }
-.session-metrics-line { display: block; box-sizing: border-box; width: 100%; max-width: var(--shell-composer-max-width); margin: 0 auto; padding: 0 16px; overflow: hidden; color: var(--text-dim); font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.session-metrics-separator { margin: 0 10px; color: var(--border-strong); }
-@media (max-width: 640px) { .session-metrics-shell { padding-right: 16px; } }
 @media (prefers-reduced-motion: reduce) {
   .message-actions, .conversation-disclosure, .branch-flow-node { transition: none !important; }
   .conversation-status.is-running { animation: none !important; }
@@ -2317,6 +2326,25 @@ span.token.table {
   }
 }
 
+/* Embedded config panels (Models/Plugins/Skills) own their header, footer and
+   inner scroll, so the pane must not pad or scroll around them. */
+.settings-content-pane--embedded {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-content-pane--embedded > .settings-embedded-host {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The Settings dialog already has a close button. */
+.settings-embedded-host .settings-embedded-hide {
+  display: none;
+}
+
 /* Sidebar: column flex so the content area fills and the footer pins bottom.
    Using flex-fill (not fixed height) avoids the huge-void / bunched-content bug. */
 /* Sidebar header: brand + compact action row on top, full-width new-session
@@ -2606,6 +2634,7 @@ span.token.table {
 }
 .new-session-title-text {
   color: var(--text);
+  font-family: var(--font-display);
   font-size: 24px;
   font-weight: 500;
   letter-spacing: -.02em;
@@ -2721,25 +2750,26 @@ span.token.table {
 
 /* DeepSeek-style compact file rail. Keep explorer presentation in CSS, not JSX. */
 .sidebar-file-explorer {
-  background: #1b1b1b;
-  color: #e7e7e7;
+  background: var(--surface-sidebar);
+  color: var(--text);
 }
 .sidebar-file-explorer > div:first-child {
   min-height: 30px;
-  border-bottom: 1px solid #353535;
-  background: #1b1b1b;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sidebar);
 }
 .sidebar-file-explorer > div:first-child > button {
+  font-family: var(--font-display);
   min-height: 30px;
   padding: 0 8px;
-  color: #c6c6c6;
+  color: var(--text-muted);
   font-size: 11px;
   letter-spacing: .06em;
 }
 .sidebar-file-explorer .file-explorer-section {
   min-height: 100%;
   padding: 2px 4px 8px;
-  background: #1b1b1b;
+  background: var(--surface-sidebar);
 }
 .file-explorer-row,
 .file-explorer-change-row {
@@ -2749,7 +2779,7 @@ span.token.table {
   box-sizing: border-box;
   height: 24px;
   border-radius: 3px;
-  color: #d8d8d8;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
@@ -2761,11 +2791,11 @@ span.token.table {
 .file-explorer-row.is-hovered,
 .file-explorer-change-row:hover,
 .file-explorer-change-row.is-hovered {
-  background: #303030;
+  background: var(--bg-hover);
 }
 .file-explorer-row:focus-visible,
 .file-explorer-change-row:focus-visible {
-  outline: 1px solid #6b9cff;
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 .file-explorer-row.depth-0,
@@ -2818,7 +2848,7 @@ span.token.table {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  color: #dedede;
+  color: var(--text);
   font-size: 12px;
   line-height: 24px;
   text-overflow: ellipsis;
@@ -2837,7 +2867,7 @@ span.token.table {
   height: 6px;
   border-radius: 50%;
 }
-.file-explorer-dot.is-uploaded { background: #4d91ff; }
+.file-explorer-dot.is-uploaded { background: var(--accent); }
 .file-explorer-dot.is-changed { background: #d6a84b; }
 .file-explorer-status-badge {
   display: flex;
@@ -2865,9 +2895,9 @@ span.token.table {
   justify-content: center;
   gap: 4px;
   transform: translateY(-50%);
-  border: 1px solid #454545;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
-  background: #292929;
+  background: var(--surface-elevated);
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
@@ -2876,13 +2906,13 @@ span.token.table {
 .file-explorer-mention {
   right: 4px;
   padding: 0 7px;
-  color: #7ca7ff;
+  color: var(--accent);
 }
 .file-explorer-mention.is-file { right: 28px; }
 .file-explorer-download {
   right: 4px;
   padding: 0 5px;
-  color: #bdbdbd;
+  color: var(--text-muted);
   text-decoration: none;
 }
 .file-explorer-empty,
@@ -2890,14 +2920,14 @@ span.token.table {
   display: flex;
   height: 22px;
   align-items: center;
-  color: #777;
+  color: var(--text-dim);
   font-size: 11px;
 }
 .file-explorer-state { padding: 8px 12px; height: auto; }
 .file-explorer-state.is-error { color: #f87171; }
 .file-explorer-feedback {
   padding: 6px 8px;
-  border-bottom: 1px solid #353535;
+  border-bottom: 1px solid var(--border);
 }
 .file-explorer-upload-status,
 .file-explorer-upload-summary {
@@ -2905,7 +2935,7 @@ span.token.table {
   align-items: center;
   gap: 8px;
   min-height: 22px;
-  color: #bdbdbd;
+  color: var(--text-muted);
   font-size: 11px;
 }
 .file-explorer-upload-status { justify-content: space-between; }
@@ -2918,18 +2948,18 @@ span.token.table {
   overflow: hidden;
   border: 0;
   border-radius: 2px;
-  background: #353535;
+  background: var(--border);
 }
-.file-explorer-progress::-webkit-progress-bar { background: #353535; }
-.file-explorer-progress::-webkit-progress-value { background: #a5a5a5; }
-.file-explorer-progress::-moz-progress-bar { background: #a5a5a5; }
+.file-explorer-progress::-webkit-progress-bar { background: var(--border); }
+.file-explorer-progress::-webkit-progress-value { background: var(--text-muted); }
+.file-explorer-progress::-moz-progress-bar { background: var(--text-muted); }
 .file-explorer-conflict {
   padding: 7px;
-  border: 1px solid color-mix(in srgb, #f59e0b 55%, #353535);
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--border));
   border-radius: 4px;
-  background: color-mix(in srgb, #f59e0b 9%, #242424);
+  background: color-mix(in srgb, #f59e0b 9%, var(--surface-elevated));
 }
-.file-explorer-conflict-summary { color: #e7e7e7; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.file-explorer-conflict-summary { color: var(--text); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .file-explorer-conflict-warning { margin-top: 3px; color: #f59e0b; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
 .file-explorer-conflict-actions { display: flex; gap: 5px; margin-top: 7px; }
 .file-explorer-conflict-actions button,
@@ -2941,8 +2971,8 @@ span.token.table {
   font-size: 10px;
 }
 .file-explorer-conflict-replace { border: 1px solid #ef4444; background: transparent; color: #ef4444; }
-.file-explorer-conflict-skip { border: 1px solid #454545; background: #292929; color: #e7e7e7; }
-.file-explorer-conflict-cancel { border: 0; background: transparent; color: #a5a5a5; }
+.file-explorer-conflict-skip { border: 1px solid var(--border-strong); background: var(--surface-elevated); color: var(--text); }
+.file-explorer-conflict-cancel { border: 0; background: transparent; color: var(--text-muted); }
 .file-explorer-upload-error,
 .file-explorer-upload-error-item { display: flex; align-items: flex-start; gap: 6px; color: #f87171; font-size: 11px; line-height: 1.35; }
 .file-explorer-upload-error-text,
@@ -2950,14 +2980,14 @@ span.token.table {
 .file-explorer-upload-counts { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; }
 .file-explorer-upload-count { display: flex; align-items: center; gap: 3px; }
 .file-explorer-upload-count.is-uploaded { color: #22c55e; }
-.file-explorer-upload-count.is-skipped { color: #777; }
+.file-explorer-upload-count.is-skipped { color: var(--text-dim); }
 .file-explorer-upload-count.is-failed { color: #f87171; }
-.file-explorer-mention-uploaded { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; border: 1px solid #454545; background: #292929; color: #7ca7ff; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.file-explorer-dismiss { width: 24px; height: 24px; flex-shrink: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #777; cursor: pointer; }
-.file-explorer-dismiss:hover { background: #303030; color: #bdbdbd; }
+.file-explorer-mention-uploaded { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border-strong); background: var(--surface-elevated); color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.file-explorer-dismiss { width: 24px; height: 24px; flex-shrink: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.file-explorer-dismiss:hover { background: var(--bg-hover); color: var(--text-muted); }
 .file-explorer-changes { padding: 0 4px 2px; }
 .file-explorer-change-stats { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; font-size: 12px; }
-.file-explorer-change-count { color: #777; }
+.file-explorer-change-count { color: var(--text-dim); }
 .file-explorer-change-additions { color: #4ade80; font-family: var(--font-mono); }
 .file-explorer-change-deletions { color: #f87171; font-family: var(--font-mono); }
 .file-explorer-change-row { gap: 6px; padding: 0 8px 0 10px; }

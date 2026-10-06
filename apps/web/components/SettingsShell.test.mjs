@@ -106,3 +106,17 @@ test("SettingsShell mobile body stacks category rail above readable content", as
   assert.match(styles, /@media \(max-width: 640px\) \{[\s\S]*?\.settings-modal-body \{[\s\S]*?flex-direction: column;/);
   assert.match(styles, /\.settings-content-pane \{[\s\S]*?min-height: 0;/);
 });
+
+test("embedded config panes own their scroll so the header and footer stay pinned", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(source, /settings-content-pane--embedded/);
+  assert.match(styles, /\.settings-content-pane--embedded \{[^}]*padding: 0;[^}]*overflow: hidden;/);
+  assert.match(styles, /\.settings-content-pane--embedded > \.settings-embedded-host \{[^}]*min-height: 0;/);
+});
+
+test("embedded Models panel hides its own close button (Settings already has one)", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const models = await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
+  assert.match(models, /settings-embedded-hide/);
+  assert.match(styles, /\.settings-embedded-host \.settings-embedded-hide \{[^}]*display: none/);
+});

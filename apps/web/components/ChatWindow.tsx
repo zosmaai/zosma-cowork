@@ -7,9 +7,8 @@ import { ZosmaLoadingState } from "./ZosmaLoadingState";
 import { NoticeShelf } from "./NoticeShelf";
 import { ExtensionDialog, ExtensionCustomPanel } from "./ExtensionOverlays";
 import { ExtensionStatusBar, partitionExtensionWidgets } from "./ExtensionStatusBar";
-import { SessionMetricsLine } from "./SessionMetricsLine";
 import { ZosmaBrand } from "./ZosmaBrand";
-import { Collapsible, MessageView } from "./MessageView";
+import { Collapsible, DiffStatBadge, MessageView } from "./MessageView";
 import { PiLoader } from "./PiLoader";
 import { formatSessionDuration } from "@/lib/session-details";
 import { useI18n } from "@/hooks/useI18n";
@@ -21,6 +20,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, ToolResultMessage } from "@/lib/types";
 import { getAssistantErrorMessage, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
+import { formatTurnProcessSummary, summarizeTurnProcess } from "@/lib/turn-process-summary";
 import {
   findFinalAssistantIndex,
   hasDisplayableProcessMessage,
@@ -380,7 +380,6 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
         <ExtensionStatusBar statuses={[]} widgets={extensionWidgetGroups.aboveEditor} placement="aboveEditor" />
         {sessionLostBanner}
         {chatInputElement}
-        <SessionMetricsLine stats={sessionStats} contextUsage={contextUsage} />
         <ExtensionStatusBar statuses={extensionStatuses} widgets={extensionWidgetGroups.belowEditor} placement="belowEditor" />
       </div>
     </div>
@@ -690,11 +689,11 @@ function useElapsedSeconds(runningSince: number | null): number {
  * turn is still running. The fold header carries the overall ran duration:
  * a live clock while streaming, the settled total ("Ran for 42s") after.
  */
-function TurnProcessFold({ summary, duration, runningSince, count, children }: {
-  summary: string;
+function TurnProcessFold({ blocks, toolResults, duration, runningSince, children }: {
+  blocks: AssistantContentBlock[];
+  toolResults: Map<string, ToolResultMessage>;
   duration: string | null;
   runningSince: number | null;
-  count: number;
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
@@ -705,25 +704,39 @@ function TurnProcessFold({ summary, duration, runningSince, count, children }: {
     if (running) setOpen(true);
   }, [running]);
   const shownDuration = duration ?? (running ? formatSessionDuration(elapsed) : null);
+  const summary = summarizeTurnProcess(blocks, toolResults);
+  const label = formatTurnProcessSummary(summary) || t("chat.turnProcess");
+  const hasDiff = summary.additions > 0 || summary.deletions > 0;
   return (
     <div className="conversation-disclosure turn-process-fold" data-open={open || undefined} data-running={running || undefined}>
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="conversation-disclosure-trigger">
-        {running ? <PiLoader size={14} /> : <span className="conversation-disclosure-dot" aria-hidden="true" />}
-        <span className="conversation-disclosure-title">
-          {summary}
-        </span>
-        <span className="conversation-disclosure-count">{count}</span>
+        {running && <PiLoader size={14} />}
+        <span className="turn-process-label">{label}</span>
+        {hasDiff && <DiffStatBadge additions={summary.additions} deletions={summary.deletions} />}
+        <span className="conversation-disclosure-chevron" aria-hidden="true">›</span>
         {shownDuration !== null && <span className="conversation-disclosure-duration">{shownDuration}</span>}
-        <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
         <span className="sr-only">{open ? t("chat.collapseProcess") : t("chat.expandProcess")}</span>
       </button>
       <Collapsible open={open}>
         <div className="turn-process-children">
-          {children}
+          <div className="turn-process-list">
+            {children}
+          </div>
         </div>
       </Collapsible>
     </div>
   );
+}
+
+/** Assistant content blocks from the given process messages plus an optional split-off final message. */
+function collectProcessBlocks(messages: AgentMessage[], indices: number[], extra: AssistantMessage | null): AssistantContentBlock[] {
+  const blocks: AssistantContentBlock[] = [];
+  for (const idx of indices) {
+    const m = messages[idx];
+    if (m?.role === "assistant") blocks.push(...((m as AssistantMessage).content ?? []));
+  }
+  if (extra) blocks.push(...(extra.content ?? []));
+  return blocks;
 }
 
 interface ColumnProps {
@@ -833,7 +846,6 @@ function MessageColumn({
         }
       }
       if (liveProcessBubbles.length > 0) {
-        const count = liveVisibleProcessIndices.length + (liveFinalProcessMessage ? 1 : 0);
         let turnStart: number | null = null;
         for (let i = userIdx; i < endIdx; i++) {
           const ts = (messages[i] as { timestamp?: number })?.timestamp;
@@ -846,10 +858,10 @@ function MessageColumn({
         rendered.push(
           <TurnProcessFold
             key={`turn-process-live-${userIdx}`}
-            summary={t("chat.turnProcess")}
+            blocks={collectProcessBlocks(messages, liveVisibleProcessIndices, liveFinalProcessMessage)}
+            toolResults={toolResultsMap}
             duration={agentRunning || liveRunMs === null ? null : formatSessionDuration(roundToSecondMs(liveRunMs))}
             runningSince={agentRunning ? turnStart : null}
-            count={count}
           >
             {liveProcessBubbles}
           </TurnProcessFold>,
@@ -902,15 +914,14 @@ function MessageColumn({
     }
 
     if (processBubbles.length > 0) {
-      const count = visibleProcessIndices.length + (finalProcessMessage ? 1 : 0);
       const runMs = turnRunDurationMs(messages, userIdx, endIdx);
       rendered.push(
         <TurnProcessFold
           key={`turn-process-${userIdx}`}
-          summary={t("chat.turnProcess")}
+          blocks={collectProcessBlocks(messages, visibleProcessIndices, finalProcessMessage)}
+          toolResults={toolResultsMap}
           duration={runMs === null ? null : formatSessionDuration(roundToSecondMs(runMs))}
           runningSince={null}
-          count={count}
         >
           {processBubbles}
         </TurnProcessFold>,
@@ -975,10 +986,10 @@ function MessageColumn({
               {streamProcessMsg && (
                 <TurnProcessFold
                   key="turn-process-live-stream"
-                  summary={t("chat.turnProcess")}
+                  blocks={streamSplit.processBlocks}
+                  toolResults={toolResultsMap}
                   duration={null}
                   runningSince={runningSince}
-                  count={streamSplit.processBlocks.length}
                 >
                   <MessageView
                     message={streamProcessMsg}
