@@ -1,13 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Mono } from "next/font/google";
+import { Chakra_Petch, DM_Sans, Geist_Mono } from "next/font/google";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { QueryProvider } from "@/lib/query-provider";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
-const notoSansMono = Noto_Sans_Mono({
-	subsets: ["latin", "cyrillic"],
-	variable: "--font-noto-mono",
+const dmSans = DM_Sans({
+	subsets: ["latin"],
+	variable: "--font-dm-sans",
+	display: "swap",
+});
+
+const chakraPetch = Chakra_Petch({
+	subsets: ["latin"],
+	weight: ["500", "600", "700"],
+	variable: "--font-chakra-petch",
+	display: "swap",
+});
+
+const geistMono = Geist_Mono({
+	subsets: ["latin"],
+	variable: "--font-geist-mono",
 	display: "swap",
 });
 
@@ -61,7 +74,7 @@ export default function RootLayout({
 		<html
 			lang="en"
 			translate="no"
-			className={`${notoSansMono.variable} notranslate`}
+			className={`${dmSans.variable} ${chakraPetch.variable} ${geistMono.variable} notranslate`}
 			suppressHydrationWarning
 		>
 			<head>

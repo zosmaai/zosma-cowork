@@ -57,3 +57,9 @@ test("parent fold keeps child folds and auto-opens while running", () => {
   assert.match(source, /if \(running\) setOpen\(true\)/);
   assert.match(source, /turn-process-children/);
 });
+
+test("collapsed fold header summarises the tool work instead of a generic label", () => {
+  assert.match(source, /summarizeTurnProcess\(blocks, toolResults\)/);
+  assert.match(source, /formatTurnProcessSummary\(summary\) \|\| t\("chat\.turnProcess"\)/);
+  assert.match(source, /<DiffStatBadge additions=\{summary\.additions\}/);
+});

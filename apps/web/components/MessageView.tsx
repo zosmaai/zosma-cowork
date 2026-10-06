@@ -11,7 +11,8 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, isEmptyThinkingBlock } from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
 import { isEditToolName } from "@/lib/tool-names";
-import { firstUsefulLine, formatToolTitle, getToolCallState, getToolCategory, type ToolCategory } from "@/lib/conversation-flow";
+import { firstUsefulLine, formatToolTitle, getToolCallState } from "@/lib/conversation-flow";
+import { describeToolRow, getResultDiff, getToolDiffStat, getToolPreview } from "@/lib/turn-process-summary";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -706,11 +707,6 @@ function AssistantMessageView({
       )}
 
       <div className="message-actions assistant-message-actions mt-1 flex h-7 items-center gap-2">
-        {message.usage && !isStreaming && (
-          <div className="text-[13px] text-(--text-dim)">
-            {formatUsage(message.usage)}
-          </div>
-        )}
         {textContent && !isStreaming && (
           <button
             onClick={copyContent}
@@ -742,6 +738,15 @@ function AssistantMessageView({
  *  height collapse) so streaming tool input can grow without clipping, and
  *  streamed input stays out of the DOM while collapsed (AnimatePresence drops
  *  it on exit). */
+export function DiffStatBadge({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="diff-stat" aria-label={`${additions} added, ${deletions} removed`}>
+      <span className="diff-stat-add">+{additions}</span>
+      <span className="diff-stat-del">−{deletions}</span>
+    </span>
+  );
+}
+
 export function Collapsible({ open, children }: { open: boolean; children: ReactNode }) {
   const reduceMotion = useReducedMotion();
   const sequence = reduceMotion
@@ -760,36 +765,6 @@ export function Collapsible({ open, children }: { open: boolean; children: React
         </motion.div>
       )}
     </AnimatePresence>
-  );
-}
-
-function ToolCategoryIcon({ category, active }: { category: ToolCategory; active?: boolean }) {
-  const size = 16;
-  const glyph = () => {
-    switch (category) {
-      case "search":
-        return (<><circle cx="11" cy="11" r="6.5" /><line x1="16" y1="16" x2="21" y2="21" /></>);
-      case "terminal":
-        return (<><path d="M4 7l4 5-4 5" /><line x1="12" y1="17" x2="20" y2="17" /></>);
-      case "file":
-        return (<><path d="M7 3h7l5 5v13H7z" /><path d="M10 12h6M10 16h6" /></>);
-      case "skill":
-        return (<><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /><circle cx="12" cy="12" r="2.5" /></>);
-      case "chat":
-        return (<><path d="M4 5h16v11H9l-4 4z" /></>);
-      default:
-        return (<><circle cx="6" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18" cy="12" r="1.6" /></>);
-    }
-  };
-  return (
-    <span
-      className={active ? "conversation-disclosure-icon conversation-disclosure-icon-active" : "conversation-disclosure-icon"}
-      aria-hidden="true"
-    >
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        {glyph()}
-      </svg>
-    </span>
   );
 }
 
@@ -823,53 +798,34 @@ function ThinkingBlock({ block, running, active, duration, sessionId, entryId, b
   blockIndex: number;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(running);
   const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const body = loading
-    ? t("i18n.loadingThinking")
-    : error
-      ? error
-      : block.deferred
-        ? content ?? ""
-        : block.thinking;
 
-  useEffect(() => setExpanded(Boolean(running)), [running]);
-
-  const toggle = async () => {
-    const nextExpanded = !expanded;
-    setExpanded(nextExpanded);
-    if (!nextExpanded || !block.deferred || content !== null) return;
+  // Saved sessions defer thinking text; fetch it up front so it reads inline.
+  useEffect(() => {
+    if (!block.deferred || content !== null) return;
     if (!sessionId || !entryId) {
       setError(t("i18n.thinkingUnavailable"));
       return;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      setContent(await loadThinkingContent(sessionId, entryId, blockIndex));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+    let cancelled = false;
+    loadThinkingContent(sessionId, entryId, blockIndex)
+      .then((text) => { if (!cancelled) setContent(text); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
+    return () => { cancelled = true; };
+  }, [block.deferred, content, sessionId, entryId, blockIndex, t]);
 
+  // pre-wrap renders the model's trailing newlines as an empty line under the text.
+  const body = (error ?? (block.deferred ? content ?? t("i18n.loadingThinking") : block.thinking)).trim();
   const status = running ? t("chat.thinkingRunning") : t("chat.thinkingComplete");
   return (
-    <div className="conversation-disclosure thinking-row" data-state={running ? "running" : "complete"} data-active={active ? "true" : "false"}>
-      <button type="button" onClick={() => void toggle()} aria-expanded={expanded} className="conversation-disclosure-trigger">
-        <span className="conversation-disclosure-dot" aria-hidden="true" />
-        <span className="conversation-disclosure-title">{t("i18n.thinking")}</span>
-        <span className="conversation-disclosure-summary">{status}</span>
-        {duration !== undefined && <span className="conversation-disclosure-duration">{duration}s</span>}
-        <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
+    <div className="thinking-row" data-state={running ? "running" : "complete"} data-active={active ? "true" : "false"}>
+      <div className="thinking-row-label">
+        <span>{t("i18n.thinking")}</span>
+        {duration !== undefined && <span className="thinking-row-duration">{duration}s</span>}
         <span className="sr-only">{status}</span>
-      </button>
-      <Collapsible open={expanded}>
-        <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>
-      </Collapsible>
+      </div>
+      <div className={`thinking-detail${error ? " is-error" : ""}`}>{body}</div>
     </div>
   );
 }
@@ -889,11 +845,10 @@ function ToolCallBlock({ block, result, running, active, duration, cwd, onOpenFi
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const state = getToolCallState(result, Boolean(active));
   const title = formatToolTitle(block.toolName);
-  const preview = state === "error"
-    ? firstUsefulLine(resultText ?? "") || getToolPreview(block)
-    : state === "running" && isStreamingInput
-      ? t("chat.generatingToolInput")
-      : getToolPreview(block);
+  const row = describeToolRow(block, state);
+  const diffStat = getToolDiffStat(block, result);
+  const target = state === "running" && isStreamingInput ? t("chat.generatingToolInput") : row.target;
+  const errorLine = state === "error" ? firstUsefulLine(resultText ?? "") : "";
   const stateText = state === "running"
     ? t("chat.toolRunning", { name: title })
     : state === "success"
@@ -905,11 +860,12 @@ function ToolCallBlock({ block, result, running, active, duration, cwd, onOpenFi
   return (
     <div className={`conversation-disclosure tool-row tool-row-${state}`} data-state={state} data-running={running ? "true" : "false"}>
       <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} className="conversation-disclosure-trigger">
-        <ToolCategoryIcon category={getToolCategory(block.toolName)} active={active} />
-        <span className="conversation-disclosure-title">{title}</span>
-        <span className="conversation-disclosure-summary">{preview}</span>
+        <span className="tool-row-verb">{row.verb}</span>
+        <span className={`tool-row-target${row.kind === "command" ? " is-command" : ""}`} title={target}>{target}</span>
+        {errorLine && <span className="tool-row-error-line">{errorLine}</span>}
+        {diffStat && <DiffStatBadge additions={diffStat.additions} deletions={diffStat.deletions} />}
         {duration !== undefined && <span className="conversation-disclosure-duration">{duration}s</span>}
-        <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
+        <span className="conversation-disclosure-chevron" aria-hidden="true">›</span>
         <span className="sr-only">{stateText}</span>
       </button>
       <Collapsible open={expanded}>
@@ -1071,19 +1027,6 @@ function PatchTextView({ text }: { text: string }) {
   );
 }
 
-function getResultDiff(result: ToolResultMessage): ResultDiff | null {
-  const details = (result as ToolResultMessage & { details?: unknown }).details;
-  if (!isRecord(details)) return null;
-
-  const patch = typeof details.patch === "string" ? details.patch : null;
-  if (patch) return { text: patch };
-
-  const diff = typeof details.diff === "string" ? details.diff : null;
-  if (diff) return { text: diff };
-
-  return null;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1117,7 +1060,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
         <span className="conversation-disclosure-title">compaction</span>
         <span className="conversation-disclosure-summary">{t("i18n.conversationCompacted")}</span>
         {time && <span className="conversation-disclosure-duration">{time}</span>}
-        <span className="conversation-disclosure-chevron" aria-hidden="true">⌄</span>
+        <span className="conversation-disclosure-chevron" aria-hidden="true">›</span>
       </summary>
       <div className="compaction-detail">
         <div className="compaction-summary-title">{t("i18n.conversationCompacted")}</div>
@@ -1309,39 +1252,6 @@ function previewText(text: string): string {
   return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
 }
 
-
-function getToolPreview(block: ToolCallContent): string {
-  const input = block.input;
-  if (!input || typeof input !== "object") return "";
-  const keys = Object.keys(input);
-  if (keys.length === 0) return "";
-
-  // Common tool input patterns
-  if ("command" in input) return String(input.command).slice(0, 120);
-  if ("path" in input) return String(input.path).slice(0, 120);
-  if ("file_path" in input) return String(input.file_path).slice(0, 120);
-  if ("pattern" in input) return String(input.pattern).slice(0, 120);
-  if ("query" in input) return String(input.query).slice(0, 120);
-
-  const first = input[keys[0]];
-  return String(first).slice(0, 120);
-}
-
-function formatUsage(usage: {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: { total: number };
-}): string {
-  const parts = [];
-  if (usage.input) parts.push(`${usage.input.toLocaleString()} in`);
-  if (usage.output) parts.push(`${usage.output.toLocaleString()} out`);
-  if (usage.cacheRead) parts.push(`${usage.cacheRead.toLocaleString()} cache R`);
-  if (usage.cacheWrite) parts.push(`${usage.cacheWrite.toLocaleString()} cache W`);
-  if (usage.cost?.total) parts.push(`$${usage.cost.total.toFixed(4)}`);
-  return parts.join(" · ");
-}
 
 function BashExecutionView({ message, sessionId }: { message: BashExecutionMessage; sessionId?: string }) {
   const [fullOutput, setFullOutput] = useState<string | null>(null);
