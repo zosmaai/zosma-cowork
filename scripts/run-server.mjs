@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { webHealthRequest } from "./healthcheck.mjs";
@@ -239,8 +239,21 @@ export async function runDirect({
   return { shutdownRequested };
 }
 
-const invokedDirectly = process.argv[1]
-  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+// A macOS tmpdir (/var/folders/...) is a symlink to /private/var/folders/...:
+// Node realpaths `import.meta.url` but not `process.argv[1]`, so a plain string
+// compare silently skips the CLI runner and the process exits 0 with no
+// output. Compare real paths instead.
+export function isDirectInvocation(argv1, moduleUrl, realpath = realpathSync) {
+  if (!argv1) return false;
+  const scriptPath = fileURLToPath(moduleUrl);
+  try {
+    return realpath(argv1) === realpath(scriptPath);
+  } catch {
+    return pathToFileURL(resolve(argv1)).href === moduleUrl;
+  }
+}
+
+const invokedDirectly = isDirectInvocation(process.argv[1], import.meta.url);
 
 if (invokedDirectly) {
   await runDirect();

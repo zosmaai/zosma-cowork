@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { dirname } from "node:path";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { startSupervisor } from "./run-server.mjs";
+import { isDirectInvocation, startSupervisor } from "./run-server.mjs";
 
 class FakeChild extends EventEmitter {
   constructor(name) {
@@ -259,4 +263,25 @@ test("installSignalHandlers is usable before startup and forwards both signals",
   assert.deepEqual(received, ["SIGINT", "SIGTERM"]);
   remove();
   assert.equal(emitter.listenerCount("SIGINT"), 0);
+});
+
+test("isDirectInvocation matches a symlinked script path (macOS tmpdir case)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "run-server-direct-"));
+  const real = join(dir, "run-server.mjs");
+  writeFileSync(real, "export {};");
+  symlinkSync(dir, join(dir, "linked"), "dir");
+  const moduleUrl = pathToFileURL(real).href;
+  assert.equal(isDirectInvocation(join(dir, "linked", "run-server.mjs"), moduleUrl), true);
+});
+
+test("isDirectInvocation rejects a different file and a missing argv", () => {
+  const dir = mkdtempSync(join(tmpdir(), "run-server-direct-"));
+  const real = join(dir, "run-server.mjs");
+  const other = join(dir, "other.mjs");
+  writeFileSync(real, "export {};");
+  writeFileSync(other, "export {};");
+  const moduleUrl = pathToFileURL(real).href;
+  assert.equal(isDirectInvocation(other, moduleUrl), false);
+  assert.equal(isDirectInvocation(undefined, moduleUrl), false);
+  assert.equal(isDirectInvocation("", moduleUrl), false);
 });
