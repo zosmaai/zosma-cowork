@@ -9,11 +9,15 @@ import { createLogger } from "./log.ts";
 
 function httpGet(port, path) {
   return new Promise((resolve, reject) => {
-    const r = http.get(`http://127.0.0.1:${port}${path}`, (res) => {
+    const r = http.request(`http://127.0.0.1:${port}${path}`, {
+      method: "GET",
+      headers: { authorization: "Bearer test-token" },
+    }, (res) => {
       res.resume();
       res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
     });
     r.on("error", reject);
+    r.end();
   });
 }
 

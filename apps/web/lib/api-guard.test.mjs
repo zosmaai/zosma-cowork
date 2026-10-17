@@ -23,6 +23,13 @@ test("oauth onboarding routes stay reachable without a session", () => {
   }
 });
 
+test("the liveness probe stays reachable without a session", () => {
+  // Container/orchestrator healthchecks probe /api/v1/health without any
+  // browser session (scripts/healthcheck.mjs sends no cookie); blocking it
+  // makes every no-password deployment permanently unhealthy.
+  assert.equal(needsZosmaSession({ pathname: "/api/v1/health", hasValidSession: false }), false);
+});
+
 test("every other API route requires a session", () => {
   for (const pathname of [
     "/api",

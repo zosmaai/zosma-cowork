@@ -19,7 +19,8 @@ import {
   normalizeAdapterError,
   adapterError,
   SessionStore,
-} from "../../../../packages/protocol/src/index.ts";
+} from "@zosma-cowork/protocol";
+
 import type {
   AdapterManifest,
   SessionHandle,
@@ -39,7 +40,7 @@ import type {
   NormalizedEvent,
   ApprovalRequest,
   ApprovalResult,
-} from "../../../../packages/protocol/src/index.ts";
+} from "@zosma-cowork/protocol";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { ApprovalAdapterSurface } from "../approval/broker.ts";
 import { resolve, join } from "node:path";

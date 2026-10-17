@@ -19,6 +19,13 @@ test("resolveToken prefers env, else persists a fresh token file", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("resolveDataDir prefers ZOSMA_DAEMON_DATA_DIR", () => {
+  assert.equal(
+    resolveDataDir({ ZOSMA_DAEMON_DATA_DIR: "/tmp/zosma-state" }),
+    "/tmp/zosma-state",
+  );
+});
+
 test("resolvePort reads a valid ZOSMA_DAEMON_PORT, else undefined", () => {
   assert.equal(resolvePort({ ZOSMA_DAEMON_PORT: "64713" }), 64713);
   assert.equal(resolvePort({}), undefined);
@@ -54,6 +61,23 @@ test("run() starts the daemon, becomes ready, and shuts down cleanly", async () 
     assert.equal(handle.server.getState(), "shutting-down");
   } finally {
     await stopHandle(handle);
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("run omits daemon token material from logs", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "zosma-daemon-redact-"));
+  const lines = [];
+  let handle;
+  try {
+    handle = await run({
+      dataDir,
+      env: { ZOSMA_DAEMON_TOKEN: "tok123456789" },
+      logger: createLogger({ sink: (line) => lines.push(line) }),
+    });
+    assert.doesNotMatch(lines.join("\n"), /tok123|tok123456789/);
+  } finally {
+    if (handle) await stopHandle(handle);
     rmSync(dataDir, { recursive: true, force: true });
   }
 });

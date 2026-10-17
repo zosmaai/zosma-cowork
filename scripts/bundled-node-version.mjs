@@ -1,0 +1,1 @@
+export const BUNDLED_NODE_VERSION = "v24.15.0";

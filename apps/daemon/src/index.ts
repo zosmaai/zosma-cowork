@@ -62,6 +62,7 @@ export function resolveMachineId(dataDir: string, env: NodeJS.ProcessEnv = proce
 
 export interface RunArgs {
   dataDir?: string;
+  env?: NodeJS.ProcessEnv;
   logger?: Logger;
   port?: number;
   exit?: (code: number) => void;
@@ -70,9 +71,11 @@ export interface RunArgs {
 /** Run the daemon from the CLI entrypoint (no side effects except `exit`). */
 export async function run(args: RunArgs = {}): Promise<Daemon> {
   const logger = args.logger ?? createLogger();
-  const dataDir = args.dataDir ?? resolveDataDir();
-  const token = resolveToken(dataDir);
+  const env = args.env ?? process.env;
+  const dataDir = args.dataDir ?? resolveDataDir(env);
+  const token = resolveToken(dataDir, env);
   const pi = new PiAdapter({ storeDir: dataDir });
+  const exit = args.exit ?? ((code: number) => void (process.exitCode = code));
   // ZOS-94: durable approval/Ask-User broker. The Pi adapter is the native
   // ask surface: an `approval:request` for a live session surfaces as a
   // Pi extension-UI ask (select/editor) and resolves exactly once via the
@@ -129,14 +132,14 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
     piRpc: (request) => handlePiRpc(pi, request),
     piStream: (request, sink) => handlePiStream(pi, request, sink),
     approvalRpc: (request: { type: string; [key: string]: unknown }) => handleApprovalRpc(approvals, request),
-    port: args.port ?? resolvePort(),
-    host: resolveHost(),
-    exit: args.exit ?? ((code) => void (process.exitCode = code)),
+    port: args.port ?? resolvePort(env),
+    host: resolveHost(env),
+    exit,
     onShutdown: connector ? () => connector.stop() : undefined,
   });
   if (!handle.acquired) {
     logger.error("already running");
-    (args.exit ?? ((code) => void (process.exitCode = code)))(3);
+    exit(3);
     return handle;
   }
   connector?.start();
@@ -144,7 +147,8 @@ export async function run(args: RunArgs = {}): Promise<Daemon> {
     port: handle.port,
     health: `http://127.0.0.1:${handle.port}/health`,
     ipc: `http://127.0.0.1:${handle.port}/ipc`,
-    tokenHint: token.slice(0, 6) + "…",
+    // No token material here — not even a prefix hint — per the redaction
+    // contract ("run omits daemon token material from logs").
     ...(connector ? { controlPlane: cpUrl, machineId: identity!.machineId, manifestVersion: manifest?.manifestVersion } : {}),
   });
   // Warm the session-list cache in the background: the sidebar's first load

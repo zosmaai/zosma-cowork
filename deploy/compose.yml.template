@@ -1,0 +1,29 @@
+services:
+  cowork:
+    image: "${ZOSMA_IMAGE:?set ZOSMA_IMAGE to an immutable ghcr.io digest reference}"
+    user: "${ZOSMA_UID:-1000}:${ZOSMA_GID:-1000}"
+    restart: unless-stopped
+    environment:
+      HOME: /data/pi-agent
+      PORT: "30141"
+      PI_WEB_HOSTNAME: 0.0.0.0
+      PI_WEB_NO_OPEN: "1"
+      PI_WEB_PASSWORD: "${PI_WEB_PASSWORD:-}"
+      PI_WEB_ALLOWED_HOSTS: "${PI_WEB_ALLOWED_HOSTS:-}"
+      PI_CODING_AGENT_DIR: /data/pi-agent
+      ZOSMA_DAEMON_DATA_DIR: /data/pi-agent/daemon
+      ZOSMA_DAEMON_PORT: "64713"
+      ZOSMA_DAEMON_TOKEN: "${ZOSMA_DAEMON_TOKEN:?set ZOSMA_DAEMON_TOKEN}"
+    ports:
+      - name: web
+        target: 30141
+        published: "${ZOSMA_PORT:-30141}"
+        host_ip: "${ZOSMA_BIND_ADDRESS:-127.0.0.1}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: "${ZOSMA_WORKSPACE:?set ZOSMA_WORKSPACE to an absolute directory}"
+        target: /workspace
+      - type: bind
+        source: "${ZOSMA_PI_STATE:?set ZOSMA_PI_STATE to an absolute directory}"
+        target: /data/pi-agent
