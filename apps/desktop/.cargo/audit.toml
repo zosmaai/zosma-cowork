@@ -7,9 +7,17 @@
 # log plugin only measures byte units. Bumping requires rust_decimal ->
 # rkyv 0.8 migration. Ignore until upstream moves.
 #
+# RUSTSEC-2026-0367/0368/0369 — zip 4.x extraction flaws (SUID preservation,
+# symlink escapes, permission application through symlinks).
+# Transitive via: tauri-plugin-updater 2.x, whose zip dependency is
+# Windows-only (`cfg(target_os = "windows")`) and still pins zip 4. The
+# updater verifies archive signatures before extraction, and this code path
+# never compiles on our non-Windows release targets. Upgrading to zip >= 9
+# requires tauri-plugin-updater 3 (alpha) — ignore until it stabilizes.
+#
 # RUSTSEC-2026-0194/0195 — quick-xml DoS (quadratic / memory exhaustion).
 # Transitive via Tauri stack (tauri-winrt-notification 0.37.5 and bundler 0.39.2).
 # Fixed in quick-xml >= 0.41.0; needs Tauri upgrade. Not exploitable — we
 # don't parse untrusted XML. TODO: remove once Tauri pulls >=0.41.0.
 [advisories]
-ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195", "RUSTSEC-2026-0235"]
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195", "RUSTSEC-2026-0235", "RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369"]

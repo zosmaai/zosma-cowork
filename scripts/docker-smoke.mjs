@@ -247,22 +247,28 @@ async function main() {
     }
 
     await compose("exec", "-T", "cowork", "git", "init", "/workspace");
-    const validate = await request({
-      port,
-      host: allowedHost,
-      authorization,
-      method: "POST",
-      path: "/api/cwd/validate",
-      body: { cwd: "/workspace" },
-    });
-    assert.equal(validate.status, 200, validate.body);
-    const gitStatus = await request({
-      port,
-      host: allowedHost,
-      authorization,
-      path: `/api/git/status?cwd=${encodeURIComponent("/workspace")}`,
-    });
-    assert.equal(gitStatus.status, 200, gitStatus.body);
+    // Session-gated API probes only run in LAN mode: loopback mode has no
+    // password, so Basic auth is unavailable and the proxy's sign-in boundary
+    // requires an interactive OAuth session a headless container cannot do.
+    // LAN mode exercises the full authenticated API surface instead.
+    if (lanMode) {
+      const validate = await request({
+        port,
+        host: allowedHost,
+        authorization,
+        method: "POST",
+        path: "/api/cwd/validate",
+        body: { cwd: "/workspace" },
+      });
+      assert.equal(validate.status, 200, validate.body);
+      const gitStatus = await request({
+        port,
+        host: allowedHost,
+        authorization,
+        path: `/api/git/status?cwd=${encodeURIComponent("/workspace")}`,
+      });
+      assert.equal(gitStatus.status, 200, gitStatus.body);
+    }
 
     await compose(
       "exec", "-T", "cowork",
