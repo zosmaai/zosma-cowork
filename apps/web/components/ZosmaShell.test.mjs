@@ -81,9 +81,9 @@ test("defines and applies the DeepSeek-derived light and dark shell tokens", () 
   assert.match(cssSource, /--motion-slow: 300ms;/);
   assert.match(cssSource, /html\.dark \{[\s\S]*?--bg: #151517;/);
   assert.match(cssSource, /html\.dark \{[\s\S]*?--bg-panel: #1b1b1c;/);
-  assert.match(chatWindowSource, /maxWidth: "var\(--shell-content-max-width\)"/);
-  assert.match(chatWindowSource, /maxWidth: "var\(--shell-composer-max-width\)"/);
-  assert.match(chatInputSource, /maxWidth: "var\(--shell-composer-max-width\)"/);
+  assert.match(chatWindowSource, /max-w-\(--shell-content-max-width\)/);
+  assert.match(chatWindowSource, /max-w-\(--shell-composer-max-width\)/);
+  assert.match(chatInputSource, /max-w-\(--shell-composer-max-width\)/);
   assert.doesNotMatch(chatWindowSource, /max-w-\[820px\]|maxWidth: 820/);
   assert.doesNotMatch(chatInputSource, /maxWidth: 820/);
 });

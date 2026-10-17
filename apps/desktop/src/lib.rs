@@ -571,6 +571,17 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .manage(Arc::new(Shared::default()))
         .setup(|app| {
+            // Windows/Linux register the scheme with the OS at runtime;
+            // macOS reads it from the bundle's Info.plist (bundled builds
+            // only) and reports the platform as unsupported here. Failure is
+            // never fatal: the manual-paste fallback still completes sign-in.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(err) = app.deep_link().register_all() {
+                    log::warn!("deep-link scheme registration skipped: {err}");
+                }
+            }
             let shared = app.state::<Arc<Shared>>().inner().clone();
             let handle = app.handle().clone();
             thread::spawn(move || {

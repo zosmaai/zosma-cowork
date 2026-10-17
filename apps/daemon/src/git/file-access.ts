@@ -49,6 +49,13 @@ export async function getAllowedFileRoots(
     // home is unreadable — ignore
   }
   for (const root of getAdditionalAllowedRoots()) roots.add(normalizeSlashes(root));
+  // Container/deploy seed: comma-separated extra roots (e.g. the mounted
+  // workspace). Session roots are NOT available before the first session, so
+  // without this the workspace picker cannot browse a fresh mounted volume.
+  for (const root of (process.env.ZOSMA_ALLOWED_ROOTS ?? "").split(",")) {
+    const trimmed = root.trim();
+    if (trimmed) roots.add(normalizeSlashes(trimmed));
+  }
 
   cache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;

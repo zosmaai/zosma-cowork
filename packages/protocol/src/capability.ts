@@ -39,7 +39,8 @@ export type CapabilityName =
   | "bash"
   | "compaction"
   | "extensions"
-  | "subagents";
+  | "subagents"
+  | "ask-user";
 
 export const CAPABILITY_NAMES: readonly CapabilityName[] = [
   "streaming",
@@ -55,6 +56,7 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = [
   "compaction",
   "extensions",
   "subagents",
+  "ask-user",
 ] as const satisfies readonly CapabilityName[];
 
 /**

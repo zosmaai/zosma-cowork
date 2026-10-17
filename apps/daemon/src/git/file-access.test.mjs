@@ -43,6 +43,19 @@ test("getAllowedFileRoots adds config roots registered via allowFileRoot", async
   assert.ok(roots.has("/extra/browseable"), "config root registered via allowFileRoot is browsable");
 });
 
+test("getAllowedFileRoots seeds roots from ZOSMA_ALLOWED_ROOTS", async () => {
+  const saved = process.env.ZOSMA_ALLOWED_ROOTS;
+  process.env.ZOSMA_ALLOWED_ROOTS = "/work,/srv/data";
+  try {
+    const roots = await getAllowedFileRoots(async () => [], true);
+    assert.ok(roots.has("/work"), "env root /work included");
+    assert.ok(roots.has("/srv/data"), "env root /srv/data included");
+  } finally {
+    if (saved === undefined) delete process.env.ZOSMA_ALLOWED_ROOTS;
+    else process.env.ZOSMA_ALLOWED_ROOTS = saved;
+  }
+});
+
 test("getAllowedFileRoots caches its result within the TTL", async () => {
   // First call warms the cache; a later call within the TTL returns the
   // exact same Set object (no recompute).

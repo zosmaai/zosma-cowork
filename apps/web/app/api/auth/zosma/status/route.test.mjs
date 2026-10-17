@@ -11,6 +11,7 @@ const jiti = createJiti(import.meta.url, {
   moduleCache: false,
 });
 const { GET } = await jiti.import("./route.ts");
+const { createSessionToken } = await jiti.import("../../../../../lib/zosma-auth/session.ts");
 
 test("GET /status reports an unconfigured default state", withAgentDir(async () => {
   const res = await GET(new Request("http://localhost/api/auth/zosma/status"));
@@ -36,4 +37,41 @@ test("GET /status reports a configured provider", withAgentDir(async (dir) => {
   assert.equal(body.configured, true);
   assert.equal(body.modelCount, 2);
   assert.equal(body.baseUrl, "https://router.zosma.ai/v1");
+}));
+
+test("GET /status reports signedIn=false without a session cookie", withAgentDir(async (dir) => {
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: {
+      "zosma-router": { id: "zosma-router", apiKey: "sk", models: [{ id: "a" }] },
+    },
+  }));
+  const body = await (await GET(new Request("http://localhost/api/auth/zosma/status"))).json();
+  assert.equal(body.configured, true);
+  assert.equal(body.signedIn, false);
+}));
+
+test("GET /status reports signedIn=true for a session issued for this router key", withAgentDir(async (dir) => {
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: {
+      "zosma-router": { id: "zosma-router", apiKey: "sk", models: [{ id: "a" }] },
+    },
+  }));
+  const token = createSessionToken("sk");
+  const res = await GET(new Request("http://localhost/api/auth/zosma/status", {
+    headers: { cookie: `zosma_session=${token}` },
+  }));
+  assert.equal((await res.json()).signedIn, true);
+}));
+
+test("GET /status rejects a session issued for a different router key", withAgentDir(async (dir) => {
+  await writeFile(join(dir, "models.json"), JSON.stringify({
+    providers: {
+      "zosma-router": { id: "zosma-router", apiKey: "sk", models: [{ id: "a" }] },
+    },
+  }));
+  const token = createSessionToken("sk-someone-else");
+  const res = await GET(new Request("http://localhost/api/auth/zosma/status", {
+    headers: { cookie: `zosma_session=${token}` },
+  }));
+  assert.equal((await res.json()).signedIn, false);
 }));

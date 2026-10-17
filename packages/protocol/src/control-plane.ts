@@ -20,7 +20,7 @@
 import type { Schema } from "./schema.ts";
 import { ok, fail } from "./result.ts";
 import { missingField, invalidField } from "./errors.ts";
-import { object, string, nonEmptyString, number, boolean, optional, record } from "./schema.ts";
+import { object, string, nonEmptyString, number, boolean, optional, record, array } from "./schema.ts";
 
 export const HELLO = "cowork.v1.control.hello";
 export const RPC_REQUEST = "cowork.v1.control.rpc.request";
@@ -30,7 +30,41 @@ export const PING = "cowork.v1.control.ping";
 export const PONG = "cowork.v1.control.pong";
 export const WATERMARK = "cowork.v1.control.watermark";
 
+/**
+ * WebSocket close codes on the machine channel (ZOS-91). Numeric codes so the
+daemon and the plane read the same constant, not a stringly-typed guess.
+ *
+ * 4003 — the machine's identity is revoked; the daemon must stop reconnecting.
+ * 4004 — another live connection already holds this machine id.
+ */
+export const CLOSE_MACHINE_REVOKED = 4003;
+export const CLOSE_DUPLICATE_MACHINE = 4004;
+
 export const CONTROL_TAGS = [HELLO, RPC_REQUEST, RPC_RESPONSE, ACK, PING, PONG, WATERMARK] as const;
+
+/** One harness this machine can run (mirrors `AdapterManifest`, additive). */
+export interface AdapterDescriptorFrame {
+  id: string;
+  name?: string;
+  protocolVersion?: number;
+  capabilities?: Array<{ name: string; version?: number }>;
+}
+
+/**
+ * What a machine can do (ZOS-91). Every field is optional and unknown keys are
+ * ignored, so a newer daemon (more fields) still registers with an older plane
+ * and vice versa. `manifestVersion` moves only for a breaking change.
+ */
+export interface MachineManifestFrame {
+  manifestVersion?: number;
+  platform?: string;
+  arch?: string;
+  hostname?: string;
+  daemonVersion?: string;
+  node?: string;
+  adapters?: AdapterDescriptorFrame[];
+  services?: string[];
+}
 
 export interface HelloFrame {
   machineId: string;
@@ -38,6 +72,8 @@ export interface HelloFrame {
   version: number;
   /** Last command sequence the machine handled; control plane replays above it. */
   watermark: number;
+  /** ZOS-91 capability manifest — additive, absent on older daemons. */
+  manifest?: MachineManifestFrame;
 }
 
 export interface RpcRequestFrame {
@@ -70,11 +106,36 @@ export interface WatermarkFrame {
 export interface PingFrame {}
 export interface PongFrame {}
 
+const adapterCapabilityFrame: Schema<{ name: string; version?: number }> = object({
+  name: nonEmptyString("capabilities[].name"),
+  version: optional(number("capabilities[].version")),
+});
+
+const adapterDescriptorFrame: Schema<AdapterDescriptorFrame> = object({
+  id: nonEmptyString("id"),
+  name: optional(string("name")),
+  protocolVersion: optional(number("protocolVersion")),
+  capabilities: optional(array(adapterCapabilityFrame)),
+});
+
+/** Additive manifest validator — tolerate partial payloads and unknown keys. */
+export const machineManifest: Schema<MachineManifestFrame> = object({
+  manifestVersion: optional(number("manifestVersion")),
+  platform: optional(string("platform")),
+  arch: optional(string("arch")),
+  hostname: optional(string("hostname")),
+  daemonVersion: optional(string("daemonVersion")),
+  node: optional(string("node")),
+  adapters: optional(array(adapterDescriptorFrame)),
+  services: optional(array(string("services[]"))),
+});
+
 export const hello: Schema<HelloFrame> = object({
   machineId: nonEmptyString("machineId"),
   name: string("name"),
   version: number("version"),
   watermark: number("watermark"),
+  manifest: optional(machineManifest),
 });
 
 export const rpcRequest: Schema<RpcRequestFrame> = object({

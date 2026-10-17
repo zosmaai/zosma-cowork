@@ -245,6 +245,24 @@ test("session commands: extension UI select routes and resolves via response", a
   assert.equal(await promise, "b");
 });
 
+test("session commands: native select uses normalized approval requester", async () => {
+  const { inner, uiContext } = fakeInner();
+  const requests = [];
+  const s = new PiSession(inner, "h1", () => {}, async (request) => {
+    requests.push(request);
+    return { action: "allow", value: "b" };
+  });
+
+  assert.equal(await uiContext.select("Pick", ["a", "b"]), "b");
+  assert.deepEqual(requests, [{
+    correlationId: requests[0].correlationId,
+    sessionId: "h1",
+    kind: "ask-user",
+    prompt: "Pick",
+    options: ["a", "b"],
+  }]);
+});
+
 test("session commands: abort calls inner.abort", async () => {
   const { inner } = fakeInner();
   let aborted = false;

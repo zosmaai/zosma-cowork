@@ -1,0 +1,76 @@
+# Zosma Cowork — single host and fleet deployments.
+#
+#   Single host (default):  docker compose up
+#       → web on :3000 talking to a local daemon. No control plane.
+#
+#   Fleet:                 docker compose up --profile fleet
+#       → adds the control plane on :64714. Set the ZOSMA_CONTROL_PLANE_* /
+#         ZOSMA_MACHINE_ID vars in .env (see .env.example) so the daemon dials
+#         out to the plane.
+#
+# Tokens: ZOSMA_DAEMON_TOKEN (daemon<->web) and ZOSMA_CONTROL_PLANE_TOKEN
+# (daemons<->plane) are REQUIRED for fleet. Generate: openssl rand -hex 32
+
+services:
+  daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile.daemon
+    restart: unless-stopped
+    environment:
+      ZOSMA_DAEMON_PORT: "7441"
+      # Reachable from the web container over the compose network (not published to host).
+      ZOSMA_DAEMON_HOST: "0.0.0.0"
+      ZOSMA_DAEMON_TOKEN: ${ZOSMA_DAEMON_TOKEN:?set in .env}
+      ZOSMA_DAEMON_DATA_DIR: /data
+      # Warm a pi session for the mounted work dir (first-chat latency).
+      ZOSMA_WARM_CWD: /work
+      # Seed the daemon file-gate roots so the workspace picker can browse the
+      # mounted dir before any session exists.
+      ZOSMA_ALLOWED_ROOTS: /work
+      # Fleet (only used when all three are set; see .env.example):
+      ZOSMA_CONTROL_PLANE_URL: ${ZOSMA_CONTROL_PLANE_URL:-}
+      ZOSMA_CONTROL_PLANE_TOKEN: ${ZOSMA_CONTROL_PLANE_TOKEN:-}
+      ZOSMA_MACHINE_ID: ${ZOSMA_MACHINE_ID:-}
+      ZOSMA_MACHINE_NAME: ${ZOSMA_MACHINE_NAME:-}
+    volumes:
+      - daemon-data:/data
+      # Pi agent home: session files, auth, model config.
+      - pi-home:/root/.pi
+      # The workspace the daemon may operate on.
+      - ${ZOSMA_WORK_DIR:-./work}:/work
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "${ZOSMA_WEB_PORT:-3000}:3000"
+    environment:
+      ZOSMA_DAEMON_URL: http://daemon:7441
+      ZOSMA_DAEMON_TOKEN: ${ZOSMA_DAEMON_TOKEN:?set in .env}
+    volumes:
+      # Same host dir at the same path: the picker's /api/cwd/browse runs in
+      # THIS container, while the daemon executes against its own mount.
+      - ${ZOSMA_WORK_DIR:-./work}:/work
+    depends_on:
+      - daemon
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile.control-plane
+    restart: unless-stopped
+    ports:
+      - "64714:64714"
+    environment:
+      ZOSMA_CONTROL_PLANE_TOKEN: ${ZOSMA_CONTROL_PLANE_TOKEN:-}
+    volumes:
+      - cp-store:/store
+    profiles: ["fleet"]
+
+volumes:
+  daemon-data:
+  pi-home:
+  cp-store:

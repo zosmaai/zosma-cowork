@@ -24,6 +24,7 @@ import {
 import { FILES_RPC_OPS, handleFilesRpc, type FilesRpcRequest } from "./files/rpc.ts";
 import { READ_RPC_OPS, handleReadRpc, type ReadRpcRequest } from "./read/rpc.ts";
 import { AUTH_RPC_OPS, handleAuthRpc, type AuthRpcRequest } from "./auth/rpc.ts";
+import { APPROVAL_RPC_OPS } from "./approval/rpc.ts";
 import { type IpcResult as PiIpcResult } from "./pi/rpc.ts";
 
 export type Readiness = "starting" | "ready" | "shutting-down" | "error";
@@ -45,6 +46,8 @@ export type PiStreamHandler = (
   sink: (event: unknown) => void,
 ) => Promise<PiIpcResult>;
 
+export type ApprovalRpcHandler = (request: { type: string; [key: string]: unknown }) => Promise<PiIpcResult>;
+
 export interface DaemonServerOptions {
   token: string;
   /** When false, Git-backed operations reply with a stable git_unavailable. */
@@ -59,12 +62,16 @@ export interface DaemonServerOptions {
   piRpc?: PiRpcHandler;
   /** When set, `POST /ipc/stream` (SSE) dispatches to this handler. */
   piStream?: PiStreamHandler;
+  /** When set, `approval:*` ops dispatch to this handler (the broker, ZOS-94). */
+  approvalRpc?: ApprovalRpcHandler;
   /** Fixed port to bind (supervision). Default: ephemeral (`listen(0)`). */
   port?: number;
+  /** Bind host. Default `127.0.0.1`; set `0.0.0.0` for container/fleet reach. */
+  host?: string;
 }
 
 export interface DaemonServer {
-  start(): Promise<{ port: number }>;
+  start(): Promise<{ port: number; host: string }>;
   stop(): Promise<void>;
   setReady(state: Readiness): void;
   getState(): Readiness;
@@ -266,6 +273,21 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       }
     }
 
+    // Approval/question broker ops (ZOS-94): dispatched only when a broker is
+    // wired. Without one, every `approval:*` op is 501 — no silent approvals.
+    if ((APPROVAL_RPC_OPS as readonly string[]).includes(type)) {
+      if (!options.approvalRpc) {
+        return c.json({ ok: false, error: "approval_adapter_not_configured" }, 501);
+      }
+      try {
+        const result = await options.approvalRpc({ type, ...rest });
+        const data = (result.body ?? {}) as Record<string, unknown>;
+        return c.json({ ok: result.status < 400, type, ...data }, result.status as 200);
+      } catch (err) {
+        return c.json({ ok: false, error: "internal_error" }, 500);
+      }
+    }
+
     // Pi session ops (ZOS-93): dispatched only when a Pi adapter is wired.
     // Without one, every `pi:*` op is 501 — safe-by-default like the file ops.
     if (typeof type === "string" && type.startsWith("pi:")) {
@@ -367,18 +389,19 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     setReady(s: Readiness) {
       state = s;
     },
-    async start(): Promise<{ port: number }> {
+    async start(): Promise<{ port: number; host: string }> {
       return new Promise((resolve, reject) => {
+        const host = options.host ?? "127.0.0.1";
         server = serve(
           {
             fetch: app.fetch,
-            hostname: "127.0.0.1",
+            hostname: host,
             port: options.port ?? 0,
           },
           (info) => {
             boundPort = info.port;
-            log?.info("daemon listening", { port: boundPort });
-            resolve({ port: boundPort });
+            log?.info("daemon listening", { port: boundPort, host });
+            resolve({ port: boundPort, host });
           },
         );
         server.on("error", reject);

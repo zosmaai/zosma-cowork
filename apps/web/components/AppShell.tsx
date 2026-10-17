@@ -8,6 +8,7 @@ import { SessionSidebar } from "./SessionSidebar";
 import { DeleteSessionDialog } from "./session-sidebar/session-dialogs/delete-session-dialog";
 import { RenameSessionDialog } from "./session-sidebar/session-dialogs/rename-session-dialog";
 import { ZosmaLoadingState } from "./ZosmaLoadingState";
+import { LoginScreen } from "./LoginScreen";
 import { ChatWindow } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
@@ -25,6 +26,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useAudio } from "@/hooks/useAudio";
+import { useZosmaGate } from "@/hooks/useZosmaGate";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { listSessions } from "@/lib/api-v1-client";
@@ -90,6 +92,8 @@ export function AppShell() {
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
   // is not mounted. ChatWindow receives the audio callbacks as props.
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio, soundEnabledRef } = useAudio();
+  // Whole-app sign-in gate: no Zosma account -> LoginScreen instead of the app.
+  const zosmaGate = useZosmaGate();
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
@@ -1698,6 +1702,16 @@ export function AppShell() {
     );
   };
 
+  if (zosmaGate.state !== "signed-in") {
+    return zosmaGate.state === "loading" ? (
+      <div className="flex min-h-screen w-full items-center justify-center bg-(--bg)">
+        <ZosmaLoadingState label={translate("i18n.loading")} />
+      </div>
+    ) : (
+      <LoginScreen onSignedIn={zosmaGate.refresh} />
+    );
+  }
+
   return (
     <>
     <style>{`
@@ -1982,7 +1996,7 @@ export function AppShell() {
                 <div
                   role="menu"
                   aria-label={translate("common.language")}
-                  className="bg-(--bg-panel) border-l border-(--border) border-r border-(--border) border-b border-(--border) overflow-hidden p-1"
+                  className="bg-(--bg-panel) border-l border-(--border) border-r border-b overflow-hidden p-1"
                 >
                   {supportedLocales.map((plugin) => (
                     <button
@@ -2229,6 +2243,7 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
+              onOpenSettings={openSettings}
               soundEnabled={soundEnabled}
               onSoundToggle={onSoundToggle}
               playDoneSound={playDoneSound}
@@ -2240,7 +2255,7 @@ export function AppShell() {
               className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-(--text-muted)"
             >
                <div className="text-sm text-(--text)">{translate("workspace.opening")}</div>
-              <div className="max-w-[min(720px,100%)] font-mono text-xs [overflow-wrap:anywhere]">
+              <div className="max-w-[min(720px,100%)] font-mono text-xs wrap-anywhere">
                 {initialNavigation.requestedCwd}
               </div>
             </div>
@@ -2249,8 +2264,8 @@ export function AppShell() {
               role="alert"
               className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-(--text-muted)"
             >
-               <div className="text-sm text-[var(--state-error)]">{translate("workspace.unable")}</div>
-              <div className="max-w-[min(720px,100%)] font-mono text-xs [overflow-wrap:anywhere]">
+               <div className="text-sm text-(--state-error)">{translate("workspace.unable")}</div>
+              <div className="max-w-[min(720px,100%)] font-mono text-xs wrap-anywhere">
                 {initialNavigation.requestedCwd}
               </div>
               <div className="max-w-180 text-xs">{initialCwdError}</div>
@@ -2259,9 +2274,9 @@ export function AppShell() {
             activeCwd ? (
               <div
                 role="status"
-                className="flex min-h-full flex-col items-center justify-center gap-1.5 p-6 text-center max-w-[420px]"
+                className="flex min-h-full flex-col items-center justify-center gap-1.5 p-6 text-center max-w-105"
               >
-                <div className="text-[15px] font-medium text-[var(--text)]">
+                <div className="text-[15px] font-medium text-(--text)">
                   {translate("workspace.selectSession")}
                 </div>
                 <div className="text-[13px] text-(--text-muted)">

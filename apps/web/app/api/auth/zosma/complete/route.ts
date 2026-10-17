@@ -1,4 +1,4 @@
-import { completeZosmaAuth, resolveDeps, zosmaPiDir } from "@/lib/zosma-auth";
+import { completeZosmaAuth, resolveDeps, signInCookies, zosmaPiDir } from "@/lib/zosma-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "code and state required" }, { status: 400 });
   }
   try {
-    const result = await completeZosmaAuth(body.code, body.state, zosmaPiDir(), resolveDeps());
-    return Response.json(result);
+    const piDir = zosmaPiDir();
+    const result = await completeZosmaAuth(body.code, body.state, piDir, resolveDeps());
+    // Bind the session to the browser that finished the flow — the machine
+    // is now signed in, but other browsers still have to sign in themselves.
+    return Response.json(result, { headers: signInCookies(req, piDir) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to complete sign-in";
     // 400 for user-recoverable flow errors (expired, mismatch, missing body);

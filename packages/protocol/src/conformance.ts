@@ -170,7 +170,7 @@ function thrown<T>(fn: () => T): unknown {
 /** Whether every advertised capability name is a known, canonical name. */
 function allKnownCapabilities(capabilities: AdapterManifest["capabilities"]): boolean {
   const names = new Set(capabilities.map((c) => c.name));
-  const known = /^(streaming|steering|follow-ups|models|thinking|tools|permissions|attachments|commands|extensions|subagents)$/;
+  const known = /^(streaming|steering|follow-ups|models|thinking|tools|permissions|attachments|commands|extensions|subagents|ask-user)$/;
   for (const name of names) if (!known.test(name)) return false;
   return true;
 }

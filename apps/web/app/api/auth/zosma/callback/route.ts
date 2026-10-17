@@ -1,4 +1,4 @@
-import { completeZosmaAuth, resolveDeps, zosmaPiDir } from "@/lib/zosma-auth";
+import { completeZosmaAuth, resolveDeps, signInCookies, zosmaPiDir } from "@/lib/zosma-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +26,15 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await completeZosmaAuth(code, state, zosmaPiDir(), resolveDeps());
-    return bounce("success", { models: String(result.modelCount) });
+    const piDir = zosmaPiDir();
+    const result = await completeZosmaAuth(code, state, piDir, resolveDeps());
+    const next = new URL("/", req.url);
+    next.searchParams.set("zosma", "success");
+    next.searchParams.set("models", String(result.modelCount));
+    return new Response(null, {
+      status: 302,
+      headers: { Location: next.toString(), ...signInCookies(req, piDir) },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to complete sign-in";
     return bounce("error", { message });

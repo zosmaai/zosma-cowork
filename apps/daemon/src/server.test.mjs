@@ -192,6 +192,87 @@ test("pi ops dispatch through the injected handler", async () => {
   }
 });
 
+test("approval ops are 501 when no broker is wired", async () => {
+  const server = createDaemonServer({ token: TOKEN });
+  const { port } = await server.start();
+  try {
+    const res = await req(port, {
+      method: "POST",
+      path: "/ipc",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+    }, { type: "approval:list", sessionId: "s1" });
+    assert.equal(res.status, 501);
+    assert.equal(res.body.error, "approval_adapter_not_configured");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("approval ops dispatch through the injected handler", async () => {
+  const seen = [];
+  const server = createDaemonServer({
+    token: TOKEN,
+    approvalRpc: async (request) => {
+      seen.push(request);
+      if (request.type === "approval:request") {
+        return { status: 400, body: { error: "duplicate_request" } };
+      }
+      return { status: 200, body: { ok: true } };
+    },
+  });
+  const { port } = await server.start();
+  try {
+    const requested = await req(port, {
+      method: "POST",
+      path: "/ipc",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+    }, { type: "approval:request", correlationId: "c1", sessionId: "s1", kind: "permission", prompt: "commit?", options: ["yes", "no"] });
+    assert.equal(requested.status, 400);
+    assert.equal(requested.body.error, "duplicate_request");
+    const listed = await req(port, {
+      method: "POST",
+      path: "/ipc",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+    }, { type: "approval:list", sessionId: "s1" });
+    assert.equal(listed.status, 200);
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0].type, "approval:request");
+    assert.equal(seen[0].correlationId, "c1");
+    assert.equal(seen[1].type, "approval:list");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("binds the configured host and reports it", async () => {
+  const server = createDaemonServer({ token: TOKEN, host: "0.0.0.0" });
+  const { port, host } = await server.start();
+  try {
+    assert.equal(host, "0.0.0.0");
+    server.setReady("ready");
+    // /health is token-gated (supervisor contract); bind verification uses the
+    // loopback address even when the server accepts on all interfaces.
+    const resp = await req(port, {
+      method: "GET",
+      path: "/health",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(resp.status, 200);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("defaults to a loopback bind", async () => {
+  const server = createDaemonServer({ token: TOKEN });
+  const { host } = await server.start();
+  try {
+    assert.equal(host, "127.0.0.1");
+  } finally {
+    await server.stop();
+  }
+});
+
 test("binds a fixed port when configured (supervision)", async () => {
   const server = createDaemonServer({ token: TOKEN, port: 64_722 });
   const { port } = await server.start();

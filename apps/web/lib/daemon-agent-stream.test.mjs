@@ -113,6 +113,24 @@ test("assistant message_end preserves thinking block when present", async () => 
   assert.equal(end.message.content[1].text, "Ans");
 });
 
+test("extension UI status request forwards to the browser event contract", async () => {
+  const events = await runBridge([
+    {
+      cid: "c1",
+      seq: 1,
+      kind: "status",
+      payload: { phase: "extension_ui_request", id: "ask-1", method: "confirm", title: "Continue?", message: "This changes files." },
+    },
+  ]);
+  assert.deepEqual(events.find((event) => event.type === "extension_ui_request"), {
+    type: "extension_ui_request",
+    id: "ask-1",
+    method: "confirm",
+    title: "Continue?",
+    message: "This changes files.",
+  });
+});
+
 test("agent_end + settled synthesize the wire end event", async () => {
   const frames = [
     { cid: "c1", seq: 1, kind: "end", payload: { stopReason: "end_turn" } },

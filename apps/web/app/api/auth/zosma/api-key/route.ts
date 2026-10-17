@@ -1,4 +1,4 @@
-import { authenticateWithKey, resolveDeps, zosmaPiDir } from "@/lib/zosma-auth";
+import { authenticateWithKey, resolveDeps, signInCookies, zosmaPiDir } from "@/lib/zosma-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +16,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "apiKey required" }, { status: 400 });
   }
   try {
-    const result = await authenticateWithKey(body.apiKey, zosmaPiDir(), resolveDeps());
-    return Response.json(result);
+    const piDir = zosmaPiDir();
+    const result = await authenticateWithKey(body.apiKey, piDir, resolveDeps());
+    // Pasting a working router key is proof of access — start a session.
+    return Response.json(result, { headers: signInCookies(req, piDir) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed to save API key";
     const status = message === "missing API key" ? 400 : 502;

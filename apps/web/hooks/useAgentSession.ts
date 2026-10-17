@@ -9,7 +9,7 @@ import type {
 } from "@/lib/types";
 import { getModels, type AgentStateData } from "@/lib/api-v1-client";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
-import { AgentCommandError, isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, isPromptRejectedError, sendAgentCommand, sendExtensionUiResponse } from "@/lib/agent-client";
 import { clearDraft, restoreDraftSubmission } from "@/lib/draft-store";
 import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { getToolNamesForPreset, type ToolPreset } from "@/lib/tool-presets";
@@ -420,15 +420,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setExtensionDialog((current) => current?.id === request.id ? null : current);
     if (!sid) return;
     try {
-      await sendCommand(sid, {
-        type: "extension_ui_response",
-        id: request.id,
-        ...response,
-      });
+      await sendExtensionUiResponse(sid, request.id, response);
     } catch (e) {
       console.error("Failed to send extension UI response:", e);
     }
-  }, [sendCommand]);
+  }, []);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;

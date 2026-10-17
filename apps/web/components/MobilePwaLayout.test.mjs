@@ -33,13 +33,13 @@ assert.match(appShellSource, /data-mobile-toolbar-file=\{mobile \? "true" : unde
   assert.match(viewportHookSource, /window\.scrollTo\(0, 0\)/);
   assert.match(cssSource, /height: var\(--app-viewport-height, 100dvh\)/);
   assert.match(cssSource, /left: env\(safe-area-inset-left\)/);
-  assert.match(chatWindowSource, /paddingBottom: "env\(safe-area-inset-bottom\)"/);
+  assert.match(chatWindowSource, /pb-\[env\(safe-area-inset-bottom\)\]/);
 });
 
 test("contains chat content and inputs within the mobile viewport", () => {
   assert.match(cssSource, /\.markdown-body \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;[\s\S]*?overflow-x: hidden;/);
   assert.match(cssSource, /\.markdown-code-block \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
-  assert.match(chatWindowSource, /overflow-x-hidden overflow-y-auto/);  assert.match(chatInputSource, /flex: 1,\s*minWidth: 0,\s*width: "100%",/);
+  assert.match(chatWindowSource, /overflow-x-hidden overflow-y-auto/);  assert.match(chatInputSource, /composer-textarea mr-1 min-w-0 w-full/);
 });
 
 test("prevents iOS focus zoom from widening the layout", () => {

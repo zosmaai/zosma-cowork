@@ -1,0 +1,257 @@
+/* ── Typeset ────────────────────────────────────────────────
+ * Container-aware typography system (shadcn Typeset).
+ * Three controls:
+ *   --typeset-size   : base font-size
+ *   --typeset-leading: line-height
+ *   --typeset-flow   : space between blocks
+ *
+ * Everything else (headings, lists, spacing) derives from them.
+ * Streaming-safe: no forward-looking selectors, margin-block-start only.
+ *
+ * Colors map to cowork theme tokens so light/dark adapt automatically
+ * (html.dark redefines --text / --accent / --border / --bg-*).
+ */
+
+.typeset {
+  --typeset-font-body: var(--font-sans, inherit);
+  --typeset-font-heading: var(--font-display, var(--font-sans, inherit));
+  --typeset-font-mono: var(--font-mono, ui-monospace, monospace);
+
+  --typeset-size: 1em;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+
+  --typeset-code: var(--accent);
+  --typeset-pre-code: var(--text);
+  --typeset-pre-bg: var(--bg-panel);
+  --typeset-quote-border: var(--accent);
+  --typeset-quote-bg: color-mix(in srgb, var(--accent) 8%, var(--bg-subtle));
+  --typeset-bullet: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
+  --typeset-marker: var(--accent);
+  --typeset-hr: var(--border);
+  --typeset-border: var(--border);
+  --typeset-bg-th: var(--bg-panel);
+  --typeset-bg-code: var(--bg-subtle);
+  --typeset-link: var(--accent);
+  --typeset-link-hover: var(--accent-hover);
+}
+
+/* ── Base ───────────────────────────────────────────────── */
+
+.typeset {
+  font-family: var(--typeset-font-body);
+  font-size: var(--typeset-size);
+  line-height: var(--typeset-leading);
+  color: var(--foreground, var(--text));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ── Paragraphs ─────────────────────────────────────────── */
+
+.typeset p {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+}
+
+/* ── Headings ───────────────────────────────────────────── */
+
+.typeset h1 {
+  font-family: var(--typeset-font-heading);
+  font-size: calc(var(--typeset-size) * 1.9);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin-block-start: calc(var(--typeset-flow) * 1.5);
+  margin-block-end: calc(var(--typeset-flow) * 0.5);
+}
+
+.typeset h2 {
+  font-family: var(--typeset-font-heading);
+  font-size: calc(var(--typeset-size) * 1.5);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin-block-start: calc(var(--typeset-flow) * 1.5);
+  margin-block-end: calc(var(--typeset-flow) * 0.5);
+}
+
+.typeset h3 {
+  font-family: var(--typeset-font-heading);
+  font-size: calc(var(--typeset-size) * 1.25);
+  font-weight: 700;
+  line-height: 1.25;
+  margin-block-start: calc(var(--typeset-flow) * 1.25);
+  margin-block-end: calc(var(--typeset-flow) * 0.4);
+}
+
+.typeset h4,
+.typeset h5,
+.typeset h6 {
+  font-size: calc(var(--typeset-size) * 1.05);
+  font-weight: 700;
+  line-height: 1.3;
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: calc(var(--typeset-flow) * 0.3);
+}
+
+/* ── Horizontal rule ───────────────────────────────────── */
+
+.typeset hr {
+  margin-block-start: calc(var(--typeset-flow) * 1.5);
+  margin-block-end: 0;
+  border: 0;
+  border-block-start: 1px solid var(--typeset-hr);
+}
+
+/* ── Blockquote ─────────────────────────────────────────── */
+
+.typeset blockquote {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+  border-inline-start: 3px solid var(--typeset-quote-border);
+  background: var(--typeset-quote-bg);
+  padding: calc(var(--typeset-flow) * 0.5) calc(var(--typeset-flow) * 0.9);
+  border-radius: 0 calc(var(--typeset-flow) * 0.3)
+    calc(var(--typeset-flow) * 0.3) 0;
+  font-style: normal;
+}
+
+.typeset blockquote p {
+  margin-block-start: 0;
+  margin-block-end: 0;
+}
+
+/* ── Lists ──────────────────────────────────────────────── */
+
+.typeset ul,
+.typeset ol {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+  padding-inline-start: calc(var(--typeset-flow) * 1.4);
+}
+
+.typeset li {
+  margin-block-start: calc(var(--typeset-flow) * 0.25);
+  margin-block-end: 0;
+}
+
+.typeset li::marker {
+  color: var(--typeset-marker);
+}
+
+/* ── Code (inline) ──────────────────────────────────────── */
+
+.typeset code:not(pre code) {
+  font-family: var(--typeset-font-mono);
+  font-size: 0.9em;
+  font-weight: 500;
+  background: var(--typeset-bg-code);
+  color: var(--typeset-code);
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  border: 1px solid var(--typeset-border);
+}
+
+/* ── Code (block) ───────────────────────────────────────── */
+
+.typeset pre {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+  background: var(--typeset-pre-bg);
+  border: 1px solid var(--typeset-border);
+  border-radius: 0.6rem;
+  padding: calc(var(--typeset-flow) * 0.7);
+  overflow-x: auto;
+}
+
+.typeset pre code {
+  color: var(--typeset-pre-code);
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* ── Tables ─────────────────────────────────────────────── */
+
+.typeset table {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.typeset th {
+  background: var(--typeset-bg-th);
+  font-weight: 650;
+  padding: calc(var(--typeset-flow) * 0.35) calc(var(--typeset-flow) * 0.5);
+  border: 1px solid var(--typeset-border);
+  text-align: start;
+}
+
+.typeset td {
+  padding: calc(var(--typeset-flow) * 0.35) calc(var(--typeset-flow) * 0.5);
+  border: 1px solid var(--typeset-border);
+}
+
+/* ── Images ─────────────────────────────────────────────── */
+
+.typeset img {
+  margin-block-start: var(--typeset-flow);
+  margin-block-end: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--typeset-border);
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Links ──────────────────────────────────────────────── */
+
+.typeset a {
+  color: var(--typeset-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: color 0.15s;
+}
+
+.typeset a:hover {
+  color: var(--typeset-link-hover);
+}
+
+/* ── Strong / Emphasis ──────────────────────────────────── */
+
+.typeset strong {
+  font-weight: 700;
+}
+
+/* ── Opt-out ────────────────────────────────────────────── */
+
+.not-typeset,
+[data-not-typeset] {
+  all: revert;
+}
+
+/* ── Preset: chat (dense message typography) ───────────── */
+
+.typeset-chat {
+  --typeset-size: 14px;
+  --typeset-leading: 1.62;
+  --typeset-flow: 0.6em;
+  --typeset-quote-border: var(--accent);
+  --typeset-quote-bg: color-mix(in srgb, var(--accent) 7%, var(--bg-subtle));
+  --typeset-marker: var(--accent);
+  --typeset-link: var(--accent);
+  --typeset-link-hover: var(--accent-hover);
+}
+
+.typeset-chat h1 { font-size: calc(var(--typeset-size) * 1.5); }
+.typeset-chat h2 { font-size: calc(var(--typeset-size) * 1.32); }
+.typeset-chat h3 { font-size: calc(var(--typeset-size) * 1.15); }
+.typeset-chat h4,
+.typeset-chat h5,
+.typeset-chat h6 { font-size: calc(var(--typeset-size) * 1.02); }

@@ -6,7 +6,7 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { AgentCommandError, isPromptRejectedError, sendAgentCommand } = await jiti.import("./agent-client.ts");
+const { AgentCommandError, isPromptRejectedError, sendAgentCommand, sendExtensionUiResponse } = await jiti.import("./agent-client.ts");
 
 test("agent command HTTP rejections are distinguishable from transport failures", async (t) => {
   const originalFetch = globalThis.fetch;
@@ -61,4 +61,26 @@ test("only an explicit negative prompt acknowledgement is definitive", () => {
     isPromptRejectedError(new AgentCommandError("generic API failure", 500, "internal_error", false)),
     false,
   );
+});
+
+test("extension UI response nests its answer in the daemon command contract", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  let sent;
+  globalThis.fetch = async (_input, init) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ success: true, data: null }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  await sendExtensionUiResponse("session-1", "ask-1", { confirmed: true });
+  assert.deepEqual(sent, {
+    type: "extension_ui_response",
+    id: "ask-1",
+    response: { confirmed: true },
+  });
 });

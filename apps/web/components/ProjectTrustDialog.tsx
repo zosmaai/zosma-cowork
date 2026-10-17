@@ -68,7 +68,7 @@ export function ProjectTrustDialog({
             <div id="project-trust-title" className="text-[15px] font-bold text-(--text)">
               {t("trust.dialogTitle")}
             </div>
-            <div className="mt-1.75 text-xs leading-[1.6px] text-(--text-muted)">
+            <div className="mt-1.75 text-xs leading-[1.6] text-(--text-muted)">
               {t("trust.dialogBody")}
             </div>
             <code
@@ -77,7 +77,7 @@ export function ProjectTrustDialog({
               {cwd}
             </code>
             {error && (
-              <div role="alert" className="mt-2.5 text-(--state-error) text-xs leading-[1.5px]">
+              <div role="alert" className="mt-2.5 text-(--state-error) text-xs leading-[1.5]">
                 {error}
               </div>
             )}

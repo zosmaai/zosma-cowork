@@ -10,6 +10,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { POST } = await jiti.import("./route.ts");
 const stateModule = await jiti.import("../../../../../lib/zosma-auth/state.ts");
+const { verifySessionToken } = await jiti.import("../../../../../lib/zosma-auth/session.ts");
 
 function seedPending(dir) {
   stateModule.savePending(
@@ -91,4 +92,37 @@ test("POST /complete rejects a missing body field with 400", withAgentDir(async 
   );
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /code and state required/);
+}));
+
+test("POST /complete issues a browser session cookie for the new router key", withAgentDir(async (dir, t) => {
+  seedPending(dir);
+  stubRegistryAndNetwork(t);
+  const res = await POST(
+    new Request("http://localhost/api/auth/zosma/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "c1", state: "s1" }),
+    }),
+  );
+  assert.equal(res.status, 200);
+  const cookie = res.headers.get("set-cookie") ?? "";
+  assert.match(cookie, /^zosma_session=/);
+  assert.match(cookie, /HttpOnly/);
+  const token = cookie.slice("zosma_session=".length).split(";")[0];
+  assert.equal(verifySessionToken(token, "sk-new"), true);
+  assert.equal(verifySessionToken(token, "sk-other"), false);
+}));
+
+test("POST /complete does not issue a session when the exchange fails", withAgentDir(async (dir, t) => {
+  seedPending(dir);
+  stubRegistryAndNetwork(t);
+  const res = await POST(
+    new Request("http://localhost/api/auth/zosma/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "c1", state: "nope" }),
+    }),
+  );
+  assert.equal(res.status, 400);
+  assert.equal(res.headers.get("set-cookie"), null);
 }));
