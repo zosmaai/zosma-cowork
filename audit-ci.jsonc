@@ -1,3 +1,13 @@
 {
-  "moderate": true
+  // Fail on any moderate-or-higher workspace advisory. The two advisories below
+  // are unfixable upstream (no patched release exists yet) and both sit in
+  // dev-only dependency paths:
+  // - 1240992 / GHSA-vfj7-8cjw-p6xm (braces <=3.0.3 stack-exhaustion DoS):
+  //   @next/eslint-plugin-next > fast-glob > micromatch; braces 3.0.3 is the
+  //   newest published version.
+  // - 1241202 / GHSA-hp3w-g68c-fv3c (sprintf-js <=1.1.3): mammoth > argparse;
+  //   1.1.3 is the newest published version.
+  // Remove these once a patched release lands.
+  "moderate": true,
+  "allowlist": ["GHSA-vfj7-8cjw-p6xm", "GHSA-hp3w-g68c-fv3c"]
 }
